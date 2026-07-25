@@ -18,6 +18,29 @@ services:
     environment:
       - PORT=4321
       - DATA_DIR=/data
+    # Dev loop: `docker compose watch` syncs edits into the running container.
+    # Plain `up -d` ignores this block, so the normal deploy is unaffected.
+    develop:
+      watch:
+        # Frontend is static — sync the file and hit reload in the browser.
+        - action: sync
+          path: ./public
+          target: /app/public
+          ignore:
+            - uploads/
+        # Backend is required once at boot, so it needs a process restart.
+        - action: sync+restart
+          path: ./server.js
+          target: /app/server.js
+        - action: sync+restart
+          path: ./routes.js
+          target: /app/routes.js
+        - action: sync+restart
+          path: ./db.js
+          target: /app/db.js
+        # Dependency changes can't be synced — better-sqlite3 must recompile.
+        - action: rebuild
+          path: ./package-lock.json
     # Hard cap so this can never starve the CCTV / Home Assistant workload.
     deploy:
       resources:
