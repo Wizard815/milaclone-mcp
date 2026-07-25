@@ -38,8 +38,10 @@ export function renameSelected() {
   const el = elMap.get(state.selectedId);
   if (!el || !el.querySelector('[data-edit]')) return;
   enterEdit(el);
+  // focus synchronously so keystrokes right after the rename shortcut land in
+  // the field instead of falling through to the document
   const f = el.querySelector('[data-edit]');
-  requestAnimationFrame(() => { f?.focus(); if (f && f.select) f.select(); });
+  if (f) { f.focus(); if (f.select) f.select(); }
 }
 
 const saveTimers = new Map();

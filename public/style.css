@@ -33,6 +33,7 @@ body {
   text-rendering: optimizeLegibility;
 }
 button { font-family: inherit; cursor: pointer; }
+input, textarea { font-family: var(--sans); }
 
 /* ---------- top bar ---------- */
 #topbar {
@@ -91,6 +92,8 @@ button { font-family: inherit; cursor: pointer; }
 }
 #stage.panning { cursor: grabbing; }
 #stage.armed { cursor: crosshair; }
+#stage, .item { touch-action: none; }
+.item.editing { touch-action: auto; }
 #world { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
 
 /* ---------- generic card ---------- */
@@ -267,3 +270,92 @@ button { font-family: inherit; cursor: pointer; }
 
 .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: #2b2d31; color: #fff; padding: 9px 16px; border-radius: 10px; font-size: 13px; z-index: 80; opacity: 0; transition: opacity .2s; pointer-events: none; }
 .toast.show { opacity: 1; }
+
+/* ---------- mobile chrome (header + footer, Milanote style) ---------- */
+/* Hidden on desktop; the media query below turns them on and hides the
+   desktop top bar + tool rail instead. */
+#mheader, #mfooter, #msheet { display: none; }
+#hint .hint-mobile { display: none; }
+
+@media (max-width: 768px) {
+  body { overscroll-behavior: none; }
+  #topbar, #rail { display: none; }
+  #stage { top: 0; left: 0; }
+  #hint .hint-desktop { display: none; }
+  #hint .hint-mobile { display: block; }
+  .toast { bottom: calc(104px + env(safe-area-inset-bottom)); }
+
+  /* header: back chevron / serif board title / share bubble */
+  #mheader:not([hidden]) {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 45;
+    display: flex; align-items: center; gap: 8px;
+    padding: calc(8px + env(safe-area-inset-top)) 10px 8px;
+    background: #fff; border-bottom: 1px solid var(--rail-border);
+  }
+  .mh-btn {
+    border: none; background: none; color: var(--ink); flex: 0 0 auto;
+    width: 44px; height: 44px; display: grid; place-items: center; border-radius: 12px; padding: 0;
+  }
+  .mh-btn svg { width: 26px; height: 26px; }
+  .mh-round { background: #f1f1f3; border-radius: 50%; }
+  .mh-round svg { width: 21px; height: 21px; }
+  #mTitle {
+    flex: 1; min-width: 0; margin: 0; text-align: center;
+    font-family: var(--serif); font-weight: 600; font-size: 22px; letter-spacing: .2px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #37414f;
+  }
+
+  /* footer: ••• | Your boards / Quick notes | +  (or the tool tray) */
+  #mfooter {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 45;
+    display: block; background: #fff; border-top: 1px solid var(--rail-border);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .mf-row { display: flex; align-items: center; min-height: 86px; padding: 0 10px; gap: 6px; }
+  .mf-row[hidden] { display: none; }
+  #mfNav { justify-content: space-between; }
+  .mf-icon {
+    border: none; background: none; color: var(--ink); flex: 0 0 auto;
+    width: 48px; height: 48px; display: grid; place-items: center; border-radius: 12px; padding: 0;
+  }
+  .mf-icon svg { width: 26px; height: 26px; }
+  .mf-tabs { display: flex; align-items: center; gap: 2px; min-width: 0; overflow: hidden; }
+  .mf-tab {
+    border: none; background: none; color: var(--ink-soft); white-space: nowrap;
+    font-size: 16px; font-weight: 600; padding: 11px 14px; border-radius: 12px;
+  }
+  .mf-tab.active { background: #f1f1f3; color: var(--ink); }
+
+  /* swap-in tool tray: white icon tiles with labels, scrolls sideways */
+  .mf-tools {
+    display: flex; align-items: flex-start; gap: 2px; flex: 1; min-width: 0;
+    overflow-x: auto; padding: 12px 2px; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  }
+  .mf-tools::-webkit-scrollbar { display: none; }
+  .mtool {
+    border: none; background: none; color: var(--ink); flex: 0 0 auto; width: 66px;
+    display: flex; flex-direction: column; align-items: center; gap: 7px;
+    font-size: 13px; padding: 0;
+  }
+  .mtool svg, .mtool i {
+    width: 46px; height: 46px; padding: 11px; display: block; box-sizing: border-box;
+    background: #fff; border: 1px solid #d9dade; border-radius: 10px;
+    box-shadow: 0 1px 2px rgba(28, 30, 38, .05); color: var(--ink);
+  }
+  .mtool.armed { color: var(--accent); }
+  .mtool.armed svg { background: #5b7cfa; border-color: #5b7cfa; color: #fff; }
+
+  /* ••• action sheet */
+  #msheet:not([hidden]) {
+    position: fixed; z-index: 46; left: 12px;
+    bottom: calc(98px + env(safe-area-inset-bottom));
+    display: flex; flex-direction: column; min-width: 180px;
+    background: #fff; border: 1px solid var(--rail-border); border-radius: 14px;
+    box-shadow: var(--card-shadow-hover); padding: 6px;
+  }
+  #msheet button {
+    border: none; background: none; text-align: left; color: var(--ink);
+    font-size: 15px; padding: 11px 12px; border-radius: 9px;
+  }
+  #msheet button:hover, #msheet button:active { background: #f1f1f3; }
+}

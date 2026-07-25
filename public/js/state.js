@@ -29,7 +29,8 @@ export const state = {
   pendingImageWorld: null,
   pendingUploadWorld: null,
   drag: null,
-  pan: null
+  pan: null,
+  pinching: false
 };
 
 // Item id -> rendered DOM element. Cleared/repopulated on every render.
