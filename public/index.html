@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Canvas Board</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -67,7 +67,36 @@
 
 <div id="hint">
   <h2>This board is empty</h2>
-  <p>Pick a tool on the left, then click the canvas to add it.</p>
+  <p class="hint-desktop">Pick a tool on the left, then click the canvas to add it.</p>
+  <p class="hint-mobile">Tap +, pick a tool, then tap the canvas to add it.</p>
+</div>
+
+<header id="mheader" hidden>
+  <button class="mh-btn" id="mBack" aria-label="Back"><i data-lucide="chevron-left"></i></button>
+  <h1 id="mTitle"></h1>
+  <button class="mh-btn mh-round" id="mShare" aria-label="Copy board link"><i data-lucide="user-plus"></i></button>
+</header>
+
+<nav id="mfooter">
+  <div class="mf-row" id="mfNav">
+    <button class="mf-icon" id="mMore" aria-label="More options"><i data-lucide="ellipsis"></i></button>
+    <div class="mf-tabs">
+      <button class="mf-tab active" id="mBoards">Your boards</button>
+      <button class="mf-tab" id="mNotes">Quick notes</button>
+    </div>
+    <button class="mf-icon" id="mAdd" aria-label="Add a card"><i data-lucide="plus"></i></button>
+  </div>
+  <div class="mf-row mf-tray" id="mfTray" hidden>
+    <button class="mf-icon mf-close" id="mTrayClose" aria-label="Close tool tray"><i data-lucide="x"></i></button>
+    <div class="mf-tools" id="mfTools"></div>
+  </div>
+</nav>
+
+<div id="msheet" hidden>
+  <button data-act="zoomin">Zoom in</button>
+  <button data-act="zoomout">Zoom out</button>
+  <button data-act="reset">Reset view</button>
+  <button data-act="export">Export</button>
 </div>
 
 <div id="palette"></div>

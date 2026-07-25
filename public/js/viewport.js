@@ -33,6 +33,43 @@ export function zoomBy(factor) {
   state.cam.x = px - wx * state.cam.scale; state.cam.y = py - wy * state.cam.scale; applyCam();
 }
 
+// Two-finger pinch zoom for touch screens. Keeps the world point under the
+// initial pinch midpoint anchored to the moving midpoint, so it also pans.
+function initPinch() {
+  const pts = new Map();
+  let start = null;
+  dom.stage.addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'touch') return;
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pts.size === 2) {
+      state.pinching = true;
+      state.pan = null; dom.stage.classList.remove('panning');
+      const [a, b] = [...pts.values()];
+      start = { dist: Math.hypot(a.x - b.x, a.y - b.y), cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, cam: { ...state.cam } };
+    }
+  });
+  document.addEventListener('pointermove', (e) => {
+    if (!pts.has(e.pointerId)) return;
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (!state.pinching || pts.size !== 2 || !start) return;
+    const [a, b] = [...pts.values()];
+    const r = dom.stage.getBoundingClientRect();
+    const scale = Math.max(0.2, Math.min(2.5, start.cam.scale * (Math.hypot(a.x - b.x, a.y - b.y) / start.dist)));
+    const wx = (start.cx - r.left - start.cam.x) / start.cam.scale;
+    const wy = (start.cy - r.top - start.cam.y) / start.cam.scale;
+    state.cam.scale = scale;
+    state.cam.x = (a.x + b.x) / 2 - r.left - wx * scale;
+    state.cam.y = (a.y + b.y) / 2 - r.top - wy * scale;
+    applyCam();
+  });
+  const drop = (e) => {
+    pts.delete(e.pointerId);
+    if (pts.size < 2) { state.pinching = false; start = null; }
+  };
+  document.addEventListener('pointerup', drop);
+  document.addEventListener('pointercancel', drop);
+}
+
 // Wire up the zoom controls and wheel handler. Called once at boot.
 export function initViewport() {
   document.getElementById('zoomIn').onclick = () => zoomBy(1.2);
@@ -54,4 +91,6 @@ export function initViewport() {
     }
     applyCam();
   }, { passive: false });
+
+  initPinch();
 }

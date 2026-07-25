@@ -9,6 +9,7 @@ import { deselect, renameSelected, deleteItem, exitEdit } from './editing.js';
 import { closePalette, closeCtx } from './menus.js';
 import { copySelected, pasteClipboard, duplicateSelected } from './clipboard.js';
 import { arm, disarm, initTools } from './tools.js';
+import { initMobile, updateMobileChrome } from './mobile.js';
 
 // Entry point: canvas loading/navigation, global keyboard + pointer handling,
 // and boot. Wiring for the viewport and toolbar lives in their own modules and
@@ -21,6 +22,7 @@ export async function openCanvas(id) {
   state.selectedId = null; state.editingId = null;
   closeCtx();
   renderCrumbs();
+  updateMobileChrome();
   render();
   applyCam();
   if (location.hash.slice(1) !== id) { history.replaceState(null, '', '#' + id); }
@@ -56,6 +58,7 @@ window.addEventListener('hashchange', () => {
 });
 
 initViewport();
+initMobile();
 initTools();
 
 (async function boot() {

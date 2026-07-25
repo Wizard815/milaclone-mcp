@@ -14,12 +14,12 @@ export function arm(tool, btn) {
   disarm();
   state.armed = tool; dom.stage.classList.add('armed');
   btn.classList.add('armed');
-  toast('Click the canvas to place your ' + tool);
+  toast('Tap the canvas to place your ' + tool);
 }
 
 export function disarm() {
   state.armed = null; dom.stage.classList.remove('armed');
-  document.querySelectorAll('.tool.armed').forEach(b => b.classList.remove('armed'));
+  document.querySelectorAll('.tool.armed, .mtool.armed').forEach(b => b.classList.remove('armed'));
 }
 
 // Wire up the rail buttons, canvas pan/place, and the upload inputs. Called once at boot.
@@ -34,6 +34,7 @@ export function initTools() {
 
   dom.stage.addEventListener('pointerdown', (e) => {
     if (e.button !== 0 && e.button !== 1) return;
+    if (state.pinching) return;
     if (state.armed) {
       const w = screenToWorld(e.clientX, e.clientY);
       const t = state.armed; disarm();
@@ -45,7 +46,7 @@ export function initTools() {
     deselect();
     state.pan = { sx: e.clientX, sy: e.clientY, cx: state.cam.x, cy: state.cam.y };
     dom.stage.classList.add('panning');
-    const move = (ev) => { state.cam.x = state.pan.cx + (ev.clientX - state.pan.sx); state.cam.y = state.pan.cy + (ev.clientY - state.pan.sy); applyCam(); };
+    const move = (ev) => { if (state.pinching || !state.pan) return; state.cam.x = state.pan.cx + (ev.clientX - state.pan.sx); state.cam.y = state.pan.cy + (ev.clientY - state.pan.sy); applyCam(); };
     const up = () => { state.pan = null; dom.stage.classList.remove('panning'); document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); };
     document.addEventListener('pointermove', move);
     document.addEventListener('pointerup', up);
