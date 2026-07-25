@@ -40,6 +40,41 @@ To use a different port:
 PORT=8080 node server.js
 ```
 
+## Run it with Docker
+
+Same shape as the `reflections` deployment: its own Compose project, resource
+capped, bound to loopback only, published to the tailnet by Tailscale Serve.
+
+```bash
+docker compose up -d --build
+```
+
+The container listens on `127.0.0.1:8182` only — not on the LAN, not on the
+tailnet yet (`8181` is taken by `reflections`). Publish it over HTTPS with:
+
+```bash
+sudo tailscale serve --bg 8182
+```
+
+Run `tailscale serve status` to see the URL. On iPhone, Share → Add to Home
+Screen gives it an app icon that opens fullscreen.
+
+Data lives in two named volumes, so `docker compose down` keeps it:
+
+| Volume              | Mounted at              | Holds                    |
+|---------------------|-------------------------|--------------------------|
+| `milaclone_data`    | `/data`                 | `board.db` (SQLite)      |
+| `milaclone_uploads` | `/app/public/uploads`   | uploaded images/files    |
+
+Back them up with:
+
+```bash
+docker compose cp app:/data/board.db ./backup-$(date +%F).db
+```
+
+Update later with `docker compose up -d --build`. `docker compose down -v`
+wipes the volumes and resets to a blank canvas.
+
 ## Access over Tailscale
 
 The server binds to `0.0.0.0` by default, so once your box is on your tailnet
@@ -111,7 +146,9 @@ All optional, via environment variables:
 | `PORT`       | `4321`               | Port to listen on                |
 | `HOST`       | `0.0.0.0`            | Bind address                     |
 | `DATA_DIR`   | `./data`             | Where the SQLite DB is written   |
-| `UPLOAD_DIR` | `./public/uploads`   | Where uploaded files go          |
+
+Uploads always go to `public/uploads/` (they're served as static files from
+there, so the path isn't configurable).
 
 ## Tech stack
 
