@@ -1,0 +1,30 @@
+name: milaclone
+
+services:
+  app:
+    build: .
+    image: milaclone:local
+    container_name: milaclone-app
+    restart: unless-stopped
+    # Bind to loopback only: NOT on the LAN, NOT directly on the tailnet.
+    # Tailscale Serve (see README) bridges it onto the tailnet over HTTPS.
+    # 8181 is already taken by reflections, so this one sits on 8182.
+    ports:
+      - "127.0.0.1:8182:4321"
+    volumes:
+      - milaclone_data:/data
+      # Uploads live under public/ so Express serves them at /uploads/*.
+      - milaclone_uploads:/app/public/uploads
+    environment:
+      - PORT=4321
+      - DATA_DIR=/data
+    # Hard cap so this can never starve the CCTV / Home Assistant workload.
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M
+
+volumes:
+  milaclone_data:
+  milaclone_uploads:
