@@ -2,10 +2,10 @@
 
 import { state } from './state.js';
 import { toast } from './util.js';
-import { screenToWorld, applyCam, zoomBy } from './viewport.js';
-import { createAt, defaultsFor } from './create.js';
+import { applyCam, zoomBy } from './viewport.js';
 import { arm, disarm } from './tools.js';
 import { openCanvas } from './main.js';
+import { openQuickNotes } from './quicknotes.js';
 
 // Mobile chrome: the header (back / title / share) and footer (tabs, more
 // menu, and the swap-in tool tray). The elements exist on every viewport but
@@ -45,10 +45,7 @@ export function initMobile() {
   el('mTrayClose').onclick = () => { disarm(); tray.hidden = true; nav.hidden = false; };
 
   el('mBoards').onclick = () => { if (state.rootCanvasId) openCanvas(state.rootCanvasId); };
-  el('mNotes').onclick = () => {
-    const w = screenToWorld(window.innerWidth / 2, window.innerHeight / 2 - 80);
-    createAt('note', w.x - defaultsFor('note').w / 2, w.y);
-  };
+  el('mNotes').onclick = () => openQuickNotes();
 
   el('mBack').onclick = () => {
     const bc = state.view.breadcrumb;

@@ -162,3 +162,48 @@ test('delete cascades: nested board subtree is removed', async () => {
   assert.equal((await get('/api/canvas/' + childId)).status, 404);
   assert.equal((await send('PATCH', '/api/item/' + inner.id, { x: 1 })).status, 404);
 });
+
+test('quick notes: lists every todo card with its canvas + tasks', async () => {
+  const canvasId = await root();
+  const board = (await send('POST', '/api/item', { canvasId, type: 'board', data: { title: 'Nested' } })).body;
+  const nested = board.data.childCanvasId;
+  const tasks = [{ id: 't1', text: 'Floss', done: false, starred: true, due: '2026-08-07', tags: ['routine'], note: 'nightly' }];
+  const a = (await send('POST', '/api/item', {
+    canvasId, type: 'todo', color: 'blue', data: { title: 'Nightly Routine', tags: ['routine'], tasks }
+  })).body;
+  const b = (await send('POST', '/api/item', { canvasId: nested, type: 'todo', data: { title: 'Deep list' } })).body;
+
+  const { status, body } = await get('/api/todos');
+  assert.equal(status, 200);
+  assert.equal(body.rootCanvasId, canvasId);
+
+  const first = body.lists.find(l => l.id === a.id);
+  assert.equal(first.title, 'Nightly Routine');
+  assert.equal(first.canvasId, canvasId);
+  assert.equal(first.color, 'blue');
+  assert.deepEqual(first.tags, ['routine']);
+  assert.deepEqual(first.tasks, tasks);          // extra task fields survive the round trip
+
+  // todo cards on nested canvases are listed too, and report the canvas they live on
+  const deep = body.lists.find(l => l.id === b.id);
+  assert.equal(deep.canvasTitle, 'Nested');
+  assert.deepEqual(deep.tasks, []);              // missing tasks default to an empty list
+
+  // non-todo cards never show up
+  assert.ok(!body.lists.some(l => l.id === board.id));
+});
+
+test('quick notes: task edits round-trip through PATCH /api/item', async () => {
+  const canvasId = await root();
+  const list = (await send('POST', '/api/item', {
+    canvasId, type: 'todo', data: { title: 'Errands', tasks: [{ id: 't1', text: 'Milk', done: false }] }
+  })).body;
+  const tasks = [{ id: 't1', text: 'Milk', done: true, starred: true, due: '2026-08-07', tags: ['life'], note: 'oat', noteStyle: { b: true } }];
+  await send('PATCH', '/api/item/' + list.id, { data: { tasks } });
+  await send('PATCH', '/api/item/' + list.id, { data: { tags: ['life'] } });
+
+  const saved = (await get('/api/todos')).body.lists.find(l => l.id === list.id);
+  assert.deepEqual(saved.tasks, tasks);
+  assert.deepEqual(saved.tags, ['life']);
+  assert.equal(saved.title, 'Errands');          // shallow data merge keeps the title
+});

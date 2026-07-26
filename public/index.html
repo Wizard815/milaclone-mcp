@@ -6,7 +6,7 @@
 <title>Canvas Board</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Figtree:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -91,6 +91,103 @@
     <div class="mf-tools" id="mfTools"></div>
   </div>
 </nav>
+
+<!-- Quick notes: mobile-only task workspace layered over the canvas.
+     Three-level stack (overview → list → task) plus a modal search layer.
+     Static chrome lives here; quicknotes.js fills every [id] region. -->
+<div id="quicknotes" hidden>
+
+  <section class="qn-screen" id="qnHome">
+    <div class="qn-scroll qn-home-scroll">
+      <div class="qn-titlerow">
+        <h1 class="qn-title">Quick notes</h1>
+        <button class="qn-round" id="qnSearchBtn" aria-label="Search tasks"><i data-lucide="search"></i></button>
+        <button class="qn-round" id="qnHomeMenu" aria-label="Quick notes options"><i data-lucide="ellipsis"></i></button>
+      </div>
+      <div class="qn-tiles" id="qnTiles"></div>
+      <div class="qn-chips" id="qnHomeChips"></div>
+      <div class="qn-section">
+        <h2 class="qn-h2">Lists</h2>
+        <div class="qn-card qn-rows" id="qnLists"></div>
+      </div>
+    </div>
+    <div class="qn-bar">
+      <button class="qn-bar-icon" id="qnBarMenu" aria-label="Quick notes options"><i data-lucide="ellipsis"></i></button>
+      <div class="qn-bar-tabs">
+        <button class="qn-bar-tab" id="qnBoards">Your boards</button>
+        <span class="qn-bar-tab active">Quick notes</span>
+      </div>
+      <button class="qn-bar-icon" id="qnAdd" aria-label="Add"><i data-lucide="plus"></i></button>
+    </div>
+  </section>
+
+  <section class="qn-screen" id="qnList">
+    <div class="qn-navrow">
+      <button class="qn-back" id="qnListBack"><i data-lucide="chevron-left"></i><span>Quick notes</span></button>
+      <button class="qn-dots" id="qnListMenu" aria-label="List options"><i data-lucide="ellipsis"></i></button>
+    </div>
+    <div class="qn-scroll qn-list-scroll">
+      <div class="qn-listhead">
+        <div class="qn-listtitle" id="qnListTitle"></div>
+        <div class="qn-listmeta" id="qnListMeta"></div>
+      </div>
+      <div class="qn-tasks" id="qnTasks"></div>
+    </div>
+    <div class="qn-addbar" id="qnAddBar" hidden>
+      <button class="qn-addbtn" id="qnAddTask"><i data-lucide="plus"></i><span>Add a task</span></button>
+      <div class="qn-addfield" id="qnAddField" hidden>
+        <span class="qn-box"></span>
+        <input id="qnNewTask" placeholder="New task — press Enter" aria-label="New task">
+        <button class="qn-x" id="qnAddCancel" aria-label="Cancel"><i data-lucide="x"></i></button>
+      </div>
+    </div>
+  </section>
+
+  <section class="qn-screen" id="qnTask">
+    <div class="qn-navrow">
+      <button class="qn-back" id="qnTaskBack"><i data-lucide="chevron-left"></i><span id="qnTaskBackLabel"></span></button>
+    </div>
+    <div class="qn-scroll qn-task-scroll">
+      <div class="qn-taskhead">
+        <button class="qn-box qn-box-lg" id="qnTaskBox" aria-label="Toggle done"><i data-lucide="check"></i></button>
+        <h2 class="qn-tasktitle" id="qnTaskTitle" contenteditable="true" role="textbox" aria-label="Task"></h2>
+        <button class="qn-star qn-star-lg" id="qnTaskStar" aria-label="Star task"><i data-lucide="star"></i></button>
+      </div>
+      <div class="qn-card qn-details" id="qnDetails"></div>
+      <div class="qn-card qn-notecard">
+        <div class="qn-noterow">
+          <span class="qn-notelabel">NOTE</span>
+          <div class="qn-fmt" id="qnFmt"></div>
+        </div>
+        <textarea id="qnNote" rows="4" placeholder="Add note" aria-label="Note"></textarea>
+      </div>
+    </div>
+    <div class="qn-taskfoot">
+      <span class="qn-foot-pad"></span>
+      <span class="qn-created" id="qnCreated"></span>
+      <button class="qn-trash" id="qnDelTask" aria-label="Delete task"><i data-lucide="trash-2"></i></button>
+    </div>
+  </section>
+
+  <section class="qn-screen qn-searchscreen" id="qnSearch">
+    <div class="qn-searchbar">
+      <div class="qn-searchfield">
+        <i data-lucide="search"></i>
+        <input id="qnQuery" placeholder="Search tasks, notes, tags" aria-label="Search tasks">
+        <button class="qn-x" id="qnQueryClear" aria-label="Clear search" hidden><i data-lucide="x"></i></button>
+      </div>
+      <button class="qn-cancel" id="qnSearchCancel">Cancel</button>
+    </div>
+    <div class="qn-chips qn-chips-scroll" id="qnSearchChips"></div>
+    <div class="qn-scroll qn-results" id="qnResults"></div>
+  </section>
+
+  <div class="qn-dim" id="qnDim"></div>
+  <div class="qn-sheet" id="qnSheet">
+    <div class="qn-grabber"></div>
+    <div id="qnSheetBody"></div>
+  </div>
+</div>
 
 <div id="msheet" hidden>
   <button data-act="zoomin">Zoom in</button>

@@ -205,6 +205,27 @@ router.delete('/api/item/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+// ---- Quick notes -----------------------------------------------------------
+// Every `todo` card in the tree is a Quick-notes list, wherever it sits on the
+// board. The mobile Quick-notes screens read them all in one go instead of
+// walking canvases; writes go back through the normal PATCH /api/item route.
+router.get('/api/todos', (req, res) => {
+  const lists = stmt.todoItems.all().map(rowToItem).map(it => {
+    const canvas = stmt.getCanvas.get(it.canvasId);
+    return {
+      id: it.id,
+      canvasId: it.canvasId,
+      canvasTitle: canvas ? canvas.title : '',
+      title: it.data.title || 'To-do',
+      color: it.color || null,
+      tags: Array.isArray(it.data.tags) ? it.data.tags : [],
+      tasks: Array.isArray(it.data.tasks) ? it.data.tasks : [],
+      createdAt: it.createdAt
+    };
+  });
+  res.json({ rootCanvasId: rootCanvasId(), lists });
+});
+
 // ---- Upload ----------------------------------------------------------------
 router.post('/api/upload', upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'no file' });
