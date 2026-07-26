@@ -8,3 +8,6 @@ public/uploads/*
 .e2e-data/
 test-results/
 playwright-report/
+
+# Tailscale sidecar auth key
+.env

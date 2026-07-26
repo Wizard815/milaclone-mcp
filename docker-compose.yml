@@ -48,6 +48,31 @@ services:
           cpus: "0.50"
           memory: 256M
 
+  # Own tailnet node, so the app answers on https://mila.<tailnet>.ts.net
+  # at "/" rather than a path prefix. Reaches the app over the compose network;
+  # the loopback port binding above stays as-is for local access.
+  tailscale:
+    image: tailscale/tailscale:stable
+    container_name: milaclone-ts
+    restart: unless-stopped
+    environment:
+      - TS_AUTHKEY=${TS_AUTHKEY:?set TS_AUTHKEY in .env}
+      - TS_HOSTNAME=mila
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_SERVE_CONFIG=/config/serve.json
+      - TS_USERSPACE=true
+    volumes:
+      - milaclone_ts_state:/var/lib/tailscale
+      - ./tailscale/serve.json:/config/serve.json:ro
+    depends_on:
+      - app
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
+
 volumes:
   milaclone_data:
   milaclone_uploads:
+  milaclone_ts_state:
