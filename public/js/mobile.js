@@ -5,8 +5,9 @@ import { toast } from './util.js';
 import { applyCam, zoomBy } from './viewport.js';
 import { arm, disarm } from './tools.js';
 import { openCanvas } from './main.js';
+import { openQuickNotes } from './quicknotes.js';
 
-// Mobile chrome: the header (back / title / share) and footer (board tab, more
+// Mobile chrome: the header (back / title / share) and footer (tabs, more
 // menu, and the swap-in tool tray). The elements exist on every viewport but
 // are only shown by the mobile media query in style.css, so all of this can
 // be wired unconditionally.
@@ -44,6 +45,7 @@ export function initMobile() {
   el('mTrayClose').onclick = () => { disarm(); tray.hidden = true; nav.hidden = false; };
 
   el('mBoards').onclick = () => { if (state.rootCanvasId) openCanvas(state.rootCanvasId); };
+  el('mNotes').onclick = () => openQuickNotes();
 
   el('mBack').onclick = () => {
     const bc = state.view.breadcrumb;
