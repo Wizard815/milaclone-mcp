@@ -9,6 +9,10 @@ const PORT = 4322;
 module.exports = defineConfig({
   testDir: './e2e',
   fullyParallel: true,
+  // `list` for readable console output plus `html` so a report is always
+  // written to playwright-report/ (the CI job uploads it as an artifact).
+  // open: 'never' keeps it from auto-launching a browser during local runs.
+  reporter: [['list'], ['html', { open: 'never' }]],
   use: { baseURL: `http://127.0.0.1:${PORT}`, trace: 'on-first-retry' },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
