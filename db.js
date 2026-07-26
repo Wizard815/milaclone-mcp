@@ -50,6 +50,7 @@ const stmt = {
   getItem: db.prepare(`SELECT * FROM items WHERE id = ?`),
   itemsForCanvas: db.prepare(`SELECT * FROM items WHERE canvasId = ? ORDER BY COALESCE(z, 0), createdAt, id`),
   itemsByParent: db.prepare(`SELECT * FROM items WHERE parentItemId = ?`),
+  todoItems: db.prepare(`SELECT * FROM items WHERE type = 'todo' ORDER BY createdAt, id`),
   itemsByCanvas: db.prepare(`SELECT * FROM items WHERE canvasId = ?`),
   maxZ: db.prepare(`SELECT MAX(z) AS m FROM items`),
   childCount: db.prepare(`SELECT COUNT(*) AS c FROM items WHERE canvasId = ? AND parentItemId IS NULL`),

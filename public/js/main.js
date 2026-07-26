@@ -10,6 +10,7 @@ import { closePalette, closeCtx } from './menus.js';
 import { copySelected, pasteClipboard, duplicateSelected } from './clipboard.js';
 import { arm, disarm, initTools } from './tools.js';
 import { initMobile, updateMobileChrome } from './mobile.js';
+import { initQuickNotes, isQuickNotesOpen } from './quicknotes.js';
 
 // Entry point: canvas loading/navigation, global keyboard + pointer handling,
 // and boot. Wiring for the viewport and toolbar lives in their own modules and
@@ -29,7 +30,9 @@ export async function openCanvas(id) {
 }
 
 document.addEventListener('keydown', (e) => {
-  const typing = document.activeElement && /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName) && !document.activeElement.readOnly;
+  if (isQuickNotesOpen()) return;   // Quick notes owns the keyboard while it's up
+  const ae = document.activeElement;
+  const typing = ae && (ae.isContentEditable || (/^(INPUT|TEXTAREA)$/.test(ae.tagName) && !ae.readOnly));
   if (e.key === 'Escape') { disarm(); deselect(); closePalette(); closeCtx(); }
   if (typing) return;
   const mod = e.metaKey || e.ctrlKey;
@@ -47,6 +50,7 @@ document.addEventListener('keydown', (e) => {
 });
 
 document.addEventListener('pointerdown', (e) => {
+  if (isQuickNotesOpen()) return;
   if (!e.target.closest('#palette') && !e.target.closest('.swatch')) closePalette();
   if (!e.target.closest('#ctxmenu') && !e.target.closest('.item')) closeCtx();
   if (state.editingId && !e.target.closest('.item')) exitEdit();
@@ -59,6 +63,7 @@ window.addEventListener('hashchange', () => {
 
 initViewport();
 initMobile();
+initQuickNotes();
 initTools();
 
 (async function boot() {
