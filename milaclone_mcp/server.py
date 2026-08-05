@@ -1,28 +1,36 @@
 """
 MCP server exposing full read/write access to a self-hosted milaclone board.
 
-Run with `milaclone-mcp` (entry point) or `python -m milaclone_mcp.server`.
-Register in Claude Code by adding to ~/.claude.json under `mcpServers`:
+Two ways to run it:
 
-    "milaclone": {
-      "command": "/abs/path/to/.venv/bin/milaclone-mcp"
-    }
+- stdio (default) — for a locally-installed Claude Code/Desktop that spawns
+  the server itself. Register in ~/.claude.json under `mcpServers`:
+
+      "milaclone": {
+        "command": "/abs/path/to/.venv/bin/milaclone-mcp"
+      }
+
+- streamable-http — for running as a standalone service (e.g. in Docker on
+  Unraid) that a remote MCP client connects to over the network. Set
+  MCP_TRANSPORT=streamable-http (see README for the rest of the env vars).
 
 Config: set MILACLONE_URL (and MILACLONE_API_KEY if the server has one) in
 the project .env file (see README).
 """
 
+import os
 import random
+import secrets
 import string
 from typing import Any
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from milaclone_mcp.auth import load_config
 from milaclone_mcp.client import MilacloneClient
 from milaclone_mcp.exceptions import NotFoundError
 
-mcp = FastMCP("milaclone")
+mcp = MCPServer("milaclone")
 
 _client: MilacloneClient | None = None
 
@@ -286,7 +294,59 @@ def _find_todo(item_id: str) -> dict[str, Any]:
 
 
 def main() -> None:
-    mcp.run()
+    transport = os.environ.get("MCP_TRANSPORT", "stdio").strip().lower()
+
+    if transport == "stdio":
+        mcp.run()
+        return
+
+    if transport != "streamable-http":
+        raise ValueError(
+            f"Unknown MCP_TRANSPORT: {transport!r} (use 'stdio' or 'streamable-http')"
+        )
+
+    import uvicorn
+
+    host = os.environ.get("MCP_HOST", "0.0.0.0")
+    port = int(os.environ.get("MCP_PORT", "8383"))
+    auth_token = os.environ.get("MCP_AUTH_TOKEN", "").strip()
+
+    app = mcp.streamable_http_app(host=host)
+
+    if auth_token:
+        app.add_middleware(_BearerAuthMiddleware, token=auth_token)
+
+    uvicorn.run(app, host=host, port=port, log_level="info")
+
+
+class _BearerAuthMiddleware:
+    """
+    Minimal `Authorization: Bearer <token>` gate for the streamable-http
+    transport. Not OAuth — MCPServer's built-in `auth`/`token_verifier`
+    machinery is a full RFC 8414/9068 authorization-server integration meant
+    for enterprise IdPs, overkill for gating a single-user personal server.
+    This is the network-facing equivalent of milaclone's own API_KEY check.
+    """
+
+    def __init__(self, app: Any, token: str) -> None:
+        self.app = app
+        self.token = token
+
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+
+        headers = dict(scope.get("headers") or [])
+        header = headers.get(b"authorization", b"").decode()
+        provided = header[7:].strip() if header.lower().startswith("bearer ") else ""
+
+        if provided and secrets.compare_digest(provided, self.token):
+            return await self.app(scope, receive, send)
+
+        from starlette.responses import JSONResponse
+
+        response = JSONResponse({"error": "unauthorized"}, status_code=401)
+        await response(scope, receive, send)
 
 
 if __name__ == "__main__":

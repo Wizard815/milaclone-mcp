@@ -55,12 +55,41 @@ Add to `~/.claude.json` under `mcpServers`:
 
 (On Windows: `...\.venv\Scripts\milaclone-mcp.exe`.)
 
+### Run as a network service (Docker / Unraid)
+
+By default the server speaks **stdio**: Claude Code/Desktop spawns it as a
+local subprocess, so there's no network exposure at all. To instead run it as
+a persistent service other machines connect to (e.g. in Docker on Unraid,
+with Claude running elsewhere), set `MCP_TRANSPORT=streamable-http`:
+
+```bash
+docker compose up -d --build
+```
+
+That serves MCP over HTTP at `http://<host>:8383/mcp`. Point a remote MCP
+client at it as a `"url"`-style server config instead of `"command"`.
+
+Runs on **mcp 2.0**'s `MCPServer`, which supports `stdio`, `sse`, and
+`streamable-http` transports — this project uses stdio for local/Claude Code
+use and streamable-http for the networked Docker deployment.
+
 ## Auth
 
-milaclone has no auth by default (it relies on network-level trust — e.g.
-Tailscale-only exposure). If you've set `API_KEY` in milaclone's environment
-(see its README), set the matching `MILACLONE_API_KEY` here so requests are
-accepted.
+Two independent layers:
+
+- **milaclone's own API**: milaclone has no auth by default (it relies on
+  network-level trust — e.g. Tailscale-only exposure). If you've set
+  `API_KEY` in milaclone's environment (see its README), set the matching
+  `MILACLONE_API_KEY` here so this server's requests to milaclone are
+  accepted.
+- **This MCP server's own endpoint** (only relevant for `streamable-http` —
+  stdio has no network surface to protect): set `MCP_AUTH_TOKEN` to require
+  callers to send `Authorization: Bearer <token>`. This is a plain shared
+  secret, not OAuth — the mcp SDK's built-in `auth`/`token_verifier` options
+  wire up a full RFC 8414/9068 authorization-server integration meant for
+  enterprise identity providers, which is overkill for a single-user
+  personal server. Leave `MCP_AUTH_TOKEN` blank to rely on Tailscale/network
+  trust instead, same model milaclone itself uses.
 
 ## Notes on milaclone's data model
 

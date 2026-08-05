@@ -1,0 +1,19 @@
+name: milaclone-mcp
+
+services:
+  app:
+    build: .
+    image: milaclone-mcp:local
+    container_name: milaclone-mcp
+    restart: unless-stopped
+    ports:
+      - "8383:8383"
+    environment:
+      - MILACLONE_URL=${MILACLONE_URL:?set MILACLONE_URL in .env}
+      - MILACLONE_API_KEY=${MILACLONE_API_KEY:-}
+      - MCP_AUTH_TOKEN=${MCP_AUTH_TOKEN:-}
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
