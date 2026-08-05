@@ -2,18 +2,64 @@ name: milaclone-mcp
 
 services:
   app:
-    build: .
+    build: ./app
+    image: milaclone-app:local
+    container_name: milaclone-app
+    restart: unless-stopped
+    # LAN access via the Unraid host IP.
+    ports:
+      - "4321:4321"
+    volumes:
+      - milaclone_data:/data
+      - milaclone_uploads:/app/public/uploads
+    environment:
+      - PORT=4321
+      - DATA_DIR=/data
+      # Shared secret protecting /api/*. The mcp service below picks the
+      # same value up automatically. Leave unset to run the API open (fine
+      # on a trusted LAN + tunnel setup).
+      - API_KEY=${API_KEY:-}
+    networks:
+      - edge
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M
+
+  mcp:
+    build: ./mcp
     image: milaclone-mcp:local
     container_name: milaclone-mcp
     restart: unless-stopped
+    depends_on:
+      - app
     ports:
       - "8383:8383"
     environment:
-      - MILACLONE_URL=${MILACLONE_URL:?set MILACLONE_URL in .env}
-      - MILACLONE_API_KEY=${MILACLONE_API_KEY:-}
+      # Always co-located with `app` on this network, so no need to make
+      # this user-configurable.
+      - MILACLONE_URL=http://milaclone-app:4321
+      - MILACLONE_API_KEY=${API_KEY:-}
+      # Protects THIS server's own /mcp endpoint (streamable-http). Separate
+      # concern from API_KEY above — see mcp/README.md.
       - MCP_AUTH_TOKEN=${MCP_AUTH_TOKEN:-}
+    networks:
+      - edge
     deploy:
       resources:
         limits:
           cpus: "0.25"
           memory: 128M
+
+# `edge` is where an existing Cloudflare Tunnel (cloudflared) container
+# lives, so it can reach either service by container name for remote access.
+# `docker network create edge` once if you don't already have one — or
+# rename this to match whatever network your cloudflared setup already uses.
+networks:
+  edge:
+    external: true
+
+volumes:
+  milaclone_data:
+  milaclone_uploads:

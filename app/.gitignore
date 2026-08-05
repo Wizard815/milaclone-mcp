@@ -1,0 +1,13 @@
+node_modules/
+data/
+public/uploads/*
+!public/uploads/.gitkeep
+*.log
+.DS_Store
+
+.e2e-data/
+test-results/
+playwright-report/
+
+# Tailscale sidecar auth key
+.env

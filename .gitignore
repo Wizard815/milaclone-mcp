@@ -1,6 +1,20 @@
+# shared
 .env
-__pycache__/
-*.pyc
-.venv/
-dist/
-*.egg-info/
+*.log
+
+# app/ (Node)
+app/node_modules/
+app/data/
+app/public/uploads/*
+!app/public/uploads/.gitkeep
+app/.e2e-data/
+app/test-results/
+app/playwright-report/
+
+# mcp/ (Python)
+mcp/__pycache__/
+mcp/**/__pycache__/
+mcp/**/*.pyc
+mcp/.venv/
+mcp/dist/
+mcp/**/*.egg-info/
