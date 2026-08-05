@@ -14,8 +14,8 @@ alongside it — no separate setup step.
 
 ```bash
 cp .env.example .env
-# edit .env: set API_KEY (recommended) and, if exposing mcp remotely, MCP_AUTH_TOKEN
-docker network create edge   # skip if you already have one — see below
+# edit .env: set API_KEY (recommended), NETWORK_NAME/AI_NETWORK_NAME if yours
+# differ from the defaults, and MCP_AUTH_TOKEN if exposing mcp remotely
 docker compose up -d --build
 ```
 
@@ -24,26 +24,35 @@ docker compose up -d --build
 
 ## How the two pieces fit together
 
-| Service | Image built from | Port | Talks to |
+| Service | Image built from | Port | Networks |
 |---|---|---|---|
-| `app` | [`app/Dockerfile`](app/Dockerfile) | `4321` | itself (SQLite under `DATA_PATH` on the host) |
-| `mcp` | [`mcp/Dockerfile`](mcp/Dockerfile) | `8383` | `app`, over the internal `edge` network, at `http://milaclone-app:4321` |
+| `app` | [`app/Dockerfile`](app/Dockerfile) | `4321` | `edge` |
+| `mcp` | [`mcp/Dockerfile`](mcp/Dockerfile) | `8383` | `edge`, `ai` |
 
-They share one Docker network (`edge`) so `mcp` can reach `app` by container
-name without any manual URL configuration, and so an existing Cloudflare
-Tunnel (`cloudflared`) container can reach either of them the same way for
-remote access. Create it once if it doesn't already exist:
+Both join **`edge`** (default network name: `proxynat`, override with
+`NETWORK_NAME` in `.env`) — the network your Cloudflare Tunnel (`cloudflared`)
+container is already on, so it can reach either service by container name
+for remote access, and so `mcp` can reach `app` at `http://milaclone-app:4321`
+with no manual URL config.
+
+`mcp` *additionally* joins **`ai`** (default network name: `ai_net`, override
+with `AI_NETWORK_NAME`) — wherever your AI tooling lives, so it can reach
+`mcp` directly without going through the tunnel. `app` deliberately does not
+join `ai`; it has no reason to be reachable from there.
+
+Both networks must already exist — compose attaches to them, it doesn't
+create them:
 
 ```bash
-docker network create edge
+docker network create proxynat   # skip if you already have it
+docker network create ai_net     # skip if you already have it
 ```
 
-Already run `cloudflared` on its own network? Rename `edge` to that network's
-name in `docker-compose.yml` instead of creating a new one — then point your
-tunnel's ingress rules at `http://milaclone-app:4321` (board) and/or
-`http://milaclone-mcp:8383/mcp` (MCP, only if you want a remote AI assistant
-reaching it — see [Auth](#auth) first). LAN clients keep using the plain
-`<unraid-ip>:4321` / `:8383` host ports regardless.
+If you point your tunnel's ingress rules at either service, that'd be
+`http://milaclone-app:4321` (board) and/or `http://milaclone-mcp:8383/mcp`
+(MCP — only if you want a remote AI assistant reaching it; see
+[Auth](#auth) first). LAN clients keep using the plain `<unraid-ip>:4321` /
+`:8383` host ports regardless.
 
 No Tailscale involved by default; add a sidecar the same way if you'd rather
 use that instead.
