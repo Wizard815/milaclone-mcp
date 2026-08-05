@@ -10,8 +10,11 @@ services:
     ports:
       - "4321:4321"
     volumes:
-      - milaclone_data:/data
-      - milaclone_uploads:/app/public/uploads
+      # Bind mounts under Unraid's appdata by default — visible in the array,
+      # covered by the CA Backup plugin. Override DATA_PATH/UPLOADS_PATH in
+      # .env to put them somewhere else.
+      - ${DATA_PATH:-/mnt/user/appdata/milaclone-mcp/data}:/data
+      - ${UPLOADS_PATH:-/mnt/user/appdata/milaclone-mcp/uploads}:/app/public/uploads
     environment:
       - PORT=4321
       - DATA_DIR=/data
@@ -59,7 +62,3 @@ services:
 networks:
   edge:
     external: true
-
-volumes:
-  milaclone_data:
-  milaclone_uploads:

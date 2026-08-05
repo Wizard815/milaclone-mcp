@@ -26,7 +26,7 @@ docker compose up -d --build
 
 | Service | Image built from | Port | Talks to |
 |---|---|---|---|
-| `app` | [`app/Dockerfile`](app/Dockerfile) | `4321` | itself (SQLite in the `milaclone_data` volume) |
+| `app` | [`app/Dockerfile`](app/Dockerfile) | `4321` | itself (SQLite under `DATA_PATH` on the host) |
 | `mcp` | [`mcp/Dockerfile`](mcp/Dockerfile) | `8383` | `app`, over the internal `edge` network, at `http://milaclone-app:4321` |
 
 They share one Docker network (`edge`) so `mcp` can reach `app` by container
@@ -63,14 +63,26 @@ Two independent layers, both optional, both off by default:
   providers, overkill here. Leave blank to rely on network trust instead
   (fine if `mcp` is only reachable on your LAN or through your tunnel).
 
-## Backups
+## Data location & backups
+
+Board data and uploads are bind-mounted from the host, not Docker-managed
+volumes — by default under Unraid's appdata convention:
+
+| Host path (default) | Container path | Holds |
+|---|---|---|
+| `/mnt/user/appdata/milaclone-mcp/data` | `/data` | `board.db` (SQLite) |
+| `/mnt/user/appdata/milaclone-mcp/uploads` | `/app/public/uploads` | uploaded images/files |
+
+Override either with `DATA_PATH` / `UPLOADS_PATH` in `.env` if you want them
+elsewhere. Being plain bind mounts, they live entirely outside Docker's
+lifecycle — `docker compose down`, `down -v`, and image rebuilds never touch
+them; only deleting the files themselves does. That also means they're
+covered automatically by Unraid's CA Backup / Restore Appdata plugin, and you
+can back the board up directly:
 
 ```bash
-docker compose cp app:/data/board.db ./backup-$(date +%F).db
+cp /mnt/user/appdata/milaclone-mcp/data/board.db ./backup-$(date +%F).db
 ```
-
-Board data (`milaclone_data`) and uploads (`milaclone_uploads`) live in named
-volumes untouched by `docker compose down` — only `down -v` removes them.
 
 ## Updating
 
