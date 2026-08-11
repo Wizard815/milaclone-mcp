@@ -29,7 +29,7 @@ export function initMobile() {
   // The tray mirrors the desktop rail: clone its buttons so the icon set and
   // data-tool wiring stay defined in one place. They get their own class so
   // desktop-only selectors keep matching a single element per tool.
-  document.querySelectorAll('#rail .tool').forEach(btn => {
+  document.querySelectorAll('#railCreate .tool').forEach(btn => {
     const c = btn.cloneNode(true);
     c.classList.remove('tool');
     c.classList.add('mtool');
@@ -42,7 +42,12 @@ export function initMobile() {
   });
 
   el('mAdd').onclick = () => { nav.hidden = true; tray.hidden = false; };
-  el('mTrayClose').onclick = () => { disarm(); tray.hidden = true; nav.hidden = false; };
+  el('mTrayClose').onclick = () => {
+    disarm();
+    tray.hidden = true;
+    // Board selection chrome may own the footer; only restore the tab bar when idle.
+    if (!el('mfBoard') || el('mfBoard').hidden) nav.hidden = false;
+  };
 
   el('mBoards').onclick = () => { if (state.rootCanvasId) openCanvas(state.rootCanvasId); };
   el('mNotes').onclick = () => openQuickNotes();
@@ -69,4 +74,75 @@ export function initMobile() {
   document.addEventListener('pointerdown', (e) => {
     if (!sheet.hidden && !e.target.closest('#msheet') && !e.target.closest('#mMore')) sheet.hidden = true;
   }, true);
+
+  // Safari still fires gesture* events for page pinch-zoom even with the
+  // viewport meta; kill them so only our canvas camera zooms.
+  for (const type of ['gesturestart', 'gesturechange', 'gestureend']) {
+    document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
+  }
+  pinChromeToVisualViewport();
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', pinChromeToVisualViewport);
+    window.visualViewport.addEventListener('scroll', pinChromeToVisualViewport);
+  }
+  window.addEventListener('resize', pinChromeToVisualViewport);
+}
+
+// Keep header/footer glued to the *visible* screen if the browser zooms or
+// shifts the visual viewport. Canvas zoom only transforms #world and never
+// reaches these nodes.
+function pinChromeToVisualViewport() {
+  const vv = window.visualViewport;
+  const footer = el('mfooter');
+  const header = el('mheader');
+  const sheet = el('msheet');
+  if (!vv || !footer) return;
+
+  const scale = vv.scale || 1;
+  const idle = scale === 1 && vv.offsetTop === 0 && vv.offsetLeft === 0;
+  const nodes = [footer, header, sheet];
+
+  if (idle) {
+    for (const node of nodes) {
+      if (!node) continue;
+      node.style.left = '';
+      node.style.right = '';
+      node.style.top = '';
+      node.style.bottom = '';
+      node.style.width = '';
+      node.style.transform = '';
+      node.style.transformOrigin = '';
+    }
+    return;
+  }
+
+  // Counter browser pinch-zoom: keep chrome screen-sized and glued to the
+  // visible viewport edges (canvas zoom only transforms #world).
+  const inv = 1 / scale;
+  const tx = vv.offsetLeft;
+  const tyTop = vv.offsetTop;
+  const tyBottom = vv.offsetTop + vv.height - window.innerHeight;
+
+  footer.style.left = '0';
+  footer.style.right = 'auto';
+  footer.style.width = window.innerWidth + 'px';
+  footer.style.bottom = '0';
+  footer.style.top = 'auto';
+  footer.style.transformOrigin = 'left bottom';
+  footer.style.transform = 'translate(' + tx + 'px, ' + tyBottom + 'px) scale(' + inv + ')';
+
+  if (header) {
+    header.style.left = '0';
+    header.style.right = 'auto';
+    header.style.width = window.innerWidth + 'px';
+    header.style.top = '0';
+    header.style.bottom = 'auto';
+    header.style.transformOrigin = 'left top';
+    header.style.transform = 'translate(' + tx + 'px, ' + tyTop + 'px) scale(' + inv + ')';
+  }
+
+  if (sheet) {
+    sheet.style.transformOrigin = 'left bottom';
+    sheet.style.transform = 'translate(' + tx + 'px, ' + tyBottom + 'px) scale(' + inv + ')';
+  }
 }

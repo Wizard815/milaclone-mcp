@@ -10,6 +10,7 @@ import { closePalette, closeCtx } from './menus.js';
 import { copySelected, pasteClipboard, duplicateSelected } from './clipboard.js';
 import { arm, disarm, initTools } from './tools.js';
 import { initMobile, updateMobileChrome } from './mobile.js';
+import { initBoardChrome, updateSelectionChrome } from './boardchrome.js';
 import { initQuickNotes, isQuickNotesOpen } from './quicknotes.js';
 
 // Entry point: canvas loading/navigation, global keyboard + pointer handling,
@@ -24,6 +25,7 @@ export async function openCanvas(id) {
   closeCtx();
   renderCrumbs();
   updateMobileChrome();
+  updateSelectionChrome();
   render();
   applyCam();
   if (location.hash.slice(1) !== id) { history.replaceState(null, '', '#' + id); }
@@ -63,6 +65,7 @@ window.addEventListener('hashchange', () => {
 
 initViewport();
 initMobile();
+initBoardChrome();
 initQuickNotes();
 initTools();
 

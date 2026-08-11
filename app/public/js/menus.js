@@ -9,19 +9,26 @@ import { copySelected, pasteClipboard, duplicateSelected, toggleLock } from './c
 
 // The floating color/icon palette and the right-click context menu.
 
-export function openPalette(it, anchor) {
-  dom.palette.innerHTML = '';
-  dom.palette.className = it.type === 'board' ? 'open board-palette' : 'open';
+// mode: 'color' | 'icon' | 'auto' (auto = colors, plus icons for boards — legacy badge path)
+export function openPalette(it, anchor, mode = 'auto') {
+  while (dom.palette.firstChild) dom.palette.removeChild(dom.palette.firstChild);
+  const showColor = mode === 'color' || mode === 'auto';
+  const showIcon = mode === 'icon' || (mode === 'auto' && it.type === 'board');
+  dom.palette.className = 'open' + (showIcon ? ' board-palette' : '') + (mode === 'icon' ? ' icon-only' : '');
 
-  COLORS.forEach(c => {
-    const sw = document.createElement('div'); sw.className = 'sw' + ((it.color || it._childColor) === c ? ' sel' : '');
-    sw.style.background = colorVar(c);
-    sw.onclick = () => { it.color = c; if (it.type === 'board') it._childColor = c; api.patch(it.id, { color: c }); refreshItem(it); closePalette(); };
-    dom.palette.appendChild(sw);
-  });
+  if (showColor) {
+    COLORS.forEach(c => {
+      const sw = document.createElement('div'); sw.className = 'sw' + ((it.color || it._childColor) === c ? ' sel' : '');
+      sw.style.background = colorVar(c);
+      sw.onclick = () => { it.color = c; if (it.type === 'board') it._childColor = c; api.patch(it.id, { color: c }); refreshItem(it); closePalette(); };
+      dom.palette.appendChild(sw);
+    });
+  }
 
-  if (it.type === 'board') {
-    const sep = document.createElement('div'); sep.className = 'pal-sep'; dom.palette.appendChild(sep);
+  if (showIcon) {
+    if (showColor) {
+      const sep = document.createElement('div'); sep.className = 'pal-sep'; dom.palette.appendChild(sep);
+    }
     const grid = document.createElement('div'); grid.className = 'icon-grid';
     const current = it._childIcon || 'layout-grid';
     BOARD_ICONS.forEach(name => {
@@ -42,13 +49,19 @@ export function openPalette(it, anchor) {
   }
 
   const r = anchor.getBoundingClientRect();
-  const w = it.type === 'board' ? 280 : 210;
-  dom.palette.style.left = Math.min(r.left, window.innerWidth - w) + 'px';
-  dom.palette.style.top = (r.bottom + 8) + 'px';
+  const w = showIcon ? 280 : 210;
+  let left = Math.min(r.left, window.innerWidth - w - 8);
+  let top = r.bottom + 8;
+  if (top + 220 > window.innerHeight) top = Math.max(8, r.top - 228);
+  dom.palette.style.left = Math.max(8, left) + 'px';
+  dom.palette.style.top = top + 'px';
   refreshIcons(dom.palette);
 }
 
-export function closePalette() { dom.palette.classList.remove('open', 'board-palette'); dom.palette.innerHTML = ''; }
+export function closePalette() {
+  dom.palette.classList.remove('open', 'board-palette', 'icon-only');
+  while (dom.palette.firstChild) dom.palette.removeChild(dom.palette.firstChild);
+}
 
 export function openCtx(e, it) {
   e.preventDefault();

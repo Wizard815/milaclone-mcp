@@ -24,7 +24,7 @@ export function disarm() {
 
 // Wire up the rail buttons, canvas pan/place, and the upload inputs. Called once at boot.
 export function initTools() {
-  document.querySelectorAll('.tool').forEach(btn => {
+  document.querySelectorAll('#railCreate .tool').forEach(btn => {
     btn.addEventListener('click', () => {
       const t = btn.dataset.tool;
       if (state.armed === t) { disarm(); return; }

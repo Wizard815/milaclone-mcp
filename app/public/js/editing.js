@@ -4,6 +4,7 @@ import { state, elMap } from './state.js';
 import { api } from './api.js';
 import { render, renderCrumbs } from './cards.js';
 import { closePalette, closeCtx } from './menus.js';
+import { updateSelectionChrome } from './boardchrome.js';
 
 // Selection, inline-edit mode, debounced saves, and deletion.
 
@@ -15,6 +16,7 @@ export function select(id) {
   if (id && elMap.get(id)) elMap.get(id).classList.add('selected');
   closePalette();
   closeCtx();
+  updateSelectionChrome();
 }
 
 export function deselect() { select(null); if (state.editingId) exitEdit(); }
@@ -62,4 +64,5 @@ export async function deleteItem(id) {
   if (state.selectedId === id) state.selectedId = null;
   closeCtx();
   render();
+  updateSelectionChrome();
 }

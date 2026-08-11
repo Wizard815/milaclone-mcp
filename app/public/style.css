@@ -81,6 +81,15 @@ input, textarea { font-family: var(--sans); }
 .tool.armed { background: #e9f0ff; color: var(--accent); }
 .tool.armed svg { color: var(--accent); }
 .rail-sep { width: 28px; height: 1px; background: var(--rail-border); margin: 8px 0; }
+#railCreate, #railBoard { display: flex; flex-direction: column; align-items: center; width: 100%; gap: 2px; }
+#railBoard[hidden], #railCreate[hidden] { display: none; }
+.rail-swatch {
+  width: 22px; height: 22px; border-radius: 6px; display: block;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.08);
+}
+.rail-icon { width: 22px; height: 22px; display: grid; place-items: center; color: var(--ink); }
+.rail-icon svg { width: 22px; height: 22px; }
+#railBoard .tool { color: var(--ink); }
 
 /* ---------- canvas / world ---------- */
 #stage {
@@ -218,6 +227,10 @@ input, textarea { font-family: var(--sans); }
 .item.locked { cursor: default; }
 .lock-badge { display: grid; place-items: center; color: #d6d8de; width: 28px; height: 28px; }
 .lock-badge svg { width: 14px; height: 14px; }
+.lock-badge.board-lock {
+  position: absolute; top: 8px; right: 8px; display: grid; place-items: center;
+  width: 26px; height: 26px; border-radius: 8px; background: #2b2d31; color: #d6d8de;
+}
 
 /* ---------- board tile lucide ---------- */
 .board .tile svg { width: 28px; height: 28px; color: #fff; stroke-width: 1.75; }
@@ -230,6 +243,8 @@ input, textarea { font-family: var(--sans); }
 }
 #palette.open { display: grid; }
 #palette.board-palette { width: 268px; grid-template-columns: repeat(6, 1fr); }
+#palette.icon-only { width: 268px; }
+#palette.icon-only .icon-grid { margin: 0; }
 #palette .sw { width: 24px; height: 24px; border-radius: 6px; cursor: pointer; border: 2px solid transparent; }
 #palette .sw:hover { transform: scale(1.08); }
 #palette .sw.sel { border-color: #2b2d31; }
@@ -274,23 +289,32 @@ input, textarea { font-family: var(--sans); }
 /* ---------- mobile chrome (header + footer, Milanote style) ---------- */
 /* Hidden on desktop; the media query below turns them on and hides the
    desktop top bar + tool rail instead. */
-#mheader, #mfooter, #msheet { display: none; }
+#mheader, #mfooter, #msheet, #mBoardSheet { display: none; }
 #hint .hint-mobile { display: none; }
 
 @media (max-width: 768px) {
-  body { overscroll-behavior: none; }
+  /* Pin the document itself so iOS can't rubber-band / page-zoom the chrome
+     away from the screen edges. Scrollable regions opt back into pan below. */
+  html, body {
+    position: fixed; inset: 0; width: 100%; height: 100%; height: 100dvh;
+    overflow: hidden; overscroll-behavior: none; touch-action: none;
+  }
+  .qn-scroll, .qn-chips, textarea, input { touch-action: pan-y; }
+  .mf-tools { touch-action: pan-x; }
+
   #topbar, #rail { display: none; }
-  #stage { top: 0; left: 0; }
+  #stage { top: 0; left: 0; right: 0; bottom: 0; touch-action: none; }
   #hint .hint-desktop { display: none; }
   #hint .hint-mobile { display: block; }
   .toast { bottom: calc(104px + env(safe-area-inset-bottom)); }
 
   /* header: back chevron / serif board title / share bubble */
   #mheader:not([hidden]) {
-    position: fixed; top: 0; left: 0; right: 0; z-index: 45;
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
     display: flex; align-items: center; gap: 8px;
     padding: calc(8px + env(safe-area-inset-top)) 10px 8px;
     background: #fff; border-bottom: 1px solid var(--rail-border);
+    touch-action: none;
   }
   .mh-btn {
     border: none; background: none; color: var(--ink); flex: 0 0 auto;
@@ -305,11 +329,13 @@ input, textarea { font-family: var(--sans); }
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #37414f;
   }
 
-  /* footer: ••• | Your boards / Quick notes | +  (or the tool tray) */
+  /* footer: glued to the screen bottom — never part of the canvas zoom. */
   #mfooter {
-    position: fixed; left: 0; right: 0; bottom: 0; z-index: 45;
+    position: fixed; left: 0; right: 0; bottom: 0; width: 100%;
+    z-index: 100;
     display: block; background: #fff; border-top: 1px solid var(--rail-border);
     padding-bottom: env(safe-area-inset-bottom);
+    touch-action: none;
   }
   .mf-row { display: flex; align-items: center; min-height: 86px; padding: 0 10px; gap: 6px; }
   .mf-row[hidden] { display: none; }
@@ -345,12 +371,53 @@ input, textarea { font-family: var(--sans); }
   .mtool.armed { color: var(--accent); }
   .mtool.armed svg { background: #5b7cfa; border-color: #5b7cfa; color: #fff; }
 
+  /* Board selection footer: Color · Icon · Rename · More | Done */
+  #mfBoard {
+    display: flex; align-items: center; gap: 8px;
+    min-height: 86px; padding: 8px 12px; justify-content: space-between;
+  }
+  #mfBoard[hidden] { display: none; }
+  .mf-board-actions {
+    display: flex; align-items: stretch; gap: 4px; min-width: 0; flex: 1;
+    overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  }
+  .mf-board-actions::-webkit-scrollbar { display: none; }
+  .mf-bact {
+    border: none; background: none; color: var(--ink); flex: 0 0 auto; width: 68px;
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    font-size: 12px; font-weight: 600; padding: 0;
+  }
+  .mf-bact-swatch, .mf-bact-icon, .mf-bact-glyph {
+    width: 44px; height: 44px; border-radius: 10px; display: grid; place-items: center;
+    background: #f1f1f3; border: 1px solid #e4e5e9; box-sizing: border-box;
+  }
+  .mf-bact-swatch { border: none; }
+  .mf-bact-icon svg, .mf-bact-glyph svg, .mf-bact-glyph i { width: 22px; height: 22px; color: var(--ink); }
+  .mf-done {
+    border: none; background: none; color: #e85d04; font-size: 17px; font-weight: 700;
+    padding: 10px 8px; flex: 0 0 auto;
+  }
+
+  #mBoardSheet:not([hidden]) {
+    position: fixed; z-index: 101; left: 12px;
+    bottom: calc(98px + env(safe-area-inset-bottom));
+    display: flex; flex-direction: column; min-width: 180px;
+    background: #fff; border: 1px solid var(--rail-border); border-radius: 14px;
+    box-shadow: var(--card-shadow-hover); padding: 6px;
+  }
+  #mBoardSheet button {
+    border: none; background: none; text-align: left; color: var(--ink);
+    font-size: 15px; padding: 11px 12px; border-radius: 9px;
+  }
+  #mBoardSheet button.danger { color: #c0392b; }
+  #mBoardSheet button:hover, #mBoardSheet button:active { background: #f1f1f3; }
+
   /* Quick notes takes over the whole viewport, canvas chrome included */
   #quicknotes:not([hidden]) { display: block; }
 
   /* ••• action sheet */
   #msheet:not([hidden]) {
-    position: fixed; z-index: 46; left: 12px;
+    position: fixed; z-index: 101; left: 12px;
     bottom: calc(98px + env(safe-area-inset-bottom));
     display: flex; flex-direction: column; min-width: 180px;
     background: #fff; border: 1px solid var(--rail-border); border-radius: 14px;
@@ -372,7 +439,7 @@ input, textarea { font-family: var(--sans); }
    ========================================================================= */
 #quicknotes {
   display: none;
-  position: fixed; inset: 0; z-index: 50;
+  position: fixed; inset: 0; z-index: 120;
   background: var(--qn-screen);
   font-family: var(--sans);
 
@@ -682,6 +749,6 @@ input, textarea { font-family: var(--sans); }
 /* toast matches the Quick notes palette while the workspace is open */
 body.qn-open .toast {
   background: #16181C; border-radius: 999px; padding: 10px 18px;
-  font-size: 14px; font-weight: 600; z-index: 90;
+  font-size: 14px; font-weight: 600; z-index: 130;
   bottom: calc(112px + env(safe-area-inset-bottom));
 }

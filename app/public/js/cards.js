@@ -4,6 +4,7 @@ import { state, dom, elMap } from './state.js';
 import { colorVar, lucideEl, refreshIcons, autoGrow, isLocked, rid, normalizeUrl } from './util.js';
 import { select, enterEdit, exitEdit, saveData, deleteItem } from './editing.js';
 import { openPalette, openCtx } from './menus.js';
+import { updateSelectionChrome } from './boardchrome.js';
 import { onItemPointerDown, startResize } from './drag.js';
 import { openCanvas } from './main.js';
 
@@ -75,28 +76,38 @@ export function renderItem(it) {
   else if (it.type === 'board') buildBoard(el, it);
   else if (it.type === 'column') buildColumn(el, it);
 
-  const tools = document.createElement('div');
-  tools.className = 'card-tools';
-  const colorBtn = document.createElement('div');
-  colorBtn.className = 'swatch';
-  colorBtn.style.background = colorVar(it.color || (it._childColor) || 'slate');
-  colorBtn.title = 'Color';
-  colorBtn.setAttribute('data-nodrag', '');
-  colorBtn.onclick = (e) => { e.stopPropagation(); openPalette(it, colorBtn); };
-  const delBtn = document.createElement('button');
-  delBtn.setAttribute('data-nodrag', '');
-  delBtn.appendChild(lucideEl('trash-2'));
-  delBtn.title = 'Delete';
-  delBtn.onclick = (e) => { e.stopPropagation(); deleteItem(it.id); };
-  tools.appendChild(colorBtn); tools.appendChild(delBtn);
-  if (isLocked(it)) {
+  // Boards use the rail / mobile footer for color·icon·rename·delete.
+  // Other cards keep the floating properties badge.
+  if (it.type !== 'board') {
+    const tools = document.createElement('div');
+    tools.className = 'card-tools';
+    const colorBtn = document.createElement('div');
+    colorBtn.className = 'swatch';
+    colorBtn.style.background = colorVar(it.color || 'slate');
+    colorBtn.title = 'Color';
+    colorBtn.setAttribute('data-nodrag', '');
+    colorBtn.onclick = (e) => { e.stopPropagation(); openPalette(it, colorBtn, 'color'); };
+    const delBtn = document.createElement('button');
+    delBtn.setAttribute('data-nodrag', '');
+    delBtn.appendChild(lucideEl('trash-2'));
+    delBtn.title = 'Delete';
+    delBtn.onclick = (e) => { e.stopPropagation(); deleteItem(it.id); };
+    tools.appendChild(colorBtn); tools.appendChild(delBtn);
+    if (isLocked(it)) {
+      const lockBadge = document.createElement('span');
+      lockBadge.className = 'lock-badge';
+      lockBadge.appendChild(lucideEl('lock'));
+      lockBadge.title = 'Position locked';
+      tools.appendChild(lockBadge);
+    }
+    el.appendChild(tools);
+  } else if (isLocked(it)) {
     const lockBadge = document.createElement('span');
-    lockBadge.className = 'lock-badge';
+    lockBadge.className = 'lock-badge board-lock';
     lockBadge.appendChild(lucideEl('lock'));
     lockBadge.title = 'Position locked';
-    tools.appendChild(lockBadge);
+    el.appendChild(lockBadge);
   }
-  el.appendChild(tools);
 
   if (it.type !== 'board' && !it.parentItemId && !isLocked(it)) {
     const rz = document.createElement('div'); rz.className = 'resize'; rz.setAttribute('data-nodrag', '');
@@ -275,4 +286,5 @@ export function refreshItem(it) {
       if (ke) elMap.set(k.id, ke);
     }
   }
+  if (it.type === 'board' && it.id === state.selectedId) updateSelectionChrome();
 }
