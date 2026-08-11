@@ -330,7 +330,6 @@ function buildDraw(el, it) {
 
   const svg = document.createElementNS(SVG_NS, 'svg');
   svg.classList.add('dsurface');
-  svg.setAttribute('data-nodrag', '');
   svg.setAttribute('width', it.w || 320);
   svg.setAttribute('height', DRAW_H);
 
@@ -352,10 +351,17 @@ function buildDraw(el, it) {
     return [Math.round(w.x - it.x), Math.round(w.y - it.y)];
   };
 
+  // Drawing only intercepts the pointer once the card is in edit mode
+  // (entered via double-click, same as opening a document); otherwise a
+  // pointerdown on the surface falls through to the normal card
+  // select/drag handling so the card can still be moved around the board.
+  svg.addEventListener('dblclick', (e) => { e.stopPropagation(); enterEdit(el); });
+
   let current = null, currentPath = null;
   svg.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return;
-    e.stopPropagation();
+    if (!el.classList.contains('editing')) return;
+    e.stopPropagation(); e.preventDefault();
     select(it.id);
     current = { points: [toLocal(e)], color: it.color || 'slate', width: 3 };
     currentPath = strokePath(current);

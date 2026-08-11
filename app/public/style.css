@@ -427,7 +427,9 @@ input, textarea { font-family: var(--sans); }
 
 /* ---------- draw ---------- */
 .draw { padding: 0; overflow: hidden; height: 220px; }
-.draw .dsurface { display: block; touch-action: none; cursor: crosshair; background: var(--card-bg); }
+.draw.editing { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(47,109,240,.25), var(--card-shadow-hover); }
+.draw .dsurface { display: block; touch-action: none; cursor: grab; background: var(--card-bg); }
+.draw.editing .dsurface { cursor: crosshair; touch-action: none; }
 .draw .dtools {
   position: absolute; right: 8px; bottom: 8px; display: flex; gap: 4px;
   background: #2b2d31; padding: 4px; border-radius: 9px; box-shadow: var(--card-shadow-hover);
