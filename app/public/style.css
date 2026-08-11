@@ -150,6 +150,17 @@ input, textarea { font-family: var(--sans); }
 .rail-icon svg { width: 22px; height: 22px; }
 #railBoard .tool { color: var(--ink); }
 
+/* ---------- press-and-hold drag-to-place ghost ---------- */
+.drag-ghost {
+  position: fixed; z-index: 300; pointer-events: none; transform: translate(-50%, -50%);
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 8px 10px; border-radius: 10px; opacity: .92;
+  background: var(--card-bg); border: 1px solid var(--card-border); box-shadow: var(--card-shadow-hover);
+  color: var(--ink-soft); font-size: 10px; letter-spacing: .2px;
+}
+.drag-ghost svg, .drag-ghost i { width: 20px; height: 20px; display: block; }
+.drag-ghost i svg { width: 20px; height: 20px; }
+
 /* ---------- canvas / world ---------- */
 #stage {
   position: fixed; top: 52px; left: 64px; right: 0; bottom: 0;

@@ -30,7 +30,8 @@ export const state = {
   pendingUploadWorld: null,
   drag: null,
   pan: null,
-  pinching: false
+  pinching: false,
+  suppressNextClick: false
 };
 
 // Item id -> rendered DOM element. Cleared/repopulated on every render.

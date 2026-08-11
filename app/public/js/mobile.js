@@ -34,6 +34,7 @@ export function initMobile() {
     c.classList.remove('tool');
     c.classList.add('mtool');
     c.addEventListener('click', () => {
+      if (state.suppressNextClick) { state.suppressNextClick = false; return; }
       const t = c.dataset.tool;
       if (state.armed === t) { disarm(); return; }
       arm(t, c);
