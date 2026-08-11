@@ -391,7 +391,7 @@ input, textarea { font-family: var(--sans); }
 /* ---------- connector lines ---------- */
 /* Free-floating above every card, not tucked behind them — z-index far past
    anything an item's own z (bring-to-front order) will ever reach. */
-#linesLayer { position: absolute; top: 0; left: 0; overflow: visible; pointer-events: none; z-index: 5000; }
+#linesLayer { position: absolute; top: 0; left: 0; overflow: visible; pointer-events: none; z-index: 5000; user-select: none; }
 .cline { pointer-events: auto; cursor: pointer; }
 .cline .chit { stroke: transparent; stroke-width: 14; fill: none; pointer-events: stroke; }
 .cline .cvis { stroke-width: 2; fill: none; }

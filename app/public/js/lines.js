@@ -157,7 +157,7 @@ export function renderLines() {
       // Drag an endpoint dot onto a different card to re-point the
       // connector at it. Dropping on empty canvas or the same card cancels.
       grabArea.addEventListener('pointerdown', (e) => {
-        e.stopPropagation();
+        e.stopPropagation(); e.preventDefault();
         select(line.id);
         const otherId = isFrom ? line.data.toId : line.data.fromId;
         const move = (ev) => {
@@ -181,7 +181,7 @@ export function renderLines() {
         document.addEventListener('pointerup', up);
       });
     }
-    g.addEventListener('pointerdown', (e) => { e.stopPropagation(); select(line.id); renderLines(); });
+    g.addEventListener('pointerdown', (e) => { e.stopPropagation(); e.preventDefault(); select(line.id); renderLines(); });
     layer.appendChild(g);
 
     if (selected) {
@@ -192,7 +192,7 @@ export function renderLines() {
       handle.setAttribute('cx', ctrl.x); handle.setAttribute('cy', ctrl.y); handle.setAttribute('r', 5);
       handle.setAttribute('class', 'cbend');
       bendGrab.addEventListener('pointerdown', (e) => {
-        e.stopPropagation();
+        e.stopPropagation(); e.preventDefault();
         const move = (ev) => {
           const w = screenToWorld(ev.clientX, ev.clientY);
           line.data.bend = (w.x - mx) * px + (w.y - my) * py;
