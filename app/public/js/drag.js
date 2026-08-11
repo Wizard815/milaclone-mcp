@@ -6,11 +6,13 @@ import { isLocked } from './util.js';
 import { screenToWorld } from './viewport.js';
 import { select, enterEdit } from './editing.js';
 import { render } from './cards.js';
+import { renderLines, pickLineEndpoint } from './lines.js';
 
 // Dragging cards (free-move + in/out of columns) and resizing.
 
 export function onItemPointerDown(e, it, el) {
   if (e.button !== 0) return;
+  if (state.armed === 'line') { e.stopPropagation(); pickLineEndpoint(it); return; }
   if (state.armed) return;
   if (e.target.closest('[data-nodrag]')) { e.stopPropagation(); return; }
   if (el.classList.contains('editing') && e.target.closest('[data-edit]')) { e.stopPropagation(); return; }
@@ -43,6 +45,7 @@ export function onItemPointerDown(e, it, el) {
     const wy = startWorld.y + dy / state.cam.scale;
     el.style.left = wx + 'px'; el.style.top = wy + 'px';
     highlightColumn(ev, it);
+    renderLines();
   };
 
   const up = (ev) => {
@@ -127,6 +130,7 @@ export function startResize(e, it, el) {
     let w = startW + (ev.clientX - startX) / state.cam.scale;
     w = Math.max(120, Math.min(900, w));
     el.style.width = w + 'px'; it.w = Math.round(w);
+    renderLines();
   };
   const up = () => {
     el.releasePointerCapture(e.pointerId);

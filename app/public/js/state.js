@@ -31,7 +31,8 @@ export const state = {
   drag: null,
   pan: null,
   pinching: false,
-  suppressNextClick: false
+  suppressNextClick: false,
+  lineFrom: null
 };
 
 // Item id -> rendered DOM element. Cleared/repopulated on every render.

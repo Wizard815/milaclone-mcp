@@ -7,6 +7,7 @@ import { screenToWorld, applyCam } from './viewport.js';
 import { createAt, defaultsFor } from './create.js';
 import { select, deselect } from './editing.js';
 import { render } from './cards.js';
+import { cancelLine } from './lines.js';
 
 // Toolbar arming, canvas panning + placing new cards, and file/image uploads.
 
@@ -14,11 +15,11 @@ export function arm(tool, btn) {
   disarm();
   state.armed = tool; dom.stage.classList.add('armed');
   btn.classList.add('armed');
-  toast('Tap the canvas to place your ' + tool);
+  toast(tool === 'line' ? 'Click a card, then another to connect them' : 'Tap the canvas to place your ' + tool);
 }
 
 export function disarm() {
-  state.armed = null; dom.stage.classList.remove('armed');
+  state.armed = null; state.lineFrom = null; dom.stage.classList.remove('armed');
   document.querySelectorAll('.tool.armed, .mtool.armed').forEach(b => b.classList.remove('armed'));
 }
 
@@ -36,7 +37,7 @@ function initDragPlace() {
   document.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return;
     const btn = e.target.closest('.tool[data-tool], .mtool[data-tool]');
-    if (!btn) return;
+    if (!btn || btn.dataset.tool === 'line') return;
     const startX = e.clientX, startY = e.clientY;
     let dragging = false, ghost = null;
 
@@ -85,6 +86,7 @@ export function initTools() {
   dom.stage.addEventListener('pointerdown', (e) => {
     if (e.button !== 0 && e.button !== 1) return;
     if (state.pinching) return;
+    if (state.armed === 'line') { cancelLine(); return; }
     if (state.armed) {
       const t = state.armed; disarm();
       placeAt(t, e.clientX, e.clientY);

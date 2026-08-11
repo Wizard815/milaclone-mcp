@@ -9,6 +9,7 @@ import { onItemPointerDown, startResize } from './drag.js';
 import { openCanvas } from './main.js';
 import { openDocument } from './docs.js';
 import { screenToWorld } from './viewport.js';
+import { renderLines } from './lines.js';
 
 // Rendering of the canvas and every card type. This module owns the DOM for
 // items; other modules ask it to (re)render when data changes.
@@ -20,12 +21,13 @@ export function childrenOf(id) {
 export function render() {
   dom.world.innerHTML = '';
   elMap.clear();
-  const free = state.view.items.filter(it => !it.parentItemId);
+  const free = state.view.items.filter(it => !it.parentItemId && it.type !== 'line');
   for (const it of free) {
     const el = renderItem(it);
     dom.world.appendChild(el);
     elMap.set(it.id, el);
   }
+  renderLines();
   dom.hint.style.display = state.view.items.length ? 'none' : 'block';
   refreshIcons(dom.world);
 }

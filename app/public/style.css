@@ -388,6 +388,14 @@ input, textarea { font-family: var(--sans); }
   background: none; width: 100%; color: var(--ink-soft);
 }
 
+/* ---------- connector lines ---------- */
+#linesLayer { position: absolute; top: 0; left: 0; overflow: visible; pointer-events: none; z-index: 0; }
+.cline { pointer-events: auto; cursor: pointer; }
+.cline .chit { stroke: transparent; stroke-width: 14; fill: none; pointer-events: stroke; }
+.cline .cvis { stroke-width: 2; fill: none; }
+.cline.selected .cvis { stroke-width: 3; }
+.cline.selected .chit { stroke: rgba(47,109,240,.12); }
+
 /* ---------- draw ---------- */
 .draw { padding: 0; overflow: hidden; height: 220px; }
 .draw .dsurface { display: block; touch-action: none; cursor: crosshair; background: var(--card-bg); }
