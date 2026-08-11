@@ -13,7 +13,7 @@ export function onItemPointerDown(e, it, el) {
   if (e.button !== 0) return;
   if (state.armed) return;
   if (e.target.closest('[data-nodrag]')) { e.stopPropagation(); return; }
-  if (el.classList.contains('editing') && e.target.closest('[data-edit]')) return;
+  if (el.classList.contains('editing') && e.target.closest('[data-edit]')) { e.stopPropagation(); return; }
   e.stopPropagation();
   select(it.id);
   if (isLocked(it)) return;
