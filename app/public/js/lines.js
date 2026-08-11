@@ -132,28 +132,66 @@ export function renderLines() {
     vis.setAttribute('marker-end', `url(#${markerId})`);
     g.appendChild(hit); g.appendChild(vis);
     // Short dashed stub bridging the card's edge to where the solid
-    // connector starts, plus the dot marker sitting right on the edge.
+    // connector starts, plus the dot marker sitting right on the edge. The
+    // dot itself is decorative (pointer-events:none in CSS) — a much bigger
+    // invisible circle underneath it is the actual, easy-to-grab drag
+    // target, same trick as the wide invisible .chit under the visible line.
     for (const attach of [fromAttach, toAttach]) {
+      const isFrom = attach === fromAttach;
       const stub = document.createElementNS(SVG_NS, 'line');
       stub.setAttribute('x1', attach.edge.x); stub.setAttribute('y1', attach.edge.y);
       stub.setAttribute('x2', attach.dot.x); stub.setAttribute('y2', attach.dot.y);
       stub.setAttribute('class', 'cstub');
       stub.setAttribute('stroke', color);
       g.appendChild(stub);
+
+      const grabArea = document.createElementNS(SVG_NS, 'circle');
+      grabArea.setAttribute('cx', attach.edge.x); grabArea.setAttribute('cy', attach.edge.y); grabArea.setAttribute('r', 14);
+      grabArea.setAttribute('class', 'cdot-grab');
       const dot = document.createElementNS(SVG_NS, 'circle');
-      dot.setAttribute('cx', attach.edge.x); dot.setAttribute('cy', attach.edge.y); dot.setAttribute('r', 3);
+      dot.setAttribute('cx', attach.edge.x); dot.setAttribute('cy', attach.edge.y); dot.setAttribute('r', 4);
       dot.setAttribute('class', 'cdot');
       dot.setAttribute('fill', color);
-      g.appendChild(dot);
+      g.appendChild(grabArea); g.appendChild(dot);
+
+      // Drag an endpoint dot onto a different card to re-point the
+      // connector at it. Dropping on empty canvas or the same card cancels.
+      grabArea.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        select(line.id);
+        const otherId = isFrom ? line.data.toId : line.data.fromId;
+        const move = (ev) => {
+          document.querySelectorAll('.item.line-target').forEach(el => el.classList.remove('line-target'));
+          const overEl = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.item');
+          if (overEl && overEl.dataset.id !== otherId) overEl.classList.add('line-target');
+        };
+        const up = (ev) => {
+          document.removeEventListener('pointermove', move);
+          document.removeEventListener('pointerup', up);
+          document.querySelectorAll('.item.line-target').forEach(el => el.classList.remove('line-target'));
+          const overEl = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.item');
+          const newId = overEl && overEl.dataset.id;
+          if (newId && newId !== otherId && newId !== (isFrom ? line.data.fromId : line.data.toId)) {
+            const patch = isFrom ? { fromId: newId } : { toId: newId };
+            saveData(line, patch);
+          }
+          renderLines();
+        };
+        document.addEventListener('pointermove', move);
+        document.addEventListener('pointerup', up);
+      });
     }
     g.addEventListener('pointerdown', (e) => { e.stopPropagation(); select(line.id); renderLines(); });
     layer.appendChild(g);
 
     if (selected) {
+      const bendGrab = document.createElementNS(SVG_NS, 'circle');
+      bendGrab.setAttribute('cx', ctrl.x); bendGrab.setAttribute('cy', ctrl.y); bendGrab.setAttribute('r', 14);
+      bendGrab.setAttribute('class', 'cbend-grab');
       const handle = document.createElementNS(SVG_NS, 'circle');
       handle.setAttribute('cx', ctrl.x); handle.setAttribute('cy', ctrl.y); handle.setAttribute('r', 5);
       handle.setAttribute('class', 'cbend');
-      handle.addEventListener('pointerdown', (e) => {
+      bendGrab.addEventListener('pointerdown', (e) => {
         e.stopPropagation();
         const move = (ev) => {
           const w = screenToWorld(ev.clientX, ev.clientY);
@@ -168,6 +206,7 @@ export function renderLines() {
         document.addEventListener('pointermove', move);
         document.addEventListener('pointerup', up);
       });
+      layer.appendChild(bendGrab);
       layer.appendChild(handle);
     }
 

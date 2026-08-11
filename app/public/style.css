@@ -399,10 +399,15 @@ input, textarea { font-family: var(--sans); }
 .cline.selected .chit { stroke: rgba(47,109,240,.12); }
 .cline .cstub { stroke-width: 1.6; stroke-dasharray: 2.5 3; stroke-linecap: round; pointer-events: none; }
 .cline .cdot { pointer-events: none; }
+.cline .cdot-grab { fill: transparent; pointer-events: auto; cursor: grab; }
+.cline .cdot-grab:hover ~ .cdot, .cline .cdot-grab:active ~ .cdot { r: 5.5; }
+.cline .cdot-grab:active { cursor: grabbing; }
+.cbend-grab { fill: transparent; pointer-events: auto; cursor: grab; }
+.cbend-grab:active { cursor: grabbing; }
 .cbend {
-  fill: var(--card-bg); stroke: var(--accent); stroke-width: 2; cursor: grab; pointer-events: auto;
+  fill: var(--card-bg); stroke: var(--accent); stroke-width: 2; pointer-events: none;
 }
-.cbend:active { cursor: grabbing; }
+.item.line-target { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius); }
 .cline-del {
   position: absolute; transform: translate(-50%, -50%); z-index: 5001;
   display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px;
