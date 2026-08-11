@@ -7,6 +7,7 @@ import { openPalette, openCtx } from './menus.js';
 import { updateSelectionChrome } from './boardchrome.js';
 import { onItemPointerDown, startResize } from './drag.js';
 import { openCanvas } from './main.js';
+import { openDocument } from './docs.js';
 
 // Rendering of the canvas and every card type. This module owns the DOM for
 // items; other modules ask it to (re)render when data changes.
@@ -113,7 +114,7 @@ export function renderItem(it) {
     el.appendChild(lockBadge);
   }
 
-  if (it.type !== 'board' && !it.parentItemId && !isLocked(it)) {
+  if (it.type !== 'board' && it.type !== 'document' && !it.parentItemId && !isLocked(it)) {
     const rz = document.createElement('div'); rz.className = 'resize'; rz.setAttribute('data-nodrag', '');
     rz.addEventListener('pointerdown', (e) => startResize(e, it, el));
     el.appendChild(rz);
@@ -224,12 +225,45 @@ function buildHeading(el, it) {
 
 function buildDocument(el, it) {
   el.classList.add('document');
-  const t = makeField('area', 'dtitle', it.data.title, 'Untitled document');
-  const b = makeField('area', 'dbody', it.data.body, 'Start writing…');
-  t.addEventListener('input', () => saveData(it, { title: t.value }));
-  b.addEventListener('input', () => saveData(it, { body: b.value }));
-  el.appendChild(t); el.appendChild(b);
-  requestAnimationFrame(() => { autoGrow(t); autoGrow(b); });
+  const tile = document.createElement('div'); tile.className = 'tile';
+  tile.style.background = colorVar(it.color || 'slate');
+  tile.appendChild(lucideEl('file-text'));
+  el.appendChild(tile);
+  const title = makeField('input', 'dtitle', it.data.title, 'Untitled document');
+  title.setAttribute('data-nodrag', '');
+  title.addEventListener('input', () => saveData(it, { title: title.value }));
+  title.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (el.dataset.suppressTitleClick) { delete el.dataset.suppressTitleClick; return; }
+    if (state.selectedId !== it.id) { select(it.id); return; }
+    enterEdit(el); title.focus(); title.select();
+  });
+  el.appendChild(title);
+  bindDocumentOpen(el, it);
+}
+
+// Mirrors bindBoardOpen: desktop gets dblclick, touch gets a double-tap
+// detector since mobile Safari doesn't synthesize dblclick from taps.
+function bindDocumentOpen(el, it) {
+  let lastTap = -Infinity, lastX = 0, lastY = 0;
+  const open = () => { exitEdit(); openDocument(it); };
+  el.addEventListener('dblclick', (e) => {
+    if (el.classList.contains('editing') && e.target.closest('[data-edit]')) return;
+    open();
+  });
+  el.addEventListener('pointerup', (e) => {
+    if (e.pointerType === 'mouse') return;
+    if (state.drag && state.drag.moved) return;
+    if (state.drag && state.drag.it && state.drag.it.id !== it.id) return;
+    const now = performance.now();
+    if (now - lastTap < 350 && Math.hypot(e.clientX - lastX, e.clientY - lastY) < 28) {
+      lastTap = -Infinity;
+      el.dataset.suppressTitleClick = '1';
+      open();
+      return;
+    }
+    lastTap = now; lastX = e.clientX; lastY = e.clientY;
+  });
 }
 
 function buildTable(el, it) {

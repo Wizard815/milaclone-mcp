@@ -12,6 +12,8 @@ import { arm, disarm, initTools } from './tools.js';
 import { initMobile, updateMobileChrome } from './mobile.js';
 import { initBoardChrome, updateSelectionChrome } from './boardchrome.js';
 import { initQuickNotes, isQuickNotesOpen } from './quicknotes.js';
+import { initDocs, isDocumentOpen } from './docs.js';
+import { initTheme } from './theme.js';
 
 // Entry point: canvas loading/navigation, global keyboard + pointer handling,
 // and boot. Wiring for the viewport and toolbar lives in their own modules and
@@ -33,6 +35,7 @@ export async function openCanvas(id) {
 
 document.addEventListener('keydown', (e) => {
   if (isQuickNotesOpen()) return;   // Quick notes owns the keyboard while it's up
+  if (isDocumentOpen()) return;     // Document editor owns the keyboard while it's up (handles its own Escape)
   const ae = document.activeElement;
   const typing = ae && (ae.isContentEditable || (/^(INPUT|TEXTAREA)$/.test(ae.tagName) && !ae.readOnly));
   if (e.key === 'Escape') { disarm(); deselect(); closePalette(); closeCtx(); }
@@ -67,7 +70,9 @@ initViewport();
 initMobile();
 initBoardChrome();
 initQuickNotes();
+initDocs();
 initTools();
+initTheme();
 
 (async function boot() {
   refreshIcons();

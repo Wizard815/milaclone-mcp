@@ -8,6 +8,15 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Figtree:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/style.css">
+<script>
+(function () {
+  try {
+    var t = localStorage.getItem('theme');
+    if (!t) t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    if (t === 'dark') document.documentElement.classList.add('dark');
+  } catch (e) {}
+})();
+</script>
 </head>
 <body>
 
@@ -15,6 +24,10 @@
   <div class="dots"><i class="r"></i><i class="y"></i><i class="g"></i></div>
   <nav id="crumbs"></nav>
   <div class="top-right">
+    <button class="theme-toggle" id="themeToggle" title="Toggle dark mode" aria-label="Toggle dark mode">
+      <i data-lucide="sun-medium" class="theme-icon-light"></i>
+      <i data-lucide="moon" class="theme-icon-dark"></i>
+    </button>
     <span class="ghost" id="exportBtn">Export</span>
     <div class="zoomwrap">
       <button id="zoomOut" title="Zoom out">−</button>
@@ -247,6 +260,41 @@
   <div class="qn-sheet" id="qnSheet">
     <div class="qn-grabber"></div>
     <div id="qnSheetBody"></div>
+  </div>
+</div>
+
+<div id="docEditor" hidden>
+  <div class="de-top">
+    <button class="de-back" id="deBack" aria-label="Back"><i data-lucide="chevron-left"></i></button>
+    <input class="de-title" id="deTitle" placeholder="Untitled document">
+    <div class="de-exportwrap">
+      <button class="de-exportbtn" id="deExportBtn">Export <i data-lucide="chevron-down"></i></button>
+      <div class="de-exportmenu" id="deExportMenu" hidden>
+        <div class="de-exportlabel">Export as…</div>
+        <button data-export="pdf"><i data-lucide="file-text"></i> PDF</button>
+        <button data-export="docx"><i data-lucide="file-type"></i> Word document</button>
+        <button data-export="md"><i data-lucide="file-code"></i> Markdown</button>
+        <button data-export="txt"><i data-lucide="file"></i> Plain text</button>
+      </div>
+    </div>
+  </div>
+  <div class="de-body">
+    <div class="de-toolbar" id="deToolbar">
+      <button data-cmd="bold" title="Bold"><b>B</b></button>
+      <button data-cmd="italic" title="Italic"><i>I</i></button>
+      <button data-cmd="strikeThrough" title="Strikethrough"><s>S</s></button>
+      <button data-cmd="underline" title="Underline"><u>U</u></button>
+      <button data-cmd="insertUnorderedList" title="Bullet list"><i data-lucide="list"></i></button>
+      <button data-cmd="insertOrderedList" title="Numbered list"><i data-lucide="list-ordered"></i></button>
+      <button data-cmd="indent" title="Indent"><i data-lucide="indent-increase"></i></button>
+      <button data-cmd="outdent" title="Outdent"><i data-lucide="indent-decrease"></i></button>
+      <button data-cmd="blockquote" title="Quote"><i data-lucide="quote"></i></button>
+      <button data-cmd="code" title="Code"><i data-lucide="code"></i></button>
+      <button data-cmd="link" title="Link"><i data-lucide="link"></i></button>
+    </div>
+    <div class="de-page">
+      <div class="de-content" id="deContent" contenteditable="true" data-placeholder="Start typing…"></div>
+    </div>
   </div>
 </div>
 
