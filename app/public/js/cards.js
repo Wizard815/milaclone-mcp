@@ -210,6 +210,8 @@ function buildBoard(el, it) {
   title.addEventListener('input', () => saveData(it, { title: title.value }));
   title.addEventListener('click', (e) => {
     e.stopPropagation();
+    // A touch double-tap opens the board on pointerup; don't fall through into rename.
+    if (el.dataset.suppressTitleClick) { delete el.dataset.suppressTitleClick; return; }
     if (state.selectedId !== it.id) { select(it.id); return; }
     enterEdit(el); title.focus(); title.select();
   });
@@ -217,10 +219,33 @@ function buildBoard(el, it) {
   const meta = document.createElement('div'); meta.className = 'bmeta';
   const n = it._childCount || 0; meta.textContent = n + (n === 1 ? ' card' : ' cards');
   el.appendChild(meta);
-  el.addEventListener('dblclick', (e) => {
-    if (el.classList.contains('editing') && e.target.closest('[data-edit]')) return;
+  bindBoardOpen(el, it);
+}
+
+// Desktop mouse gets a real dblclick; mobile Safari/WebKit does not synthesize
+// one from a double-tap, so we also detect a second quick, unmoved pointerup.
+function bindBoardOpen(el, it) {
+  let lastTap = -Infinity, lastX = 0, lastY = 0;
+  const open = () => {
     exitEdit();
     openCanvas(it.data.childCanvasId);
+  };
+  el.addEventListener('dblclick', (e) => {
+    if (el.classList.contains('editing') && e.target.closest('[data-edit]')) return;
+    open();
+  });
+  el.addEventListener('pointerup', (e) => {
+    if (e.pointerType === 'mouse') return;          // mouse keeps using dblclick
+    if (state.drag && state.drag.moved) return;      // was a drag, not a tap
+    if (state.drag && state.drag.it && state.drag.it.id !== it.id) return;
+    const now = performance.now();
+    if (now - lastTap < 350 && Math.hypot(e.clientX - lastX, e.clientY - lastY) < 28) {
+      lastTap = -Infinity;
+      el.dataset.suppressTitleClick = '1';
+      open();
+      return;
+    }
+    lastTap = now; lastX = e.clientX; lastY = e.clientY;
   });
 }
 

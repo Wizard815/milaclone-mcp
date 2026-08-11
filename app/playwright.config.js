@@ -14,7 +14,11 @@ module.exports = defineConfig({
   // open: 'never' keeps it from auto-launching a browser during local runs.
   reporter: [['list'], ['html', { open: 'never' }]],
   use: { baseURL: `http://127.0.0.1:${PORT}`, trace: 'on-first-retry' },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] }, testIgnore: '**/mobile-board.spec.js' },
+    // Mobile Safari path: touch double-tap must open boards without dblclick.
+    { name: 'mobile-webkit', use: { ...devices['iPhone 13'], browserName: 'webkit' }, testMatch: '**/mobile-board.spec.js' },
+  ],
   webServer: {
     command: `rm -rf .e2e-data && DATA_DIR=.e2e-data PORT=${PORT} node server.js`,
     url: `http://127.0.0.1:${PORT}/api/health`,
