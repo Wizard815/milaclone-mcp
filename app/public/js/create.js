@@ -17,6 +17,10 @@ export function defaultsFor(type) {
     case 'board':   return { w: 152, data: { title: 'Untitled board' } };
     case 'comment': return { w: 220, data: { body: '' } };
     case 'file':    return { w: 220, data: {} };
+    case 'heading': return { w: 320, data: { text: '' } };
+    case 'document':return { w: 340, data: { title: '', body: '' } };
+    case 'table':   return { w: 360, data: { rows: [['', ''], ['', '']] } };
+    case 'color':   return { w: 160, data: { hex: '#2f6df0' } };
     default:        return { w: 240, data: {} };
   }
 }

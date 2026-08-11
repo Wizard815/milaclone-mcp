@@ -75,6 +75,10 @@ export function renderItem(it) {
   else if (it.type === 'comment') buildComment(el, it);
   else if (it.type === 'board') buildBoard(el, it);
   else if (it.type === 'column') buildColumn(el, it);
+  else if (it.type === 'heading') buildHeading(el, it);
+  else if (it.type === 'document') buildDocument(el, it);
+  else if (it.type === 'table') buildTable(el, it);
+  else if (it.type === 'color') buildColor(el, it);
 
   // Boards use the rail / mobile footer for color·icon·rename·delete.
   // Other cards keep the floating properties badge.
@@ -208,6 +212,71 @@ function buildFile(el, it) {
   open.href = it.data.src || '#'; open.target = '_blank'; open.rel = 'noopener'; open.download = it.data.name || '';
   open.textContent = 'Open ↗';
   el.appendChild(icon); el.appendChild(name); el.appendChild(open);
+}
+
+function buildHeading(el, it) {
+  el.classList.add('heading');
+  const t = makeField('area', 'htext', it.data.text, 'Heading');
+  t.addEventListener('input', () => saveData(it, { text: t.value }));
+  el.appendChild(t);
+  requestAnimationFrame(() => autoGrow(t));
+}
+
+function buildDocument(el, it) {
+  el.classList.add('document');
+  const t = makeField('area', 'dtitle', it.data.title, 'Untitled document');
+  const b = makeField('area', 'dbody', it.data.body, 'Start writing…');
+  t.addEventListener('input', () => saveData(it, { title: t.value }));
+  b.addEventListener('input', () => saveData(it, { body: b.value }));
+  el.appendChild(t); el.appendChild(b);
+  requestAnimationFrame(() => { autoGrow(t); autoGrow(b); });
+}
+
+function buildTable(el, it) {
+  el.classList.add('table');
+  const rows = (it.data.rows && it.data.rows.length) ? it.data.rows : [['', '']];
+  const grid = document.createElement('div'); grid.className = 'tgrid';
+  const actions = document.createElement('div'); actions.className = 'tactions';
+
+  const renderGrid = () => {
+    grid.innerHTML = '';
+    grid.style.gridTemplateColumns = `repeat(${rows[0].length}, 1fr)`;
+    rows.forEach((row, ri) => {
+      row.forEach((cell, ci) => {
+        const c = makeField('input', 'tcell', cell, '');
+        c.addEventListener('input', () => { rows[ri][ci] = c.value; saveData(it, { rows }); });
+        grid.appendChild(c);
+      });
+    });
+  };
+  renderGrid();
+
+  const addRow = document.createElement('button'); addRow.className = 'tact'; addRow.setAttribute('data-nodrag', '');
+  addRow.textContent = '+ Row';
+  addRow.onclick = (e) => { e.stopPropagation(); rows.push(new Array(rows[0].length).fill('')); saveData(it, { rows }); renderGrid(); };
+  const addCol = document.createElement('button'); addCol.className = 'tact'; addCol.setAttribute('data-nodrag', '');
+  addCol.textContent = '+ Col';
+  addCol.onclick = (e) => { e.stopPropagation(); rows.forEach(r => r.push('')); saveData(it, { rows }); renderGrid(); };
+  actions.appendChild(addRow); actions.appendChild(addCol);
+
+  el.appendChild(grid); el.appendChild(actions);
+}
+
+function buildColor(el, it) {
+  el.classList.add('color');
+  const swatch = document.createElement('div'); swatch.className = 'cswatch';
+  swatch.style.background = it.data.hex || '#2f6df0';
+  const picker = document.createElement('input'); picker.type = 'color'; picker.className = 'cpicker'; picker.setAttribute('data-nodrag', '');
+  picker.value = /^#[0-9a-f]{6}$/i.test(it.data.hex || '') ? it.data.hex : '#2f6df0';
+  const hex = makeField('input', 'chex', it.data.hex, '#000000');
+  const commit = (val) => {
+    if (!/^#[0-9a-fA-F]{6}$/.test(val)) return;
+    swatch.style.background = val; picker.value = val; saveData(it, { hex: val });
+  };
+  picker.addEventListener('input', () => { hex.value = picker.value; commit(picker.value); });
+  hex.addEventListener('input', () => commit(hex.value));
+  swatch.appendChild(picker);
+  el.appendChild(swatch); el.appendChild(hex);
 }
 
 function buildBoard(el, it) {

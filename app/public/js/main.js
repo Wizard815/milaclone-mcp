@@ -44,7 +44,7 @@ document.addEventListener('keydown', (e) => {
   if (mod && e.key.toLowerCase() === 'd') { e.preventDefault(); duplicateSelected(); return; }
   if (e.key === 'Enter' && state.selectedId && !mod) { e.preventDefault(); renameSelected(); return; }
   if ((e.key === 'Delete' || e.key === 'Backspace') && state.selectedId) { e.preventDefault(); deleteItem(state.selectedId); }
-  const map = { n: 'note', l: 'link', t: 'todo', b: 'board', c: 'column', m: 'comment' };
+  const map = { n: 'note', l: 'link', t: 'todo', b: 'board', c: 'column', m: 'comment', h: 'heading' };
   if (map[e.key.toLowerCase()] && !mod) {
     const btn = document.querySelector(`.tool[data-tool="${map[e.key.toLowerCase()]}"]`);
     if (btn) arm(map[e.key.toLowerCase()], btn);
