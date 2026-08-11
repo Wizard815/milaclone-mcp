@@ -34,7 +34,10 @@ mcp = MCPServer("milaclone")
 
 _client: MilacloneClient | None = None
 
-CREATABLE_TYPES = ("note", "todo", "link", "column", "comment", "board")
+CREATABLE_TYPES = (
+    "note", "todo", "link", "column", "comment", "board",
+    "heading", "document", "table", "color", "draw", "line",
+)
 
 
 def _get_client() -> MilacloneClient:
@@ -108,9 +111,10 @@ def get_board(board_id: str) -> dict[str, Any]:
         board_id: from `get_root`, `list_boards`, or a `board`-type item's
             `data.childCanvasId` in a parent board's item list.
 
-    Each item has: id, type (note/todo/link/column/comment/board/image/file),
-    x/y/w/h, color, data (shape depends on type — see `create_item`), and for
-    board items, `_childTitle`/`_childCount` describing the nested board.
+    Each item has: id, type (note/todo/link/column/comment/board/image/file/
+    heading/document/table/color/draw/line), x/y/w/h, color, data (shape
+    depends on type — see `create_item`), and for board items,
+    `_childTitle`/`_childCount` describing the nested board.
     """
     return _get_client().get_canvas(board_id)
 
@@ -158,18 +162,43 @@ def create_item(
 
     Args:
         canvas_id: board to add the card to.
-        item_type: one of "note", "todo", "link", "column", "comment", "board".
+        item_type: one of "note", "todo", "link", "column", "comment", "board",
+            "heading", "document", "table", "color", "draw", "line".
             (Images and uploaded files aren't supported here — they require a
             file upload through the web UI.)
         data: shape depends on item_type:
-            note:    {"title": str, "body": str}
-            todo:    {"title": str, "tasks": [{"id": str, "text": str, "done": bool}]}
-            link:    {"title": str, "url": str}
-            column:  {"title": str}
-            comment: {"body": str}
-            board:   {"title": str, "icon": str (optional Lucide icon name)}
-        x, y: position on the canvas in board units (default 60, 60).
+            note:     {"title": str, "body": str}
+            todo:     {"title": str, "tasks": [{"id": str, "text": str, "done": bool}]}
+            link:     {"title": str, "url": str}
+            column:   {"title": str}
+            comment:  {"body": str}
+            board:    {"title": str, "icon": str (optional Lucide icon name)}
+            heading:  {"text": str}
+            document: {"title": str, "bodyHtml": str} — bodyHtml is rendered
+                rich text (the in-app editor writes real HTML: <b>, <i>, <ul>,
+                <blockquote>, etc.), not markdown or plain text. The card
+                itself is just a tile; opening it in the web UI shows the
+                full-page editor.
+            table:    {"rows": [[str, ...], ...]} — a rectangular grid; every
+                row must be the same length.
+            color:    {"hex": str} — a "#rrggbb" swatch value.
+            draw:     {"strokes": [{"points": [[x, y], ...], "color": str,
+                "width": int}, ...]} — freehand paths in the card's own local
+                pixel space (top-left = 0,0). Not practical to hand-author;
+                mainly useful for reading back what a user drew.
+            line:     {"fromId": str, "toId": str, "label": str (optional),
+                "bend": number (optional), "along": number (optional)} — a
+                connector between two *other* items already on this board
+                (by id). x/y/w are ignored for this type — the connector's
+                position is derived entirely from the two cards it joins.
+                `bend`/`along` offset the curve's control point
+                perpendicular/parallel to the straight line between them;
+                omit both for a straight connector.
+        x, y: position on the canvas in board units (default 60, 60). Ignored
+            for item_type "line".
         w: card width in pixels (defaults to a sensible per-type value).
+            Ignored for "line"; "draw" and "document" are fixed-size and
+            can't be resized after creation.
         color: one of milaclone's palette names (e.g. "blue", "slate", "rose").
         parent_item_id: set to nest this card inside a `column` card.
 

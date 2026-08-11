@@ -14,7 +14,7 @@ and standalone dev setup.
 | `get_board` | Get a board's cards + breadcrumb |
 | `search` | Search card contents and board titles |
 | `list_todo_lists` | List every to-do checklist across the whole tree |
-| `create_item` | Create a note/todo/link/column/comment/board card |
+| `create_item` | Create a note/todo/link/column/comment/board/heading/document/table/color/draw/line card |
 | `update_item` | Edit a card's data/position/color/parent |
 | `delete_item` | Delete a card (recursively, if it's a nested board) |
 | `add_todo_task` | Append a task to a to-do card |
