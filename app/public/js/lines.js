@@ -3,7 +3,7 @@
 import { state, dom, elMap } from './state.js';
 import { api } from './api.js';
 import { colorVar, toast } from './util.js';
-import { select, deleteItem } from './editing.js';
+import { select, deleteItem, saveData } from './editing.js';
 import { disarm } from './tools.js';
 
 // Connector lines between two cards. Unlike every other item type, a line
@@ -16,18 +16,27 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 // Reused across calls rather than recreated, since renderLines() runs on
 // every drag/resize tick (not just on a full render()) — recreating it each
 // time would pile up stale detached-looking duplicates as the drag proceeds.
+// Appended last (and z-indexed above cards in CSS) so connectors read as
+// free-floating over the board instead of tucked behind every card.
 function ensureLayer() {
   let svg = document.getElementById('linesLayer');
   if (!svg || svg.parentNode !== dom.world) {
     svg = document.createElementNS(SVG_NS, 'svg');
     svg.id = 'linesLayer';
-    dom.world.insertBefore(svg, dom.world.firstChild);
+    dom.world.appendChild(svg);
   }
   svg.innerHTML = '';
   const defs = document.createElementNS(SVG_NS, 'defs');
   svg.appendChild(defs);
   return { svg, defs };
 }
+
+// Label pills are plain HTML (easier to make editable than SVG <text>), so
+// they live as siblings of the SVG layer rather than inside it. Tracked here
+// so a mid-drag renderLines() call can clear the previous batch instead of
+// piling up duplicates the same way the old ensureLayer() bug did for paths.
+let labelEls = [];
+function clearLabels() { labelEls.forEach(el => el.remove()); labelEls = []; }
 
 // Markers can't reference a CSS var per-instance, so each line gets its own
 // arrowhead def sized to its own color instead of sharing one global marker.
@@ -57,6 +66,7 @@ function centerOf(id) {
 
 export function renderLines() {
   const { svg: layer, defs } = ensureLayer();
+  clearLabels();
   const lines = state.view.items.filter(it => it.type === 'line');
   for (const line of lines) {
     const from = elMap.has(line.data.fromId) && centerOf(line.data.fromId);
@@ -73,7 +83,8 @@ export function renderLines() {
 
     const g = document.createElementNS(SVG_NS, 'g');
     g.classList.add('cline');
-    if (line.id === state.selectedId) g.classList.add('selected');
+    const selected = line.id === state.selectedId;
+    if (selected) g.classList.add('selected');
     const hit = document.createElementNS(SVG_NS, 'line');
     hit.setAttribute('x1', from.x); hit.setAttribute('y1', from.y);
     hit.setAttribute('x2', to.x); hit.setAttribute('y2', to.y);
@@ -87,6 +98,22 @@ export function renderLines() {
     g.appendChild(hit); g.appendChild(vis);
     g.addEventListener('pointerdown', (e) => { e.stopPropagation(); select(line.id); renderLines(); });
     layer.appendChild(g);
+
+    if (selected || line.data.label) {
+      const mid = { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
+      const label = document.createElement('div');
+      label.className = 'cline-label';
+      label.contentEditable = 'true';
+      label.dataset.placeholder = 'Add label';
+      label.textContent = line.data.label || '';
+      label.style.left = mid.x + 'px';
+      label.style.top = mid.y + 'px';
+      label.addEventListener('pointerdown', (e) => e.stopPropagation());
+      label.addEventListener('input', () => saveData(line, { label: label.textContent.trim() }));
+      label.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); label.blur(); } });
+      dom.world.appendChild(label);
+      labelEls.push(label);
+    }
   }
 }
 
