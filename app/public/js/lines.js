@@ -2,9 +2,12 @@
 
 import { state, dom, elMap } from './state.js';
 import { api } from './api.js';
-import { colorVar, toast } from './util.js';
+import { colorVar, toast, lucideEl, refreshIcons } from './util.js';
 import { select, deleteItem, saveData } from './editing.js';
 import { disarm } from './tools.js';
+import { screenToWorld } from './viewport.js';
+
+const GAP = 20; // px between a card's edge and where the solid connector starts
 
 // Connector lines between two cards. Unlike every other item type, a line
 // has no box of its own on the canvas — it's just a fromId/toId pair drawn
@@ -57,11 +60,33 @@ function addArrowMarker(defs, id, color) {
 // Reads the *live* DOM position rather than it.x/it.y so a line dragged
 // mid-move (which only updates el.style.left/top until the drag finishes)
 // still tracks the card instead of snapping into place after the drop.
-function centerOf(id) {
+function rectOf(id) {
   const el = elMap.get(id);
   if (!el) return null;
   const x = parseFloat(el.style.left) || 0, y = parseFloat(el.style.top) || 0;
-  return { x: x + el.offsetWidth / 2, y: y + el.offsetHeight / 2 };
+  const w = el.offsetWidth, h = el.offsetHeight;
+  return { x, y, w, h, cx: x + w / 2, cy: y + h / 2 };
+}
+
+// Where a ray from the rect's center toward (tx,ty) exits the rectangle.
+function edgePoint(rect, tx, ty) {
+  const dx = tx - rect.cx, dy = ty - rect.cy;
+  if (!dx && !dy) return { x: rect.cx, y: rect.cy };
+  const hw = rect.w / 2, hh = rect.h / 2;
+  const scale = Math.min(dx ? Math.abs(hw / dx) : Infinity, dy ? Math.abs(hh / dy) : Infinity);
+  return { x: rect.cx + dx * scale, y: rect.cy + dy * scale };
+}
+
+// The dot sits GAP px outside the card, along the same ray, so the main
+// connector line and its arrowhead never overlap the card face itself. The
+// gap between the card edge and the dot is bridged by a short dashed stub
+// (drawn separately) — the connector itself stays solid.
+function attachPoint(rect, tx, ty) {
+  const edge = edgePoint(rect, tx, ty);
+  const dx = edge.x - rect.cx, dy = edge.y - rect.cy;
+  const len = Math.hypot(dx, dy) || 1;
+  const dot = { x: edge.x + (dx / len) * GAP, y: edge.y + (dy / len) * GAP };
+  return { edge, dot };
 }
 
 export function renderLines() {
@@ -69,14 +94,27 @@ export function renderLines() {
   clearLabels();
   const lines = state.view.items.filter(it => it.type === 'line');
   for (const line of lines) {
-    const from = elMap.has(line.data.fromId) && centerOf(line.data.fromId);
-    const to = elMap.has(line.data.toId) && centerOf(line.data.toId);
-    if (!from || !to) {
+    const fromRect = elMap.has(line.data.fromId) && rectOf(line.data.fromId);
+    const toRect = elMap.has(line.data.toId) && rectOf(line.data.toId);
+    if (!fromRect || !toRect) {
       // Endpoint no longer exists on this board (deleted card) — the line
       // is meaningless now, so clean it up rather than leaving it stuck.
       deleteItem(line.id);
       continue;
     }
+    const fromAttach = attachPoint(fromRect, toRect.cx, toRect.cy);
+    const toAttach = attachPoint(toRect, fromRect.cx, fromRect.cy);
+    const from = fromAttach.dot, to = toAttach.dot;
+    const mx = (from.x + to.x) / 2, my = (from.y + to.y) / 2;
+    const ddx = to.x - from.x, ddy = to.y - from.y;
+    const len = Math.hypot(ddx, ddy) || 1;
+    const px = -ddy / len, py = ddx / len; // unit perpendicular to the line
+    const bend = line.data.bend || 0;
+    const ctrl = { x: mx + px * bend, y: my + py * bend };
+    // Point at t=0.5 on the quadratic curve itself (not the control point,
+    // which sits off the curve once bent) — used for the label position.
+    const curveMid = { x: 0.25 * from.x + 0.5 * ctrl.x + 0.25 * to.x, y: 0.25 * from.y + 0.5 * ctrl.y + 0.25 * to.y };
+
     const color = colorVar(line.color || 'slate');
     const markerId = 'arrow-' + line.id;
     addArrowMarker(defs, markerId, color);
@@ -85,34 +123,81 @@ export function renderLines() {
     g.classList.add('cline');
     const selected = line.id === state.selectedId;
     if (selected) g.classList.add('selected');
-    const hit = document.createElementNS(SVG_NS, 'line');
-    hit.setAttribute('x1', from.x); hit.setAttribute('y1', from.y);
-    hit.setAttribute('x2', to.x); hit.setAttribute('y2', to.y);
-    hit.setAttribute('class', 'chit');
-    const vis = document.createElementNS(SVG_NS, 'line');
-    vis.setAttribute('x1', from.x); vis.setAttribute('y1', from.y);
-    vis.setAttribute('x2', to.x); vis.setAttribute('y2', to.y);
-    vis.setAttribute('class', 'cvis');
+    const d = `M ${from.x},${from.y} Q ${ctrl.x},${ctrl.y} ${to.x},${to.y}`;
+    const hit = document.createElementNS(SVG_NS, 'path');
+    hit.setAttribute('d', d); hit.setAttribute('class', 'chit');
+    const vis = document.createElementNS(SVG_NS, 'path');
+    vis.setAttribute('d', d); vis.setAttribute('class', 'cvis');
     vis.setAttribute('stroke', color);
     vis.setAttribute('marker-end', `url(#${markerId})`);
     g.appendChild(hit); g.appendChild(vis);
+    // Short dashed stub bridging the card's edge to where the solid
+    // connector starts, plus the dot marker sitting right on the edge.
+    for (const attach of [fromAttach, toAttach]) {
+      const stub = document.createElementNS(SVG_NS, 'line');
+      stub.setAttribute('x1', attach.edge.x); stub.setAttribute('y1', attach.edge.y);
+      stub.setAttribute('x2', attach.dot.x); stub.setAttribute('y2', attach.dot.y);
+      stub.setAttribute('class', 'cstub');
+      stub.setAttribute('stroke', color);
+      g.appendChild(stub);
+      const dot = document.createElementNS(SVG_NS, 'circle');
+      dot.setAttribute('cx', attach.edge.x); dot.setAttribute('cy', attach.edge.y); dot.setAttribute('r', 3);
+      dot.setAttribute('class', 'cdot');
+      dot.setAttribute('fill', color);
+      g.appendChild(dot);
+    }
     g.addEventListener('pointerdown', (e) => { e.stopPropagation(); select(line.id); renderLines(); });
     layer.appendChild(g);
 
+    if (selected) {
+      const handle = document.createElementNS(SVG_NS, 'circle');
+      handle.setAttribute('cx', ctrl.x); handle.setAttribute('cy', ctrl.y); handle.setAttribute('r', 5);
+      handle.setAttribute('class', 'cbend');
+      handle.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        const move = (ev) => {
+          const w = screenToWorld(ev.clientX, ev.clientY);
+          line.data.bend = (w.x - mx) * px + (w.y - my) * py;
+          renderLines();
+        };
+        const up = () => {
+          document.removeEventListener('pointermove', move);
+          document.removeEventListener('pointerup', up);
+          saveData(line, { bend: line.data.bend });
+        };
+        document.addEventListener('pointermove', move);
+        document.addEventListener('pointerup', up);
+      });
+      layer.appendChild(handle);
+    }
+
     if (selected || line.data.label) {
-      const mid = { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
       const label = document.createElement('div');
       label.className = 'cline-label';
       label.contentEditable = 'true';
       label.dataset.placeholder = 'Add label';
       label.textContent = line.data.label || '';
-      label.style.left = mid.x + 'px';
-      label.style.top = mid.y + 'px';
+      label.style.left = curveMid.x + 'px';
+      label.style.top = curveMid.y + 'px';
       label.addEventListener('pointerdown', (e) => e.stopPropagation());
       label.addEventListener('input', () => saveData(line, { label: label.textContent.trim() }));
       label.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); label.blur(); } });
       dom.world.appendChild(label);
       labelEls.push(label);
+    }
+
+    if (selected) {
+      const del = document.createElement('button');
+      del.className = 'cline-del';
+      del.title = 'Delete connector';
+      del.appendChild(lucideEl('trash-2'));
+      del.style.left = ctrl.x + 'px';
+      del.style.top = (ctrl.y - 26) + 'px';
+      del.addEventListener('pointerdown', (e) => e.stopPropagation());
+      del.addEventListener('click', (e) => { e.stopPropagation(); deleteItem(line.id); });
+      dom.world.appendChild(del);
+      labelEls.push(del);
+      refreshIcons(del);
     }
   }
 }
