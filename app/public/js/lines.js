@@ -108,9 +108,15 @@ export function renderLines() {
     const mx = (from.x + to.x) / 2, my = (from.y + to.y) / 2;
     const ddx = to.x - from.x, ddy = to.y - from.y;
     const len = Math.hypot(ddx, ddy) || 1;
-    const px = -ddy / len, py = ddx / len; // unit perpendicular to the line
+    const ax = ddx / len, ay = ddy / len;   // unit vector along the line
+    const px = -ay, py = ax;                // unit vector perpendicular to it
+    // Two independent offsets from the straight midpoint: "bend" (how far
+    // off the line, perpendicular) and "along" (where the bulge sits along
+    // the line's own length) — dragging the handle sets both freely, so it
+    // can move up/down the line as well as bow it out.
     const bend = line.data.bend || 0;
-    const ctrl = { x: mx + px * bend, y: my + py * bend };
+    const along = line.data.along || 0;
+    const ctrl = { x: mx + px * bend + ax * along, y: my + py * bend + ay * along };
     // Point at t=0.5 on the quadratic curve itself (not the control point,
     // which sits off the curve once bent) — used for the label position.
     const curveMid = { x: 0.25 * from.x + 0.5 * ctrl.x + 0.25 * to.x, y: 0.25 * from.y + 0.5 * ctrl.y + 0.25 * to.y };
@@ -195,13 +201,15 @@ export function renderLines() {
         e.stopPropagation(); e.preventDefault();
         const move = (ev) => {
           const w = screenToWorld(ev.clientX, ev.clientY);
-          line.data.bend = (w.x - mx) * px + (w.y - my) * py;
+          const vx = w.x - mx, vy = w.y - my;
+          line.data.bend = vx * px + vy * py;
+          line.data.along = vx * ax + vy * ay;
           renderLines();
         };
         const up = () => {
           document.removeEventListener('pointermove', move);
           document.removeEventListener('pointerup', up);
-          saveData(line, { bend: line.data.bend });
+          saveData(line, { bend: line.data.bend, along: line.data.along });
         };
         document.addEventListener('pointermove', move);
         document.addEventListener('pointerup', up);
@@ -216,8 +224,12 @@ export function renderLines() {
       label.contentEditable = 'true';
       label.dataset.placeholder = 'Add label';
       label.textContent = line.data.label || '';
+      // Offset below the curve so it doesn't sit exactly on top of (and
+      // completely hide, since it paints above the SVG layer) the bend
+      // handle, which lives right at the curve's midpoint when unselected
+      // labels aren't shown and at the control point once selected.
       label.style.left = curveMid.x + 'px';
-      label.style.top = curveMid.y + 'px';
+      label.style.top = (curveMid.y + (selected ? 20 : 0)) + 'px';
       label.addEventListener('pointerdown', (e) => e.stopPropagation());
       label.addEventListener('input', () => saveData(line, { label: label.textContent.trim() }));
       label.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); label.blur(); } });

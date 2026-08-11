@@ -355,18 +355,39 @@ function buildDraw(el, it) {
   // (entered via double-click, same as opening a document); otherwise a
   // pointerdown on the surface falls through to the normal card
   // select/drag handling so the card can still be moved around the board.
-  svg.addEventListener('dblclick', (e) => { e.stopPropagation(); enterEdit(el); });
-
+  //
+  // Detected by hand (rather than listening for the browser's own
+  // 'dblclick') so the *second* pointerdown of the double-click can enter
+  // edit mode and start the stroke in the same gesture — waiting for the
+  // native dblclick event would only fire after that second click's
+  // pointerup, so a double-click-and-drag-without-lifting would already
+  // have been consumed as a card drag by then.
+  let lastTap = -Infinity, lastX = 0, lastY = 0;
   let current = null, currentPath = null;
-  svg.addEventListener('pointerdown', (e) => {
-    if (e.button !== 0) return;
-    if (!el.classList.contains('editing')) return;
-    e.stopPropagation(); e.preventDefault();
+  const startStroke = (e) => {
     select(it.id);
     current = { points: [toLocal(e)], color: it.color || 'slate', width: 3 };
     currentPath = strokePath(current);
     svg.appendChild(currentPath);
     svg.setPointerCapture(e.pointerId);
+  };
+  svg.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    if (el.classList.contains('editing')) {
+      e.stopPropagation(); e.preventDefault();
+      startStroke(e);
+      return;
+    }
+    const now = performance.now();
+    const isSecondTap = now - lastTap < 400 && Math.hypot(e.clientX - lastX, e.clientY - lastY) < 12;
+    lastTap = isSecondTap ? -Infinity : now;
+    lastX = e.clientX; lastY = e.clientY;
+    if (isSecondTap) {
+      e.stopPropagation(); e.preventDefault();
+      enterEdit(el);
+      startStroke(e);
+    }
+    // else: not a double-tap — let it bubble for the normal select/drag flow
   });
   svg.addEventListener('pointermove', (e) => {
     if (!current) return;
