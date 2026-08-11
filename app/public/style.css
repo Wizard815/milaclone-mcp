@@ -388,6 +388,19 @@ input, textarea { font-family: var(--sans); }
   background: none; width: 100%; color: var(--ink-soft);
 }
 
+/* ---------- draw ---------- */
+.draw { padding: 0; overflow: hidden; height: 220px; }
+.draw .dsurface { display: block; touch-action: none; cursor: crosshair; background: var(--card-bg); }
+.draw .dtools {
+  position: absolute; right: 8px; bottom: 8px; display: flex; gap: 4px;
+  background: #2b2d31; padding: 4px; border-radius: 9px; box-shadow: var(--card-shadow-hover);
+  opacity: 0; transition: opacity .12s ease;
+}
+.draw:hover .dtools, .draw.selected .dtools { opacity: 1; }
+.draw .dtools button { border: none; background: none; color: #d6d8de; width: 26px; height: 26px; border-radius: 6px; display: grid; place-items: center; }
+.draw .dtools button:hover { background: rgba(255,255,255,.14); color: #fff; }
+.draw .dtools svg { width: 15px; height: 15px; }
+
 .item.locked { cursor: default; }
 .lock-badge { display: grid; place-items: center; color: #d6d8de; width: 28px; height: 28px; }
 .lock-badge svg { width: 14px; height: 14px; }

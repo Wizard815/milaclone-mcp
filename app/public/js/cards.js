@@ -8,6 +8,7 @@ import { updateSelectionChrome } from './boardchrome.js';
 import { onItemPointerDown, startResize } from './drag.js';
 import { openCanvas } from './main.js';
 import { openDocument } from './docs.js';
+import { screenToWorld } from './viewport.js';
 
 // Rendering of the canvas and every card type. This module owns the DOM for
 // items; other modules ask it to (re)render when data changes.
@@ -80,6 +81,7 @@ export function renderItem(it) {
   else if (it.type === 'document') buildDocument(el, it);
   else if (it.type === 'table') buildTable(el, it);
   else if (it.type === 'color') buildColor(el, it);
+  else if (it.type === 'draw') buildDraw(el, it);
 
   // Boards use the rail / mobile footer for color·icon·rename·delete.
   // Other cards keep the floating properties badge.
@@ -114,7 +116,7 @@ export function renderItem(it) {
     el.appendChild(lockBadge);
   }
 
-  if (it.type !== 'board' && it.type !== 'document' && !it.parentItemId && !isLocked(it)) {
+  if (it.type !== 'board' && it.type !== 'document' && it.type !== 'draw' && !it.parentItemId && !isLocked(it)) {
     const rz = document.createElement('div'); rz.className = 'resize'; rz.setAttribute('data-nodrag', '');
     rz.addEventListener('pointerdown', (e) => startResize(e, it, el));
     el.appendChild(rz);
@@ -311,6 +313,77 @@ function buildColor(el, it) {
   hex.addEventListener('input', () => commit(hex.value));
   swatch.appendChild(picker);
   el.appendChild(swatch); el.appendChild(hex);
+}
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const DRAW_H = 220;
+
+function pointsToPath(points) {
+  return points.length ? 'M' + points.map(p => p[0] + ',' + p[1]).join(' L') : '';
+}
+
+function buildDraw(el, it) {
+  el.classList.add('draw');
+  const strokes = it.data.strokes || [];
+
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.classList.add('dsurface');
+  svg.setAttribute('data-nodrag', '');
+  svg.setAttribute('width', it.w || 320);
+  svg.setAttribute('height', DRAW_H);
+
+  const strokePath = (s) => {
+    const p = document.createElementNS(SVG_NS, 'path');
+    p.setAttribute('d', pointsToPath(s.points));
+    p.setAttribute('stroke', colorVar(s.color || 'slate'));
+    p.setAttribute('stroke-width', s.width || 3);
+    p.setAttribute('fill', 'none');
+    p.setAttribute('stroke-linecap', 'round');
+    p.setAttribute('stroke-linejoin', 'round');
+    return p;
+  };
+  const renderPaths = () => { svg.innerHTML = ''; strokes.forEach(s => svg.appendChild(strokePath(s))); };
+  renderPaths();
+
+  const toLocal = (e) => {
+    const w = screenToWorld(e.clientX, e.clientY);
+    return [Math.round(w.x - it.x), Math.round(w.y - it.y)];
+  };
+
+  let current = null, currentPath = null;
+  svg.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    select(it.id);
+    current = { points: [toLocal(e)], color: it.color || 'slate', width: 3 };
+    currentPath = strokePath(current);
+    svg.appendChild(currentPath);
+    svg.setPointerCapture(e.pointerId);
+  });
+  svg.addEventListener('pointermove', (e) => {
+    if (!current) return;
+    current.points.push(toLocal(e));
+    currentPath.setAttribute('d', pointsToPath(current.points));
+  });
+  const finishStroke = () => {
+    if (!current) return;
+    if (current.points.length > 1) { strokes.push(current); saveData(it, { strokes }); }
+    else { currentPath.remove(); }
+    current = null; currentPath = null;
+  };
+  svg.addEventListener('pointerup', finishStroke);
+  svg.addEventListener('pointercancel', finishStroke);
+
+  el.appendChild(svg);
+
+  const tools = document.createElement('div'); tools.className = 'dtools'; tools.setAttribute('data-nodrag', '');
+  const undo = document.createElement('button'); undo.title = 'Undo last stroke'; undo.appendChild(lucideEl('undo-2'));
+  undo.onclick = (e) => { e.stopPropagation(); strokes.pop(); saveData(it, { strokes }); renderPaths(); };
+  const clear = document.createElement('button'); clear.title = 'Clear'; clear.appendChild(lucideEl('eraser'));
+  clear.onclick = (e) => { e.stopPropagation(); strokes.length = 0; saveData(it, { strokes }); renderPaths(); };
+  tools.appendChild(undo); tools.appendChild(clear);
+  el.appendChild(tools);
+  refreshIcons(tools);
 }
 
 function buildBoard(el, it) {
