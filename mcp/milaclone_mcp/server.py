@@ -120,6 +120,46 @@ def get_board(board_id: str) -> dict[str, Any]:
 
 
 @mcp.tool()
+def get_item(item_id: str) -> dict[str, Any]:
+    """
+    Fetch a single card by id, without needing its board_id or pulling the
+    whole board.
+
+    Same shape as one entry in `get_board`'s `items` list (including
+    `_childTitle`/`_childCount`/etc. for board cards).
+    """
+    return _get_client().get_item(item_id)
+
+
+@mcp.tool()
+def update_canvas(
+    canvas_id: str,
+    title: str | None = None,
+    color: str | None = None,
+    icon: str | None = None,
+) -> dict[str, Any]:
+    """
+    Rename/recolor/re-icon a board directly by its canvas id.
+
+    Most boards are better edited through `update_item` on their `board`
+    card elsewhere on the tree — changing that card's `data.title`/color
+    syncs to the canvas automatically. Use this one specifically for the
+    root "Home" board (from `get_root`), which has no card of its own to
+    edit that way, or any other time you only have a canvas id on hand.
+
+    Only pass the fields you want to change.
+    """
+    body: dict[str, Any] = {}
+    if title is not None:
+        body["title"] = title
+    if color is not None:
+        body["color"] = color
+    if icon is not None:
+        body["icon"] = icon
+    return _get_client().patch_canvas(canvas_id, body)
+
+
+@mcp.tool()
 def search(query: str, limit: int = 25) -> dict[str, Any]:
     """
     Search card contents and board titles for a substring (case-insensitive).
@@ -332,6 +372,24 @@ def set_todo_task_done(item_id: str, task_id: str, done: bool) -> dict[str, Any]
             t["done"] = done
             break
     else:
+        raise NotFoundError(f"Task {task_id} not found on todo {item_id}")
+    return _get_client().patch_item(item_id, {"data": {"tasks": tasks}})
+
+
+@mcp.tool()
+def remove_todo_task(item_id: str, task_id: str) -> dict[str, Any]:
+    """
+    Remove a task from a `todo` card's checklist.
+
+    Args:
+        item_id: the todo card's id.
+        task_id: the task's id (from `list_todo_lists`).
+
+    Returns the updated item.
+    """
+    todo = _find_todo(item_id)
+    tasks = [t for t in todo.get("tasks", []) if t.get("id") != task_id]
+    if len(tasks) == len(todo.get("tasks", [])):
         raise NotFoundError(f"Task {task_id} not found on todo {item_id}")
     return _get_client().patch_item(item_id, {"data": {"tasks": tasks}})
 

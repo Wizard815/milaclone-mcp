@@ -12,6 +12,8 @@ and standalone dev setup.
 | `get_root` | Get the Home board's id |
 | `list_boards` | Recursively list nested boards (titles/ids/counts) |
 | `get_board` | Get a board's cards + breadcrumb |
+| `get_item` | Fetch a single card by id, without its board_id |
+| `update_canvas` | Rename/recolor/re-icon a board by canvas id (mainly for Home) |
 | `search` | Search card contents and board titles |
 | `list_todo_lists` | List every to-do checklist across the whole tree |
 | `create_item` | Create a note/todo/link/column/comment/board/heading/document/table/color/draw/line card |
@@ -20,9 +22,15 @@ and standalone dev setup.
 | `restore_item` | Undo a board's deletion (boards only — see below) |
 | `add_todo_task` | Append a task to a to-do card |
 | `set_todo_task_done` | Check/uncheck a task on a to-do card |
+| `remove_todo_task` | Remove a task from a to-do card |
 
 Image and file-upload cards can't be created via MCP (they require an actual
 file upload) but are visible in `get_board`/`search` results.
+
+`update_item` on a `board` card syncs title/color changes to its canvas
+automatically — `update_canvas` exists for the one case that doesn't cover:
+the root "Home" board has no card of its own, so it's the only board you
+need `update_canvas` for in practice.
 
 Deleting a `board` card soft-deletes its entire nested subtree, so
 `restore_item(item_id)` (same id you passed to `delete_item`) brings the

@@ -62,6 +62,10 @@ class MilacloneClient:
         return self._patch(f"/api/canvas/{canvas_id}", body)
 
     # ---- Items ----------------------------------------------------------------
+    def get_item(self, item_id: str) -> dict[str, Any]:
+        """GET /api/item/{id} — a single card, wherever it lives."""
+        return self._get(f"/api/item/{item_id}")
+
     def create_item(self, body: dict[str, Any]) -> dict[str, Any]:
         """POST /api/item — create a card on a board."""
         return self._post("/api/item", body)

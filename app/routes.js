@@ -156,6 +156,23 @@ router.post('/api/item', (req, res) => {
   res.json(item);
 });
 
+router.get('/api/item/:id', (req, res) => {
+  const row = stmt.getItem.get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'not found' });
+  const it = rowToItem(row);
+  if (it.type === 'board' && it.data && it.data.childCanvasId) {
+    const child = stmt.getCanvas.get(it.data.childCanvasId);
+    const count = stmt.childCount.get(it.data.childCanvasId).c;
+    Object.assign(it, {
+      _childTitle: child ? child.title : 'Board',
+      _childCount: count,
+      _childColor: child ? child.color : 'slate',
+      _childIcon: child ? (child.icon || 'layout-grid') : 'layout-grid'
+    });
+  }
+  res.json(it);
+});
+
 router.patch('/api/item/:id', (req, res) => {
   const row = stmt.getItem.get(req.params.id);
   if (!row) return res.status(404).json({ error: 'not found' });
