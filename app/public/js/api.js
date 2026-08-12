@@ -8,6 +8,7 @@ const jsonHeaders = Object.assign({ 'Content-Type': 'application/json' }, authHe
 export const api = {
   async root() { return (await fetch('/api/root', { headers: authHeaders })).json(); },
   async canvas(id) { return (await fetch('/api/canvas/' + id, { headers: authHeaders })).json(); },
+  async graph() { return (await fetch('/api/graph', { headers: authHeaders })).json(); },
   async todos() { return (await fetch('/api/todos', { headers: authHeaders })).json(); },
   async patchCanvas(id, body) { return (await fetch('/api/canvas/' + id, { method:'PATCH', headers: jsonHeaders, body:JSON.stringify(body) })).json(); },
   async create(body) { return (await fetch('/api/item', { method:'POST', headers: jsonHeaders, body:JSON.stringify(body) })).json(); },

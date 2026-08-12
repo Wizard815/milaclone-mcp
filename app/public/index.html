@@ -28,6 +28,9 @@
       <i data-lucide="sun-medium" class="theme-icon-light"></i>
       <i data-lucide="moon" class="theme-icon-dark"></i>
     </button>
+    <button class="theme-toggle" id="mindMapBtn" title="Mind map" aria-label="Open mind map">
+      <i data-lucide="git-fork"></i>
+    </button>
     <span class="ghost" id="exportBtn">Export</span>
     <div class="zoomwrap">
       <button id="zoomOut" title="Zoom out">−</button>
@@ -326,6 +329,20 @@
     </div>
     <div class="dw-canvas-wrap">
       <svg id="dwSvg" class="dw-svg tool-pen" width="900" height="600"></svg>
+    </div>
+  </div>
+</div>
+
+<div id="mindMap" hidden>
+  <div class="mm-top">
+    <button class="mm-close" id="mmClose"><i data-lucide="x"></i> Close</button>
+    <h3>Mind map</h3>
+    <span class="mm-legend"><span class="mm-swatch mm-swatch-tree"></span> nested boards</span>
+  </div>
+  <div class="mm-canvas-wrap">
+    <svg id="mmSvg" class="mm-svg"></svg>
+    <div id="mmCtx" class="mm-ctx" hidden>
+      <button id="mmCtxOpen"><i data-lucide="arrow-up-right"></i> Open</button>
     </div>
   </div>
 </div>

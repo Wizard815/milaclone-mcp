@@ -1017,3 +1017,50 @@ body.qn-open .toast {
   font-size: 14px; font-weight: 600; z-index: 130;
   bottom: calc(112px + env(safe-area-inset-bottom));
 }
+
+/* ---------- mind map (radial board tree + semantic zoom) ---------- */
+#mindMap { position: fixed; inset: 0; z-index: 220; background: var(--canvas-bg); display: flex; flex-direction: column; }
+#mindMap[hidden] { display: none; }
+.mm-top {
+  display: flex; align-items: center; gap: 16px; padding: 10px 16px; flex: 0 0 auto;
+  background: var(--card-bg); border-bottom: 1px solid var(--card-border);
+}
+.mm-top h3 { margin: 0 auto 0 0; font-family: var(--serif); font-size: 16px; color: var(--ink); }
+.mm-close {
+  border: none; background: none; color: var(--ink-soft); font-size: 13px; padding: 6px 10px;
+  border-radius: 8px; display: inline-flex; align-items: center; gap: 4px;
+}
+.mm-close:hover { background: var(--canvas-bg); color: var(--ink); }
+.mm-close svg { width: 15px; height: 15px; }
+.mm-legend { font-size: 12px; color: var(--ink-soft); display: inline-flex; align-items: center; gap: 6px; }
+.mm-swatch { width: 10px; height: 3px; display: inline-block; border-radius: 2px; }
+.mm-swatch-tree { background: var(--ink-faint); }
+.mm-canvas-wrap { position: relative; flex: 1; overflow: auto; }
+.mm-svg { width: 100%; height: 100%; display: block; }
+.mm-edge { stroke: var(--card-border); stroke-width: 1.5; }
+.mm-sat-edge { stroke: var(--card-border); stroke-width: 1; stroke-dasharray: 2 3; }
+.mm-node { cursor: pointer; }
+.mm-node circle { stroke: var(--card-bg); stroke-width: 3; }
+.mm-node:hover circle { filter: brightness(1.12); }
+.mm-node.mm-root circle { stroke: var(--accent); stroke-width: 3; }
+.mm-node.mm-expanded circle { stroke: var(--c-purple); stroke-width: 3; }
+.mm-label { font-size: 11px; fill: var(--ink-soft); font-family: var(--sans); }
+.mm-node.mm-root .mm-label { fill: var(--ink); font-weight: 600; }
+
+.mm-sat { cursor: pointer; }
+.mm-sat-circle { fill: var(--card-bg); stroke: var(--ink-faint); stroke-width: 1.5; }
+.mm-sat:hover .mm-sat-circle { stroke: var(--accent); }
+.mm-sat svg { width: 16px; height: 16px; color: var(--ink-soft); }
+.mm-sat-label { font-size: 9.5px; fill: var(--ink-faint); font-family: var(--sans); }
+
+.mm-ctx {
+  position: absolute; z-index: 10; background: var(--card-bg); border: 1px solid var(--card-border);
+  border-radius: 10px; box-shadow: var(--card-shadow-hover); padding: 6px; min-width: 170px;
+}
+.mm-ctx[hidden] { display: none; }
+.mm-ctx button {
+  width: 100%; display: flex; align-items: center; gap: 8px; border: none; background: none;
+  padding: 8px; border-radius: 7px; font-size: 13px; color: var(--ink); text-align: left;
+}
+.mm-ctx button:hover { background: var(--canvas-bg); }
+.mm-ctx button svg { width: 15px; height: 15px; color: var(--ink-soft); }

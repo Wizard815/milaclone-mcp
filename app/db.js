@@ -42,6 +42,7 @@ const stmt = {
   setMeta: db.prepare(`INSERT INTO meta (key, value) VALUES (?, ?)
                        ON CONFLICT(key) DO UPDATE SET value = excluded.value`),
   getCanvas: db.prepare(`SELECT * FROM canvases WHERE id = ?`),
+  allCanvases: db.prepare(`SELECT id, title, parentCanvasId, color, icon FROM canvases`),
   insertCanvas: db.prepare(`INSERT INTO canvases (id, title, parentCanvasId, color, icon, createdAt)
                             VALUES (@id, @title, @parentCanvasId, @color, @icon, @createdAt)`),
   updateCanvas: db.prepare(`UPDATE canvases SET title = @title, color = @color, icon = @icon WHERE id = @id`),

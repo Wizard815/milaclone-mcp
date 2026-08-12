@@ -293,6 +293,14 @@ router.get('/api/search', (req, res) => {
   res.json({ items, boards });
 });
 
+// ---- Graph (mind map) -------------------------------------------------------
+// Every board, for the nesting tree the mind-map view draws. Titles/colors
+// only — full item data isn't needed for a graph node.
+router.get('/api/graph', (req, res) => {
+  const canvases = stmt.allCanvases.all();
+  res.json({ rootCanvasId: rootCanvasId(), canvases });
+});
+
 router.get('/api/health', (req, res) => res.json({ ok: true }));
 
 module.exports = router;
