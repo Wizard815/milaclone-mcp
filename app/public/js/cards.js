@@ -10,6 +10,7 @@ import { openCanvas } from './main.js';
 import { openDocument } from './docs.js';
 import { openDrawEditor } from './draw-editor.js';
 import { renderLines } from './lines.js';
+import { navigateToConnect } from './connect.js';
 
 // Rendering of the canvas and every card type. This module owns the DOM for
 // items; other modules ask it to (re)render when data changes.
@@ -84,6 +85,7 @@ export function renderItem(it) {
   else if (it.type === 'table') buildTable(el, it);
   else if (it.type === 'color') buildColor(el, it);
   else if (it.type === 'draw') buildDraw(el, it);
+  else if (it.type === 'connect') buildConnect(el, it);
 
   // Boards use the rail / mobile footer for color·icon·rename·delete.
   // Other cards keep the floating properties badge.
@@ -389,6 +391,30 @@ function bindDrawOpen(el, it) {
     }
     lastTap = now; lastX = e.clientX; lastY = e.clientY;
   });
+}
+
+// A jump-link to a card elsewhere in the workspace (possibly boards deep).
+// "Go there" is an explicit link (like the Link card's "Open ↗"); the card
+// itself still just selects/drags like anything else on a plain click.
+function buildConnect(el, it) {
+  el.classList.add('connect');
+  const bar = document.createElement('div'); bar.className = 'cn-bar'; el.appendChild(bar);
+  const body = document.createElement('div'); body.className = 'cn-body';
+  const head = document.createElement('div'); head.className = 'cn-head';
+  head.appendChild(lucideEl('radar'));
+  const label = document.createElement('span'); label.className = 'cn-label';
+  label.textContent = it.data.targetLabel || 'Untitled link';
+  head.appendChild(label);
+  body.appendChild(head);
+  const note = makeField('area', 'cn-note', it.data.note, 'Add a note…');
+  note.addEventListener('input', () => saveData(it, { note: note.value }));
+  body.appendChild(note);
+  const go = document.createElement('a'); go.className = 'cn-go'; go.textContent = 'Go there ↗';
+  go.setAttribute('data-nodrag', '');
+  go.addEventListener('click', (e) => { e.stopPropagation(); navigateToConnect(it); });
+  body.appendChild(go);
+  el.appendChild(body);
+  requestAnimationFrame(() => autoGrow(note));
 }
 
 function buildBoard(el, it) {

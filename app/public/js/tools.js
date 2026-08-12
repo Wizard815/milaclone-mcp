@@ -8,6 +8,7 @@ import { createAt, defaultsFor } from './create.js';
 import { select, deselect } from './editing.js';
 import { render } from './cards.js';
 import { cancelLine } from './lines.js';
+import { openConnectPicker } from './connect.js';
 
 // Toolbar arming, canvas panning + placing new cards, and file/image uploads.
 
@@ -15,7 +16,10 @@ export function arm(tool, btn) {
   disarm();
   state.armed = tool; dom.stage.classList.add('armed');
   btn.classList.add('armed');
-  toast(tool === 'line' ? 'Click a card, then another to connect them' : 'Tap the canvas to place your ' + tool);
+  let msg = 'Tap the canvas to place your ' + tool;
+  if (tool === 'line') msg = 'Click a card, then another to connect them';
+  else if (tool === 'connect') msg = 'Tap the canvas to link somewhere else';
+  toast(msg);
 }
 
 export function disarm() {
@@ -27,6 +31,7 @@ function placeAt(type, clientX, clientY) {
   const w = screenToWorld(clientX, clientY);
   if (type === 'image') { state.pendingImageWorld = w; dom.fileInput.click(); }
   else if (type === 'upload') { state.pendingUploadWorld = w; dom.uploadInput.click(); }
+  else if (type === 'connect') { openConnectPicker(w); }
   else createAt(type, w.x - defaultsFor(type).w / 2, w.y - 20);
 }
 

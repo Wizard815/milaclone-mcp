@@ -24,6 +24,7 @@ export function defaultsFor(type) {
     case 'table':   return { w: 360, data: { rows: [['', ''], ['', '']] } };
     case 'color':   return { w: 160, data: { hex: '#2f6df0' } };
     case 'draw':    return { w: 320, color: 'slate', data: { title: 'Untitled drawing', strokes: [] } };
+    case 'connect': return { w: 220, data: { targetCanvasId: null, targetItemId: null, targetLabel: '', note: '' } };
     default:        return { w: 240, data: {} };
   }
 }

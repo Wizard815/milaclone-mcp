@@ -250,6 +250,24 @@ router.get('/api/todos', (req, res) => {
   res.json({ rootCanvasId: rootCanvasId(), lists });
 });
 
+// ---- Graph (mind map) -------------------------------------------------------
+// Everything the mind-map view needs in one round trip: every board (for the
+// nesting tree) and every `connect` badge across the whole workspace (for the
+// cross-links drawn over that tree). Board titles/colors only — full item
+// data isn't needed for a graph node.
+router.get('/api/graph', (req, res) => {
+  const canvases = stmt.allCanvases.all();
+  const connects = stmt.connectItems.all().map(rowToItem).map(it => ({
+    id: it.id,
+    canvasId: it.canvasId,
+    targetCanvasId: it.data.targetCanvasId,
+    targetItemId: it.data.targetItemId || null,
+    label: it.data.targetLabel || '',
+    note: it.data.note || ''
+  })).filter(c => c.targetCanvasId);
+  res.json({ rootCanvasId: rootCanvasId(), canvases, connects });
+});
+
 // ---- Upload ----------------------------------------------------------------
 router.post('/api/upload', upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'no file' });

@@ -14,6 +14,8 @@ import { initBoardChrome, updateSelectionChrome } from './boardchrome.js';
 import { initQuickNotes, isQuickNotesOpen } from './quicknotes.js';
 import { initDocs, isDocumentOpen } from './docs.js';
 import { initDrawEditor, isDrawEditorOpen } from './draw-editor.js';
+import { initConnectPicker, isConnectPickerOpen } from './connect.js';
+import { initMindMap, isMindMapOpen } from './mindmap.js';
 import { initTheme } from './theme.js';
 import { performUndo, performRedo } from './undo.js';
 
@@ -39,6 +41,7 @@ document.addEventListener('keydown', (e) => {
   if (isQuickNotesOpen()) return;   // Quick notes owns the keyboard while it's up
   if (isDocumentOpen()) return;     // Document editor owns the keyboard while it's up (handles its own Escape)
   if (isDrawEditorOpen()) return;   // Draw editor owns the keyboard while it's up (handles its own Escape/undo)
+  if (isConnectPickerOpen() || isMindMapOpen()) return; // handle their own Escape
   const ae = document.activeElement;
   const typing = ae && (ae.isContentEditable || (/^(INPUT|TEXTAREA)$/.test(ae.tagName) && !ae.readOnly));
   if (e.key === 'Escape') { disarm(); deselect(); closePalette(); closeCtx(); }
@@ -77,6 +80,8 @@ initBoardChrome();
 initQuickNotes();
 initDocs();
 initDrawEditor();
+initConnectPicker();
+initMindMap();
 initTools();
 initTheme();
 

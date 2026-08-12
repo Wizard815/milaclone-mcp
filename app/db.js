@@ -60,7 +60,9 @@ const stmt = {
                           z=@z, color=@color, data=@data WHERE id=@id`),
   deleteItem: db.prepare(`DELETE FROM items WHERE id = ?`),
   searchItems: db.prepare(`SELECT * FROM items WHERE data LIKE ? ESCAPE '\\' ORDER BY createdAt DESC LIMIT ?`),
-  searchCanvases: db.prepare(`SELECT * FROM canvases WHERE title LIKE ? ESCAPE '\\' ORDER BY createdAt DESC LIMIT ?`)
+  searchCanvases: db.prepare(`SELECT * FROM canvases WHERE title LIKE ? ESCAPE '\\' ORDER BY createdAt DESC LIMIT ?`),
+  allCanvases: db.prepare(`SELECT id, title, parentCanvasId, color, icon FROM canvases`),
+  connectItems: db.prepare(`SELECT * FROM items WHERE type = 'connect'`)
 };
 
 // Seed a root 'Home' canvas on first run.
