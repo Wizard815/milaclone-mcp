@@ -198,6 +198,17 @@ function closeEditor() {
   history = []; hIndex = -1;
 }
 
+function hasUnsavedChanges() {
+  const savedTitle = doc.data.title || '';
+  const savedStrokes = JSON.stringify(doc.data.strokes || []);
+  return refs().title.value.trim() !== savedTitle || JSON.stringify(draft.strokes) !== savedStrokes;
+}
+
+function cancel() {
+  if (hasUnsavedChanges() && !confirm('Discard your changes to this drawing?')) return;
+  closeEditor();
+}
+
 async function save() {
   if (!doc) return;
   const r = refs();
@@ -213,7 +224,7 @@ async function save() {
 export function initDrawEditor() {
   const r = refs();
   wireSurface();
-  r.cancel.addEventListener('click', closeEditor);
+  r.cancel.addEventListener('click', cancel);
   r.save.addEventListener('click', save);
   r.toolbar.addEventListener('click', (e) => {
     const btn = e.target.closest('.dw-tool');
@@ -231,7 +242,10 @@ export function initDrawEditor() {
   r.width.addEventListener('input', () => { width = parseInt(r.width.value, 10); });
   document.addEventListener('keydown', (e) => {
     if (!doc) return;
-    if (e.key === 'Escape') { e.preventDefault(); closeEditor(); return; }
+    // Escape saves rather than discards — losing drawn work to an instinctive
+    // "close this" keypress is a much worse failure mode than a stray save.
+    // The Cancel button is still there for an explicit, deliberate discard.
+    if (e.key === 'Escape') { e.preventDefault(); save(); return; }
     const mod = e.metaKey || e.ctrlKey;
     if (mod && !e.shiftKey && e.key.toLowerCase() === 'z') { e.preventDefault(); r.undo.click(); return; }
     if (mod && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) { e.preventDefault(); r.redo.click(); return; }
