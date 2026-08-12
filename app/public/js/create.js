@@ -6,6 +6,7 @@ import { rid } from './util.js';
 import { render } from './cards.js';
 import { select, enterEdit } from './editing.js';
 import { openDocument } from './docs.js';
+import { openDrawEditor } from './draw-editor.js';
 
 // Default shapes for each card type and the toolbar "place a new card" flow.
 
@@ -22,7 +23,7 @@ export function defaultsFor(type) {
     case 'document':return { w: 152, data: { title: 'Untitled document', bodyHtml: '' } };
     case 'table':   return { w: 360, data: { rows: [['', ''], ['', '']] } };
     case 'color':   return { w: 160, data: { hex: '#2f6df0' } };
-    case 'draw':    return { w: 320, color: 'slate', data: { strokes: [] } };
+    case 'draw':    return { w: 152, color: 'slate', data: { title: 'Untitled drawing', strokes: [] } };
     default:        return { w: 240, data: {} };
   }
 }
@@ -36,6 +37,8 @@ export async function createAt(type, wx, wy) {
   select(it.id);
   if (type === 'document') {
     openDocument(it);
+  } else if (type === 'draw') {
+    openDrawEditor(it);
   } else if (type !== 'board' && type !== 'image' && type !== 'file') {
     const el = elMap.get(it.id); enterEdit(el); el.querySelector('[data-edit]')?.focus();
   }

@@ -425,20 +425,61 @@ input, textarea { font-family: var(--sans); }
 .cline-label:focus { border-color: var(--accent); color: var(--ink); white-space: normal; }
 .cline-label:empty::before { content: attr(data-placeholder); color: var(--ink-faint); }
 
-/* ---------- draw ---------- */
-.draw { padding: 0; overflow: hidden; height: 220px; }
-.draw.editing { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(47,109,240,.25), var(--card-shadow-hover); }
-.draw .dsurface { display: block; touch-action: none; cursor: grab; background: var(--card-bg); }
-.draw.editing .dsurface { cursor: crosshair; touch-action: none; }
-.draw .dtools {
-  position: absolute; right: 8px; bottom: 8px; display: flex; gap: 4px;
-  background: #2b2d31; padding: 4px; border-radius: 9px; box-shadow: var(--card-shadow-hover);
-  opacity: 0; transition: opacity .12s ease;
+/* ---------- draw (tile; opens the full-page editor) ---------- */
+.draw { padding: 16px 14px 14px; align-items: center; text-align: center; cursor: pointer; }
+.draw .tile { width: 54px; height: 54px; border-radius: 14px; display: grid; place-items: center; margin-bottom: 10px; box-shadow: 0 2px 6px rgba(0,0,0,.12); }
+.draw .tile svg { width: 26px; height: 26px; color: #fff; stroke-width: 1.75; }
+.draw .dwtitle {
+  font-family: var(--serif); font-weight: 600; font-size: 15px; outline: none; border: none;
+  background: none; text-align: center; width: 100%; color: var(--ink);
 }
-.draw:hover .dtools, .draw.selected .dtools { opacity: 1; }
-.draw .dtools button { border: none; background: none; color: #d6d8de; width: 26px; height: 26px; border-radius: 6px; display: grid; place-items: center; }
-.draw .dtools button:hover { background: rgba(255,255,255,.14); color: #fff; }
-.draw .dtools svg { width: 15px; height: 15px; }
+
+/* ---------- draw editor (full-page overlay) ---------- */
+#drawEditor { position: fixed; inset: 0; z-index: 200; background: var(--card-bg); display: flex; flex-direction: column; }
+#drawEditor[hidden] { display: none; }
+.dw-top {
+  display: flex; align-items: center; gap: 10px; padding: 10px 16px;
+  border-bottom: 1px solid var(--card-border); flex: 0 0 auto;
+}
+.dw-cancel, .dw-save {
+  border: none; border-radius: 8px; font-size: 13.5px; padding: 7px 14px; font-weight: 500;
+}
+.dw-cancel { background: none; color: var(--ink-soft); }
+.dw-cancel:hover { background: var(--canvas-bg); color: var(--ink); }
+.dw-save { background: var(--accent); color: #fff; margin-left: auto; }
+.dw-save:hover { opacity: .9; }
+.dw-title {
+  flex: 1; border: none; outline: none; background: none; text-align: center;
+  font-family: var(--serif); font-weight: 600; font-size: 16px; color: var(--ink);
+  max-width: 420px; margin: 0 auto;
+}
+.dw-body { flex: 1; display: flex; overflow: hidden; }
+.dw-toolbar {
+  flex: 0 0 auto; width: 56px; border-right: 1px solid var(--card-border);
+  display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 14px 0; overflow-y: auto;
+}
+.dw-toolbar .dw-sep { width: 28px; height: 1px; background: var(--card-border); margin: 6px 0; }
+.dw-tool, .dw-toolbar button {
+  width: 36px; height: 36px; border: none; background: none; border-radius: 8px;
+  display: grid; place-items: center; color: var(--ink-soft);
+}
+.dw-tool svg, .dw-toolbar button svg { width: 18px; height: 18px; }
+.dw-tool:hover, .dw-toolbar button:hover { background: var(--canvas-bg); color: var(--ink); }
+.dw-tool.active { background: var(--armed-bg); color: var(--accent); }
+.dw-color { -webkit-appearance: none; appearance: none; width: 30px; height: 30px; border: none; border-radius: 8px; padding: 0; background: none; cursor: pointer; }
+.dw-color::-webkit-color-swatch-wrapper { padding: 0; }
+.dw-color::-webkit-color-swatch { border: 1px solid var(--card-border); border-radius: 8px; }
+.dw-width { width: 32px; writing-mode: vertical-lr; direction: rtl; accent-color: var(--accent); }
+.dw-canvas-wrap { flex: 1; overflow: auto; display: flex; align-items: center; justify-content: center; padding: 24px; background: var(--canvas-bg); }
+.dw-svg { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 8px; box-shadow: var(--card-shadow); touch-action: none; }
+.dw-svg.tool-pen { cursor: crosshair; }
+.dw-svg.tool-select { cursor: default; }
+.dw-svg.tool-eraser { cursor: cell; }
+.dw-stroke { fill: none; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+.dw-stroke.selected { stroke-dasharray: 6 3; }
+.dw-hit { fill: none; stroke: transparent; pointer-events: stroke; }
+.dw-svg.tool-select .dw-hit { cursor: grab; }
+.dw-svg.tool-eraser .dw-hit { cursor: cell; }
 
 .item.locked { cursor: default; }
 .lock-badge { display: grid; place-items: center; color: #d6d8de; width: 28px; height: 28px; }

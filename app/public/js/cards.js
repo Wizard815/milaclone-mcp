@@ -8,7 +8,7 @@ import { updateSelectionChrome } from './boardchrome.js';
 import { onItemPointerDown, startResize } from './drag.js';
 import { openCanvas } from './main.js';
 import { openDocument } from './docs.js';
-import { screenToWorld } from './viewport.js';
+import { openDrawEditor } from './draw-editor.js';
 import { renderLines } from './lines.js';
 
 // Rendering of the canvas and every card type. This module owns the DOM for
@@ -317,102 +317,48 @@ function buildColor(el, it) {
   el.appendChild(swatch); el.appendChild(hex);
 }
 
-const SVG_NS = 'http://www.w3.org/2000/svg';
-const DRAW_H = 220;
-
-function pointsToPath(points) {
-  return points.length ? 'M' + points.map(p => p[0] + ',' + p[1]).join(' L') : '';
-}
-
+// Drawing itself happens in the full-page draw editor (draw-editor.js), not
+// on the canvas — this is just a tile, same pattern as buildDocument/buildBoard.
 function buildDraw(el, it) {
   el.classList.add('draw');
-  const strokes = it.data.strokes || [];
+  const tile = document.createElement('div'); tile.className = 'tile';
+  tile.style.background = colorVar(it.color || 'slate');
+  tile.appendChild(lucideEl('pencil'));
+  el.appendChild(tile);
+  const title = makeField('input', 'dwtitle', it.data.title, 'Untitled drawing');
+  title.setAttribute('data-nodrag', '');
+  title.addEventListener('input', () => saveData(it, { title: title.value }));
+  title.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (el.dataset.suppressTitleClick) { delete el.dataset.suppressTitleClick; return; }
+    if (state.selectedId !== it.id) { select(it.id); return; }
+    enterEdit(el); title.focus(); title.select();
+  });
+  el.appendChild(title);
+  bindDrawOpen(el, it);
+}
 
-  const svg = document.createElementNS(SVG_NS, 'svg');
-  svg.classList.add('dsurface');
-  svg.setAttribute('width', it.w || 320);
-  svg.setAttribute('height', DRAW_H);
-
-  const strokePath = (s) => {
-    const p = document.createElementNS(SVG_NS, 'path');
-    p.setAttribute('d', pointsToPath(s.points));
-    p.setAttribute('stroke', colorVar(s.color || 'slate'));
-    p.setAttribute('stroke-width', s.width || 3);
-    p.setAttribute('fill', 'none');
-    p.setAttribute('stroke-linecap', 'round');
-    p.setAttribute('stroke-linejoin', 'round');
-    return p;
-  };
-  const renderPaths = () => { svg.innerHTML = ''; strokes.forEach(s => svg.appendChild(strokePath(s))); };
-  renderPaths();
-
-  const toLocal = (e) => {
-    const w = screenToWorld(e.clientX, e.clientY);
-    return [Math.round(w.x - it.x), Math.round(w.y - it.y)];
-  };
-
-  // Drawing only intercepts the pointer once the card is in edit mode
-  // (entered via double-click, same as opening a document); otherwise a
-  // pointerdown on the surface falls through to the normal card
-  // select/drag handling so the card can still be moved around the board.
-  //
-  // Detected by hand (rather than listening for the browser's own
-  // 'dblclick') so the *second* pointerdown of the double-click can enter
-  // edit mode and start the stroke in the same gesture — waiting for the
-  // native dblclick event would only fire after that second click's
-  // pointerup, so a double-click-and-drag-without-lifting would already
-  // have been consumed as a card drag by then.
+// Mirrors bindBoardOpen/bindDocumentOpen: desktop dblclick, touch double-tap.
+function bindDrawOpen(el, it) {
   let lastTap = -Infinity, lastX = 0, lastY = 0;
-  let current = null, currentPath = null;
-  const startStroke = (e) => {
-    select(it.id);
-    current = { points: [toLocal(e)], color: it.color || 'slate', width: 3 };
-    currentPath = strokePath(current);
-    svg.appendChild(currentPath);
-    svg.setPointerCapture(e.pointerId);
-  };
-  svg.addEventListener('pointerdown', (e) => {
-    if (e.button !== 0) return;
-    if (el.classList.contains('editing')) {
-      e.stopPropagation(); e.preventDefault();
-      startStroke(e);
+  const open = () => { exitEdit(); openDrawEditor(it); };
+  el.addEventListener('dblclick', (e) => {
+    if (el.classList.contains('editing') && e.target.closest('[data-edit]')) return;
+    open();
+  });
+  el.addEventListener('pointerup', (e) => {
+    if (e.pointerType === 'mouse') return;
+    if (state.drag && state.drag.moved) return;
+    if (state.drag && state.drag.it && state.drag.it.id !== it.id) return;
+    const now = performance.now();
+    if (now - lastTap < 350 && Math.hypot(e.clientX - lastX, e.clientY - lastY) < 28) {
+      lastTap = -Infinity;
+      el.dataset.suppressTitleClick = '1';
+      open();
       return;
     }
-    const now = performance.now();
-    const isSecondTap = now - lastTap < 400 && Math.hypot(e.clientX - lastX, e.clientY - lastY) < 12;
-    lastTap = isSecondTap ? -Infinity : now;
-    lastX = e.clientX; lastY = e.clientY;
-    if (isSecondTap) {
-      e.stopPropagation(); e.preventDefault();
-      enterEdit(el);
-      startStroke(e);
-    }
-    // else: not a double-tap — let it bubble for the normal select/drag flow
+    lastTap = now; lastX = e.clientX; lastY = e.clientY;
   });
-  svg.addEventListener('pointermove', (e) => {
-    if (!current) return;
-    current.points.push(toLocal(e));
-    currentPath.setAttribute('d', pointsToPath(current.points));
-  });
-  const finishStroke = () => {
-    if (!current) return;
-    if (current.points.length > 1) { strokes.push(current); saveData(it, { strokes }); }
-    else { currentPath.remove(); }
-    current = null; currentPath = null;
-  };
-  svg.addEventListener('pointerup', finishStroke);
-  svg.addEventListener('pointercancel', finishStroke);
-
-  el.appendChild(svg);
-
-  const tools = document.createElement('div'); tools.className = 'dtools'; tools.setAttribute('data-nodrag', '');
-  const undo = document.createElement('button'); undo.title = 'Undo last stroke'; undo.appendChild(lucideEl('undo-2'));
-  undo.onclick = (e) => { e.stopPropagation(); strokes.pop(); saveData(it, { strokes }); renderPaths(); };
-  const clear = document.createElement('button'); clear.title = 'Clear'; clear.appendChild(lucideEl('eraser'));
-  clear.onclick = (e) => { e.stopPropagation(); strokes.length = 0; saveData(it, { strokes }); renderPaths(); };
-  tools.appendChild(undo); tools.appendChild(clear);
-  el.appendChild(tools);
-  refreshIcons(tools);
 }
 
 function buildBoard(el, it) {

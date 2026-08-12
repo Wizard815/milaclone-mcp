@@ -306,6 +306,30 @@
   </div>
 </div>
 
+<div id="drawEditor" hidden>
+  <div class="dw-top">
+    <button class="dw-cancel" id="dwCancel">Cancel</button>
+    <input class="dw-title" id="dwTitle" placeholder="Untitled drawing">
+    <button class="dw-save" id="dwSave">Save</button>
+  </div>
+  <div class="dw-body">
+    <div class="dw-toolbar" id="dwToolbar">
+      <button class="dw-tool" data-tool="pen" title="Pen"><i data-lucide="pencil"></i></button>
+      <button class="dw-tool" data-tool="select" title="Select"><i data-lucide="mouse-pointer-2"></i></button>
+      <button class="dw-tool" data-tool="eraser" title="Eraser"><i data-lucide="eraser"></i></button>
+      <div class="dw-sep"></div>
+      <button id="dwUndo" title="Undo"><i data-lucide="undo-2"></i></button>
+      <button id="dwRedo" title="Redo"><i data-lucide="redo-2"></i></button>
+      <div class="dw-sep"></div>
+      <input type="color" id="dwColor" class="dw-color" value="#565d6b" title="Color">
+      <input type="range" id="dwWidth" class="dw-width" min="1" max="16" value="3" title="Brush size">
+    </div>
+    <div class="dw-canvas-wrap">
+      <svg id="dwSvg" class="dw-svg tool-pen" width="900" height="600"></svg>
+    </div>
+  </div>
+</div>
+
 <div id="msheet" hidden>
   <button data-act="zoomin">Zoom in</button>
   <button data-act="zoomout">Zoom out</button>
