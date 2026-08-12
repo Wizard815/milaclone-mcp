@@ -15,9 +15,10 @@ import { openCanvas } from './main.js';
 // entirely and has to be found first.
 
 let pendingWorld = null;
+let pendingSourceCanvasId = null;
 let browseCanvasId = null;
 
-const ICONS = {
+export const ICONS = {
   note: 'file-text', todo: 'list-checks', link: 'link-2', heading: 'heading-1',
   document: 'file-text', table: 'table', color: 'palette', draw: 'pencil',
   comment: 'message-circle', column: 'columns-3', file: 'file', image: 'image', connect: 'radar'
@@ -40,9 +41,14 @@ function previewText(it) {
 
 export function isConnectPickerOpen() { return !!pendingWorld; }
 
-export function openConnectPicker(worldPos) {
+// sourceCanvasId: which board the new connect badge is created on. Defaults
+// to whatever board is currently open (the normal arm-tool-and-click flow);
+// callers outside the canvas (the mind map's right-click menu) pass it
+// explicitly since there's no "current board" in that context.
+export function openConnectPicker(worldPos, sourceCanvasId) {
   pendingWorld = worldPos;
-  browseCanvasId = state.view.canvas.id;
+  pendingSourceCanvasId = sourceCanvasId || state.view.canvas.id;
+  browseCanvasId = pendingSourceCanvasId;
   refs().root.hidden = false;
   renderPicker();
 }
@@ -97,15 +103,21 @@ async function renderPicker() {
 
 async function confirmTarget(targetCanvasId, targetItemId, label) {
   if (!pendingWorld) return;
+  const sourceCanvasId = pendingSourceCanvasId;
   const body = {
-    canvasId: state.view.canvas.id, type: 'connect',
+    canvasId: sourceCanvasId, type: 'connect',
     x: Math.round(pendingWorld.x - 110), y: Math.round(pendingWorld.y - 30), w: 220,
     data: { targetCanvasId, targetItemId, targetLabel: label, note: '' }
   };
   const it = await api.create(body);
-  state.view.items.push(it);
-  render();
-  select(it.id);
+  // Only touch the live board state (and select the new card) if we created
+  // it on the board actually open right now — the mind map's "connect from
+  // here" can target a board that isn't the one on screen.
+  if (state.view.canvas && sourceCanvasId === state.view.canvas.id) {
+    state.view.items.push(it);
+    render();
+    select(it.id);
+  }
   closePicker();
   toast('Connected');
 }
@@ -120,8 +132,7 @@ function centerCameraOn(x, y) {
   applyCam();
 }
 
-export async function navigateToConnect(it) {
-  const { targetCanvasId, targetItemId } = it.data;
+export async function navigateToTarget(targetCanvasId, targetItemId) {
   if (!targetCanvasId) { toast('This link has no target'); return; }
   await openCanvas(targetCanvasId);
   if (targetItemId) {
@@ -133,6 +144,10 @@ export async function navigateToConnect(it) {
       toast('That card no longer exists');
     }
   }
+}
+
+export function navigateToConnect(it) {
+  return navigateToTarget(it.data.targetCanvasId, it.data.targetItemId);
 }
 
 export function initConnectPicker() {
