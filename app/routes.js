@@ -225,8 +225,36 @@ router.patch('/api/items', (req, res) => {
 
 router.delete('/api/item/:id', (req, res) => {
   if (!stmt.getItem.get(req.params.id)) return res.status(404).json({ error: 'not found' });
-  db.transaction(() => deleteItemDeep(req.params.id, new Set()))();
+  const batchTs = id('del_');
+  db.transaction(() => deleteItemDeep(req.params.id, new Set(), batchTs))();
   res.json({ ok: true });
+});
+
+// Undoes a board deletion: a board (and everything nested under it, however
+// deep) was soft-deleted as one batch keyed by its own item id's deletedAt
+// marker, so restoring is just clearing deletedAt everywhere that marker was
+// stamped. Non-board deletions don't go through here — those are undone
+// client-side via plain recreate, since they're actually gone from the DB.
+router.post('/api/item/:id/restore', (req, res) => {
+  const row = stmt.getItemAny.get(req.params.id);
+  if (!row || row.deletedAt == null) return res.status(404).json({ error: 'not found' });
+  const batchTs = row.deletedAt;
+  db.transaction(() => {
+    stmt.restoreItemsByBatch.run(batchTs);
+    stmt.restoreCanvasesByBatch.run(batchTs);
+  })();
+  const restored = rowToItem(stmt.getItem.get(req.params.id));
+  if (restored.type === 'board' && restored.data.childCanvasId) {
+    const child = stmt.getCanvas.get(restored.data.childCanvasId);
+    const count = stmt.childCount.get(restored.data.childCanvasId).c;
+    Object.assign(restored, {
+      _childTitle: child ? child.title : 'Board',
+      _childCount: count,
+      _childColor: child ? child.color : 'slate',
+      _childIcon: child ? (child.icon || 'layout-grid') : 'layout-grid'
+    });
+  }
+  res.json(restored);
 });
 
 // ---- Quick notes -----------------------------------------------------------

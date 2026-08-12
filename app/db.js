@@ -32,36 +32,45 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_items_parent ON items(parentItemId);
 `);
 
-// Additive column for existing DBs
+// Additive columns for existing DBs
 const cols = db.prepare("PRAGMA table_info(canvases)").all().map(c => c.name);
 if (!cols.includes('icon')) db.exec('ALTER TABLE canvases ADD COLUMN icon TEXT');
+if (!cols.includes('deletedAt')) db.exec('ALTER TABLE canvases ADD COLUMN deletedAt TEXT');
+const itemCols = db.prepare("PRAGMA table_info(items)").all().map(c => c.name);
+if (!itemCols.includes('deletedAt')) db.exec('ALTER TABLE items ADD COLUMN deletedAt TEXT');
 
 // Prepared statements (created once, reused per request).
 const stmt = {
   getMeta: db.prepare(`SELECT value FROM meta WHERE key = ?`),
   setMeta: db.prepare(`INSERT INTO meta (key, value) VALUES (?, ?)
                        ON CONFLICT(key) DO UPDATE SET value = excluded.value`),
-  getCanvas: db.prepare(`SELECT * FROM canvases WHERE id = ?`),
-  allCanvases: db.prepare(`SELECT id, title, parentCanvasId, color, icon FROM canvases`),
+  getCanvas: db.prepare(`SELECT * FROM canvases WHERE id = ? AND deletedAt IS NULL`),
+  getCanvasAny: db.prepare(`SELECT * FROM canvases WHERE id = ?`),
+  allCanvases: db.prepare(`SELECT id, title, parentCanvasId, color, icon FROM canvases WHERE deletedAt IS NULL`),
   insertCanvas: db.prepare(`INSERT INTO canvases (id, title, parentCanvasId, color, icon, createdAt)
                             VALUES (@id, @title, @parentCanvasId, @color, @icon, @createdAt)`),
   updateCanvas: db.prepare(`UPDATE canvases SET title = @title, color = @color, icon = @icon WHERE id = @id`),
   deleteCanvas: db.prepare(`DELETE FROM canvases WHERE id = ?`),
-  boardItemsOnCanvas: db.prepare(`SELECT * FROM items WHERE canvasId = ? AND type = 'board'`),
-  getItem: db.prepare(`SELECT * FROM items WHERE id = ?`),
-  itemsForCanvas: db.prepare(`SELECT * FROM items WHERE canvasId = ? ORDER BY COALESCE(z, 0), createdAt, id`),
-  itemsByParent: db.prepare(`SELECT * FROM items WHERE parentItemId = ?`),
-  todoItems: db.prepare(`SELECT * FROM items WHERE type = 'todo' ORDER BY createdAt, id`),
-  itemsByCanvas: db.prepare(`SELECT * FROM items WHERE canvasId = ?`),
+  softDeleteCanvas: db.prepare(`UPDATE canvases SET deletedAt = ? WHERE id = ?`),
+  boardItemsOnCanvas: db.prepare(`SELECT * FROM items WHERE canvasId = ? AND type = 'board' AND deletedAt IS NULL`),
+  getItem: db.prepare(`SELECT * FROM items WHERE id = ? AND deletedAt IS NULL`),
+  getItemAny: db.prepare(`SELECT * FROM items WHERE id = ?`),
+  itemsForCanvas: db.prepare(`SELECT * FROM items WHERE canvasId = ? AND deletedAt IS NULL ORDER BY COALESCE(z, 0), createdAt, id`),
+  itemsByParent: db.prepare(`SELECT * FROM items WHERE parentItemId = ? AND deletedAt IS NULL`),
+  todoItems: db.prepare(`SELECT * FROM items WHERE type = 'todo' AND deletedAt IS NULL ORDER BY createdAt, id`),
+  itemsByCanvas: db.prepare(`SELECT * FROM items WHERE canvasId = ? AND deletedAt IS NULL`),
   maxZ: db.prepare(`SELECT MAX(z) AS m FROM items`),
-  childCount: db.prepare(`SELECT COUNT(*) AS c FROM items WHERE canvasId = ? AND parentItemId IS NULL`),
+  childCount: db.prepare(`SELECT COUNT(*) AS c FROM items WHERE canvasId = ? AND parentItemId IS NULL AND deletedAt IS NULL`),
   insertItem: db.prepare(`INSERT INTO items (id, canvasId, parentItemId, type, x, y, w, h, z, color, data, createdAt)
                           VALUES (@id, @canvasId, @parentItemId, @type, @x, @y, @w, @h, @z, @color, @data, @createdAt)`),
   updateItem: db.prepare(`UPDATE items SET canvasId=@canvasId, parentItemId=@parentItemId, x=@x, y=@y, w=@w, h=@h,
                           z=@z, color=@color, data=@data WHERE id=@id`),
   deleteItem: db.prepare(`DELETE FROM items WHERE id = ?`),
-  searchItems: db.prepare(`SELECT * FROM items WHERE data LIKE ? ESCAPE '\\' ORDER BY createdAt DESC LIMIT ?`),
-  searchCanvases: db.prepare(`SELECT * FROM canvases WHERE title LIKE ? ESCAPE '\\' ORDER BY createdAt DESC LIMIT ?`)
+  softDeleteItem: db.prepare(`UPDATE items SET deletedAt = ? WHERE id = ?`),
+  restoreItemsByBatch: db.prepare(`UPDATE items SET deletedAt = NULL WHERE deletedAt = ?`),
+  restoreCanvasesByBatch: db.prepare(`UPDATE canvases SET deletedAt = NULL WHERE deletedAt = ?`),
+  searchItems: db.prepare(`SELECT * FROM items WHERE data LIKE ? ESCAPE '\\' AND deletedAt IS NULL ORDER BY createdAt DESC LIMIT ?`),
+  searchCanvases: db.prepare(`SELECT * FROM canvases WHERE title LIKE ? ESCAPE '\\' AND deletedAt IS NULL ORDER BY createdAt DESC LIMIT ?`)
 };
 
 // Seed a root 'Home' canvas on first run.
@@ -117,27 +126,34 @@ function collectDescendantCanvases(canvasId, acc) {
   return acc;
 }
 
-// Recursively delete an item, its parented children, and any nested board subtree.
-// Assumes it runs inside a transaction. `visited` guards against parent cycles.
-function deleteItemDeep(itemId, visited) {
+// Recursively delete an item, its parented children, and any nested board
+// subtree. Assumes it runs inside a transaction. `visited` guards against
+// parent cycles. `batchTs` is an opaque per-call marker (not a real
+// timestamp) — a board and everything nested under it get soft-deleted
+// (deletedAt = batchTs) rather than actually removed, so the whole subtree
+// can be brought back in one shot later by clearing deletedAt everywhere it
+// was stamped with that marker. Everything else is still hard-deleted, same
+// as before; the client's plain snapshot-and-recreate undo handles that.
+function deleteItemDeep(itemId, visited, batchTs) {
   if (visited.has(itemId)) return;
   visited.add(itemId);
   const it = stmt.getItem.get(itemId);
   if (!it) return;
   // delete children parented to this item (e.g. cards inside a column)
   for (const child of stmt.itemsByParent.all(itemId)) {
-    deleteItemDeep(child.id, visited);
+    deleteItemDeep(child.id, visited, batchTs);
   }
-  // if it owns a nested board canvas, remove that whole subtree
   const data = it.data ? JSON.parse(it.data) : {};
   if (it.type === 'board' && data.childCanvasId) {
     const canvases = collectDescendantCanvases(data.childCanvasId, new Set());
     for (const cid of canvases) {
       for (const sub of stmt.itemsByCanvas.all(cid)) {
-        stmt.deleteItem.run(sub.id);
+        stmt.softDeleteItem.run(batchTs, sub.id);
       }
-      stmt.deleteCanvas.run(cid);
+      stmt.softDeleteCanvas.run(batchTs, cid);
     }
+    stmt.softDeleteItem.run(batchTs, itemId);
+    return;
   }
   stmt.deleteItem.run(itemId);
 }
