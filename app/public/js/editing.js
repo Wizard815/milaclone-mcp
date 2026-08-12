@@ -6,6 +6,7 @@ import { render, renderCrumbs } from './cards.js';
 import { closePalette, closeCtx } from './menus.js';
 import { updateSelectionChrome } from './boardchrome.js';
 import { snapshotForUndo } from './undo.js';
+import { confirmDialog } from './confirm.js';
 
 // Selection, inline-edit mode, debounced saves, and deletion.
 
@@ -66,7 +67,8 @@ export async function deleteItem(id, { trackUndo = true } = {}) {
   const it = state.view.items.find(x => x.id === id);
   if (it && it.type === 'board' && it.data && it.data.childCanvasId) {
     const label = it._childTitle || it.data.title || 'this board';
-    if (!confirm(`Delete "${label}" and everything inside it?\n\nYou can undo this with Ctrl+Z.`)) return;
+    const ok = await confirmDialog(`Delete "${label}" and everything inside it?\n\nYou can undo this with Ctrl+Z.`);
+    if (!ok) return;
   }
   if (trackUndo) snapshotForUndo(id);
   await api.remove(id);

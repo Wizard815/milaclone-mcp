@@ -19,10 +19,10 @@ import { openCanvas } from './main.js';
 // the context menu) does the actual navigation.
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
-const RING = 150;
+const RING = 220;
 const NODE_R = 26;
 const SAT_R = 10;
-const SAT_DIST = NODE_R + 58;
+const SAT_DIST = NODE_R + 72;
 
 const ICONS = {
   note: 'file-text', todo: 'list-checks', link: 'link-2', heading: 'heading-1',
@@ -67,7 +67,11 @@ function layout(node, angleStart, angleEnd, depth) {
   node._angle = angle;
   if (!node.children.length) return;
   const span = angleEnd - angleStart;
-  const weights = node.children.map(c => Math.max(countNodes(c), 1));
+  // Expanded boards fan a ring of satellites out around themselves, so they
+  // need more room than their nesting weight alone implies — otherwise two
+  // adjacent expanded boards' satellite rings can overlap. Give expanded
+  // children extra angular weight to push their neighbors further away.
+  const weights = node.children.map(c => Math.max(countNodes(c), 1) + (expanded.has(c.id) ? 3 : 0));
   const total = weights.reduce((a, b) => a + b, 0);
   let a = angleStart;
   node.children.forEach((c, i) => {

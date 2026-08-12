@@ -17,6 +17,7 @@ import { initDrawEditor, isDrawEditorOpen } from './draw-editor.js';
 import { initTheme } from './theme.js';
 import { performUndo, performRedo } from './undo.js';
 import { initMindMap, isMindMapOpen } from './mindmap.js';
+import { initConfirmDialog, isConfirmOpen } from './confirm.js';
 
 // Entry point: canvas loading/navigation, global keyboard + pointer handling,
 // and boot. Wiring for the viewport and toolbar lives in their own modules and
@@ -41,6 +42,7 @@ document.addEventListener('keydown', (e) => {
   if (isDocumentOpen()) return;     // Document editor owns the keyboard while it's up (handles its own Escape)
   if (isDrawEditorOpen()) return;   // Draw editor owns the keyboard while it's up (handles its own Escape/undo)
   if (isMindMapOpen()) return;      // Mind map owns the keyboard while it's up (handles its own Escape)
+  if (isConfirmOpen()) return;      // Confirm dialog owns the keyboard while it's up (handles its own Escape/Enter)
   const ae = document.activeElement;
   const typing = ae && (ae.isContentEditable || (/^(INPUT|TEXTAREA)$/.test(ae.tagName) && !ae.readOnly));
   if (e.key === 'Escape') { disarm(); deselect(); closePalette(); closeCtx(); }
@@ -63,6 +65,7 @@ document.addEventListener('keydown', (e) => {
 
 document.addEventListener('pointerdown', (e) => {
   if (isQuickNotesOpen()) return;
+  if (isConfirmOpen()) return;
   if (!e.target.closest('#palette') && !e.target.closest('.swatch')) closePalette();
   if (!e.target.closest('#ctxmenu') && !e.target.closest('.item')) closeCtx();
   if (state.editingId && !e.target.closest('.item')) exitEdit();
@@ -82,6 +85,7 @@ initDrawEditor();
 initTools();
 initTheme();
 initMindMap();
+initConfirmDialog();
 
 (async function boot() {
   refreshIcons();

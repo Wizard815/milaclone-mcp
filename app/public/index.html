@@ -360,6 +360,16 @@
 
 <div id="palette"></div>
 <div id="ctxmenu" role="menu"></div>
+<div id="confirmModal" hidden>
+  <div class="cm-backdrop"></div>
+  <div class="cm-box" role="alertdialog" aria-modal="true">
+    <p id="cmMessage"></p>
+    <div class="cm-actions">
+      <button type="button" id="cmCancel">Cancel</button>
+      <button type="button" id="cmOk" class="danger">Delete</button>
+    </div>
+  </div>
+</div>
 <input type="file" id="fileInput" accept="image/*">
 <input type="file" id="uploadInput" accept=".pdf,.txt,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.json,text/*,application/pdf">
 <div class="toast" id="toast"></div>

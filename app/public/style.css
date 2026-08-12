@@ -545,6 +545,28 @@ input, textarea { font-family: var(--sans); }
 #ctxmenu .ctx-item kbd { font-family: var(--sans); font-size: 11px; color: var(--ink-faint); }
 #ctxmenu .ctx-sep { height: 1px; background: var(--rail-border); margin: 4px 6px; }
 
+/* ---------- confirm modal ----------
+   In-app replacement for window.confirm(): native confirm dialogs are
+   unreliable in embedded/mobile webviews (silently auto-answered or not
+   shown at all), and this app has a real mobile mode where that matters. */
+#confirmModal { position: fixed; inset: 0; z-index: 300; display: flex; align-items: center; justify-content: center; }
+#confirmModal[hidden] { display: none; }
+.cm-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.45); }
+.cm-box {
+  position: relative; z-index: 1; width: min(360px, calc(100vw - 32px)); background: var(--card-bg);
+  border: 1px solid var(--card-border); border-radius: 14px; box-shadow: var(--card-shadow-hover);
+  padding: 20px; display: flex; flex-direction: column; gap: 16px;
+}
+.cm-box p { margin: 0; font-size: 14px; line-height: 1.5; color: var(--ink); white-space: pre-line; }
+.cm-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.cm-actions button {
+  border: none; border-radius: 8px; padding: 9px 16px; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+#cmCancel { background: var(--canvas-bg); color: var(--ink); }
+#cmCancel:hover { background: var(--surface-3); }
+#cmOk.danger { background: #c0392b; color: #fff; }
+#cmOk.danger:hover { opacity: .9; }
+
 /* hidden file inputs */
 #fileInput, #uploadInput { display: none; }
 
