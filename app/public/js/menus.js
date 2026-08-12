@@ -6,6 +6,7 @@ import { colorVar, lucideEl, refreshIcons, isLocked } from './util.js';
 import { refreshItem } from './cards.js';
 import { select, renameSelected, deleteItem } from './editing.js';
 import { copySelected, pasteClipboard, duplicateSelected, toggleLock } from './clipboard.js';
+import { openConnectPicker } from './connect.js';
 
 // The floating color/icon palette and the right-click context menu.
 
@@ -79,6 +80,8 @@ export function openCtx(e, it) {
     { label: 'Rename', hint: 'Return', fn: () => renameSelected() },
     { label: locked ? 'Unlock Position' : 'Lock Position', fn: () => toggleLock() },
     { sep: true },
+    { label: 'Connect from here', fn: () => openConnectFrom(it) },
+    { sep: true },
     { label: 'Move to Trash', hint: 'Delete', danger: true, fn: () => deleteItem(it.id) }
   ];
   dom.ctxmenu.innerHTML = '';
@@ -100,6 +103,17 @@ export function openCtx(e, it) {
   if (top + mh > window.innerHeight) top = window.innerHeight - mh - 8;
   dom.ctxmenu.style.left = left + 'px';
   dom.ctxmenu.style.top = top + 'px';
+}
+
+// "Connect from here": places the new connect badge just to the right of
+// the card that was right-clicked, so the resulting link reads as coming
+// from that specific card rather than a bare drop-anywhere-on-the-board
+// badge. openConnectPicker's placement math centers the badge on the world
+// point it's given (offsetting by -w/2, -30), so we back that out here.
+function openConnectFrom(it) {
+  const w = 220;
+  const worldPos = { x: (it.x || 0) + (it.w || 240) + 20 + w / 2, y: (it.y || 0) + 30 };
+  openConnectPicker(worldPos, state.view.canvas.id, it.id);
 }
 
 export function closeCtx() { dom.ctxmenu.classList.remove('open'); dom.ctxmenu.innerHTML = ''; }

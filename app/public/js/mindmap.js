@@ -177,14 +177,15 @@ async function renderGraph() {
   const clearanceNodes = nodes.map(n => ({ x: n._x, y: n._y, r: NODE_R })).concat(satellites.map(s => ({ x: s.x, y: s.y, r: SAT_R })));
   const seen = new Set();
   for (const c of data.connects) {
+    const fromSat = c.sourceItemId && satByItemId.get(c.sourceItemId);
     const toSat = c.targetItemId && satByItemId.get(c.targetItemId);
-    const fromNode = byId.get(c.canvasId);
+    const fromNode = fromSat ? null : byId.get(c.canvasId);
     const toNode = toSat ? null : byId.get(c.targetCanvasId);
-    const from = fromNode ? { x: fromNode._x, y: fromNode._y } : null;
+    const from = fromSat ? { x: fromSat.x, y: fromSat.y } : (fromNode ? { x: fromNode._x, y: fromNode._y } : null);
     const to = toSat ? { x: toSat.x, y: toSat.y } : (toNode ? { x: toNode._x, y: toNode._y } : null);
     if (!from || !to || (from.x === to.x && from.y === to.y)) continue;
 
-    const key = c.canvasId + '|' + (c.targetItemId || c.targetCanvasId);
+    const key = (c.sourceItemId || c.canvasId) + '|' + (c.targetItemId || c.targetCanvasId);
     const side = seen.has(key) ? -1 : 1;
     seen.add(key);
 
@@ -206,7 +207,7 @@ async function renderGraph() {
     const cx = mx + px * bow * side, cy = my + py * bow * side;
     const path = document.createElementNS(SVG_NS, 'path');
     path.setAttribute('d', `M ${from.x},${from.y} Q ${cx},${cy} ${to.x},${to.y}`);
-    path.setAttribute('class', 'mm-connect' + (toSat ? ' mm-connect-item' : ''));
+    path.setAttribute('class', 'mm-connect' + ((fromSat || toSat) ? ' mm-connect-item' : ''));
     if (c.note || c.label) { const t = document.createElementNS(SVG_NS, 'title'); t.textContent = c.label + (c.note ? ' — ' + c.note : ''); path.appendChild(t); }
     connectLayer.appendChild(path);
   }
@@ -292,10 +293,20 @@ export function initMindMap() {
   r.svg.addEventListener('click', closeCtx);
   r.ctxConnect.addEventListener('click', () => {
     if (!ctxTarget) return;
-    const canvasId = ctxTarget.canvasId;
+    const { canvasId, itemId } = ctxTarget;
+    // If a specific card was right-clicked, place the new badge right next
+    // to it (same math as the canvas's own "Connect from here") so the
+    // connection reads as coming from that card, not just "this board".
+    let worldPos = { x: 60, y: 60 };
+    const w = 220;
+    if (itemId) {
+      const items = itemCache.get(canvasId) || [];
+      const it = items.find(x => x.id === itemId);
+      if (it) worldPos = { x: (it.x || 0) + (it.w || 240) + 20 + w / 2, y: (it.y || 0) + 30 };
+    }
     closeCtx();
     closeMindMap();
-    openConnectPicker({ x: 60, y: 60 }, canvasId);
+    openConnectPicker(worldPos, canvasId, itemId || null);
   });
   r.ctxOpen.addEventListener('click', () => {
     if (!ctxTarget) return;

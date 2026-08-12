@@ -16,6 +16,7 @@ import { openCanvas } from './main.js';
 
 let pendingWorld = null;
 let pendingSourceCanvasId = null;
+let pendingSourceItemId = null;
 let browseCanvasId = null;
 
 export const ICONS = {
@@ -45,9 +46,14 @@ export function isConnectPickerOpen() { return !!pendingWorld; }
 // to whatever board is currently open (the normal arm-tool-and-click flow);
 // callers outside the canvas (the mind map's right-click menu) pass it
 // explicitly since there's no "current board" in that context.
-export function openConnectPicker(worldPos, sourceCanvasId) {
+// sourceItemId: the existing card (if any) this connection is "from" —
+// set by "Connect from here" on a card's context menu, on the canvas or in
+// the mind map. Lets the mind map draw the edge starting at that specific
+// card's satellite node instead of just the board it lives on.
+export function openConnectPicker(worldPos, sourceCanvasId, sourceItemId) {
   pendingWorld = worldPos;
   pendingSourceCanvasId = sourceCanvasId || state.view.canvas.id;
+  pendingSourceItemId = sourceItemId || null;
   browseCanvasId = pendingSourceCanvasId;
   refs().root.hidden = false;
   renderPicker();
@@ -56,6 +62,7 @@ export function openConnectPicker(worldPos, sourceCanvasId) {
 function closePicker() {
   refs().root.hidden = true;
   pendingWorld = null;
+  pendingSourceItemId = null;
 }
 
 async function renderPicker() {
@@ -107,7 +114,7 @@ async function confirmTarget(targetCanvasId, targetItemId, label) {
   const body = {
     canvasId: sourceCanvasId, type: 'connect',
     x: Math.round(pendingWorld.x - 110), y: Math.round(pendingWorld.y - 30), w: 220,
-    data: { targetCanvasId, targetItemId, targetLabel: label, note: '' }
+    data: { sourceItemId: pendingSourceItemId, targetCanvasId, targetItemId, targetLabel: label, note: '' }
   };
   const it = await api.create(body);
   // Only touch the live board state (and select the new card) if we created

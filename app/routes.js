@@ -260,6 +260,7 @@ router.get('/api/graph', (req, res) => {
   const connects = stmt.connectItems.all().map(rowToItem).map(it => ({
     id: it.id,
     canvasId: it.canvasId,
+    sourceItemId: it.data.sourceItemId || null,
     targetCanvasId: it.data.targetCanvasId,
     targetItemId: it.data.targetItemId || null,
     label: it.data.targetLabel || '',
