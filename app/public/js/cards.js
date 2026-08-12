@@ -363,7 +363,8 @@ function buildDraw(el, it) {
   } else {
     const empty = document.createElement('div'); empty.className = 'draw-empty';
     empty.appendChild(lucideEl('pencil'));
-    const label = document.createElement('span'); label.textContent = it.data.title || 'Untitled drawing';
+    const label = document.createElement('span');
+    label.textContent = it.data.title ? it.data.title : 'Empty — double-click to draw';
     empty.appendChild(label);
     el.appendChild(empty);
   }

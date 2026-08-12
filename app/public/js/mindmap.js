@@ -107,20 +107,39 @@ export async function openMindMap() {
     edgeLayer.appendChild(line);
   }
 
-  // Connect-badge edges — highlighted, drawn as a gentle curve so they read
-  // as distinct "shortcuts" laid over the plain tree structure, even when
-  // they run parallel to it or connect nodes far apart.
+  // Connect-badge edges — highlighted, drawn as a curve so they read as
+  // distinct "shortcuts" laid over the plain tree structure. Bowed out far
+  // enough to clear any *other* node the straight line would otherwise
+  // pass through (a real risk here specifically: two children of the same
+  // hub are often roughly opposite each other, so the direct line between
+  // them runs right through that hub — Home most commonly).
   const seen = new Set();
   for (const c of data.connects) {
     const from = byId.get(c.canvasId), to = byId.get(c.targetCanvasId);
     if (!from || !to || from === to) continue;
     const key = [from.id, to.id].sort().join('|');
-    const bow = seen.has(key) ? 26 : 14; // nudge a second edge between the same pair apart
+    const side = seen.has(key) ? -1 : 1; // nudge a second edge between the same pair to the other side
     seen.add(key);
-    const mx = (from._x + to._x) / 2, my = (from._y + to._y) / 2;
+
     const dx = to._x - from._x, dy = to._y - from._y;
     const len = Math.hypot(dx, dy) || 1;
-    const cx = mx + (-dy / len) * bow, cy = my + (dx / len) * bow;
+    const ux = dx / len, uy = dy / len; // unit vector along the edge
+    const px = -uy, py = ux;            // unit vector perpendicular to it
+
+    let bow = Math.max(len * 0.22, 24);
+    for (const other of nodes) {
+      if (other === from || other === to) continue;
+      // distance from `other` to the straight line from->to
+      const t = (other._x - from._x) * ux + (other._y - from._y) * uy;
+      if (t <= 0 || t >= len) continue; // projects outside the segment — not in the way
+      const closestX = from._x + ux * t, closestY = from._y + uy * t;
+      const dist = Math.hypot(other._x - closestX, other._y - closestY);
+      const clearance = NODE_R + 24;
+      if (dist < clearance) bow = Math.max(bow, clearance + (clearance - dist));
+    }
+
+    const mx = (from._x + to._x) / 2, my = (from._y + to._y) / 2;
+    const cx = mx + px * bow * side, cy = my + py * bow * side;
     const path = document.createElementNS(SVG_NS, 'path');
     path.setAttribute('d', `M ${from._x},${from._y} Q ${cx},${cy} ${to._x},${to._y}`);
     path.setAttribute('class', 'mm-connect');
