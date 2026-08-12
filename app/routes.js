@@ -8,7 +8,7 @@ const crypto = require('crypto');
 
 const {
   db, stmt, id, rootCanvasId,
-  rowToItem, breadcrumb, itemsForCanvas, deleteItemDeep, likeEscape
+  rowToItem, rowToCanvas, breadcrumb, itemsForCanvas, deleteItemDeep, likeEscape
 } = require('./db');
 
 const UPLOAD_DIR = path.join(__dirname, 'public', 'uploads');
@@ -91,7 +91,7 @@ router.get('/api/canvas/:id', (req, res) => {
     }
     return it;
   });
-  res.json({ canvas, items, breadcrumb: breadcrumb(canvas.id) });
+  res.json({ canvas: rowToCanvas(canvas), items, breadcrumb: breadcrumb(canvas.id) });
 });
 
 router.patch('/api/canvas/:id', (req, res) => {
@@ -102,7 +102,7 @@ router.patch('/api/canvas/:id', (req, res) => {
   if (typeof color === 'string') canvas.color = color;
   if (typeof icon === 'string') canvas.icon = icon;
   stmt.updateCanvas.run(canvas);
-  res.json(canvas);
+  res.json(rowToCanvas(canvas));
 });
 
 // ---- Items -----------------------------------------------------------------

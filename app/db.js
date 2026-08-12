@@ -92,8 +92,18 @@ process.on('SIGTERM', () => { db.close(); process.exit(0); });
 // Mapping helpers: rows <-> API objects. `data` is stored as a JSON string but
 // the API (and the frontend) always work with it as an object.
 // ---------------------------------------------------------------------------
+// `deletedAt` is internal soft-delete bookkeeping (see deleteItemDeep) —
+// every row reaching here already passed a `deletedAt IS NULL` filter, so
+// it'd only ever show up as a stray always-null field in API responses.
 function rowToItem(row) {
-  return Object.assign({}, row, { data: row.data ? JSON.parse(row.data) : {} });
+  const { deletedAt, ...rest } = row;
+  return Object.assign(rest, { data: row.data ? JSON.parse(row.data) : {} });
+}
+
+function rowToCanvas(row) {
+  if (!row) return row;
+  const { deletedAt, ...rest } = row;
+  return rest;
 }
 
 // ---------------------------------------------------------------------------
@@ -165,5 +175,5 @@ function likeEscape(s) {
 
 module.exports = {
   DB_FILE, db, stmt, id, rootCanvasId,
-  rowToItem, breadcrumb, itemsForCanvas, deleteItemDeep, likeEscape
+  rowToItem, rowToCanvas, breadcrumb, itemsForCanvas, deleteItemDeep, likeEscape
 };

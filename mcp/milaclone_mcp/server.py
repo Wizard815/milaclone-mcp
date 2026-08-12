@@ -269,9 +269,30 @@ def update_item(
 def delete_item(item_id: str) -> dict[str, Any]:
     """
     Delete a card. If it's a `board` card, its entire nested board (and
-    everything on it, recursively) is deleted too — this cannot be undone.
+    everything on it, recursively) is deleted too.
+
+    Deleting a `board` card can be undone with `restore_item` (pass this
+    same item_id) — the whole nested subtree comes back exactly as it was.
+    Deleting any other card type is permanent; there's no restore for those.
     """
     return _get_client().delete_item(item_id)
+
+
+@mcp.tool()
+def restore_item(item_id: str) -> dict[str, Any]:
+    """
+    Undo the deletion of a `board` card — brings back the board and
+    everything nested inside it (however deep), exactly as it was.
+
+    Args:
+        item_id: the id of the deleted board card (the id you passed to
+            `delete_item`, not its child board's id).
+
+    Only works for boards, and only until something else deletes that same
+    board again. Other card types can't be restored this way — deleting
+    them is permanent, so there's nothing to call this with.
+    """
+    return _get_client().restore_item(item_id)
 
 
 @mcp.tool()

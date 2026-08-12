@@ -17,11 +17,17 @@ and standalone dev setup.
 | `create_item` | Create a note/todo/link/column/comment/board/heading/document/table/color/draw/line card |
 | `update_item` | Edit a card's data/position/color/parent |
 | `delete_item` | Delete a card (recursively, if it's a nested board) |
+| `restore_item` | Undo a board's deletion (boards only — see below) |
 | `add_todo_task` | Append a task to a to-do card |
 | `set_todo_task_done` | Check/uncheck a task on a to-do card |
 
 Image and file-upload cards can't be created via MCP (they require an actual
 file upload) but are visible in `get_board`/`search` results.
+
+Deleting a `board` card soft-deletes its entire nested subtree, so
+`restore_item(item_id)` (same id you passed to `delete_item`) brings the
+whole thing back exactly as it was. This only applies to boards — deleting
+any other card type is permanent.
 
 ## Standalone dev setup
 

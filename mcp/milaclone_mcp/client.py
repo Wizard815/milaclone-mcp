@@ -74,6 +74,10 @@ class MilacloneClient:
         """DELETE /api/item/{id} — deletes recursively (children + nested board subtree)."""
         return self._delete(f"/api/item/{item_id}")
 
+    def restore_item(self, item_id: str) -> dict[str, Any]:
+        """POST /api/item/{id}/restore — undo a board's deletion (see delete_item)."""
+        return self._post(f"/api/item/{item_id}/restore", {})
+
     # ---- Quick notes / search ---------------------------------------------
     def get_todos(self) -> dict[str, Any]:
         """GET /api/todos — every `todo` card across the whole tree, flattened."""
