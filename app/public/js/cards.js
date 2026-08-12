@@ -319,11 +319,47 @@ function buildColor(el, it) {
 
 // Drawing itself happens in the full-page draw editor (draw-editor.js), not
 // on the canvas — this is just a tile, same pattern as buildDocument/buildBoard.
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+function pointsToPath(points) {
+  return points.length ? 'M' + points.map(p => p[0] + ',' + p[1]).join(' L') : '';
+}
+
+// A tiny rendering of the actual strokes, scaled to fit the tile — falls
+// back to a plain pencil icon for a drawing that's still empty.
+function drawPreview(strokes) {
+  if (!strokes || !strokes.length) return lucideEl('pencil');
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const s of strokes) for (const [x, y] of s.points) {
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+    if (y < minY) minY = y; if (y > maxY) maxY = y;
+  }
+  if (!isFinite(minX)) return lucideEl('pencil');
+  const pad = 16;
+  const w = Math.max(maxX - minX, 1) + pad * 2;
+  const h = Math.max(maxY - minY, 1) + pad * 2;
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', `${minX - pad} ${minY - pad} ${w} ${h}`);
+  svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+  svg.classList.add('draw-preview');
+  for (const s of strokes) {
+    const p = document.createElementNS(SVG_NS, 'path');
+    p.setAttribute('d', pointsToPath(s.points));
+    p.setAttribute('stroke', s.color || '#fff');
+    p.setAttribute('stroke-width', Math.max((s.width || 3) * 1.6, 5));
+    p.setAttribute('fill', 'none');
+    p.setAttribute('stroke-linecap', 'round');
+    p.setAttribute('stroke-linejoin', 'round');
+    svg.appendChild(p);
+  }
+  return svg;
+}
+
 function buildDraw(el, it) {
   el.classList.add('draw');
   const tile = document.createElement('div'); tile.className = 'tile';
   tile.style.background = colorVar(it.color || 'slate');
-  tile.appendChild(lucideEl('pencil'));
+  tile.appendChild(drawPreview(it.data.strokes));
   el.appendChild(tile);
   const title = makeField('input', 'dwtitle', it.data.title, 'Untitled drawing');
   title.setAttribute('data-nodrag', '');

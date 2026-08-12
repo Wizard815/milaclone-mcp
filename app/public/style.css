@@ -427,8 +427,9 @@ input, textarea { font-family: var(--sans); }
 
 /* ---------- draw (tile; opens the full-page editor) ---------- */
 .draw { padding: 16px 14px 14px; align-items: center; text-align: center; cursor: pointer; }
-.draw .tile { width: 54px; height: 54px; border-radius: 14px; display: grid; place-items: center; margin-bottom: 10px; box-shadow: 0 2px 6px rgba(0,0,0,.12); }
+.draw .tile { width: 54px; height: 54px; border-radius: 14px; display: grid; place-items: center; margin-bottom: 10px; box-shadow: 0 2px 6px rgba(0,0,0,.12); overflow: hidden; }
 .draw .tile svg { width: 26px; height: 26px; color: #fff; stroke-width: 1.75; }
+.draw .tile svg.draw-preview { width: 44px; height: 44px; }
 .draw .dwtitle {
   font-family: var(--serif); font-weight: 600; font-size: 15px; outline: none; border: none;
   background: none; text-align: center; width: 100%; color: var(--ink);
