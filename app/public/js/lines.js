@@ -99,7 +99,7 @@ export function renderLines() {
     if (!fromRect || !toRect) {
       // Endpoint no longer exists on this board (deleted card) — the line
       // is meaningless now, so clean it up rather than leaving it stuck.
-      deleteItem(line.id);
+      deleteItem(line.id, { trackUndo: false });
       continue;
     }
     const fromAttach = attachPoint(fromRect, toRect.cx, toRect.cy);

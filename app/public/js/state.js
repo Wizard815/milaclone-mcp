@@ -32,7 +32,9 @@ export const state = {
   pan: null,
   pinching: false,
   suppressNextClick: false,
-  lineFrom: null
+  lineFrom: null,
+  undoStack: [],
+  redoStack: []
 };
 
 // Item id -> rendered DOM element. Cleared/repopulated on every render.

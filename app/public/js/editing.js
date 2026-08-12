@@ -5,6 +5,7 @@ import { api } from './api.js';
 import { render, renderCrumbs } from './cards.js';
 import { closePalette, closeCtx } from './menus.js';
 import { updateSelectionChrome } from './boardchrome.js';
+import { snapshotForUndo } from './undo.js';
 
 // Selection, inline-edit mode, debounced saves, and deletion.
 
@@ -58,7 +59,11 @@ export function saveData(it, patch) {
   }, 400));
 }
 
-export async function deleteItem(id) {
+// trackUndo:false is used for automatic cleanup (e.g. an orphaned connector
+// line whose card just got deleted) — not a distinct user action, and its
+// fromId/toId would point at an already-gone card anyway if restored alone.
+export async function deleteItem(id, { trackUndo = true } = {}) {
+  if (trackUndo) snapshotForUndo(id);
   await api.remove(id);
   state.view.items = state.view.items.filter(x => x.parentItemId !== id && x.id !== id);
   if (state.selectedId === id) state.selectedId = null;

@@ -13,7 +13,9 @@ import { initMobile, updateMobileChrome } from './mobile.js';
 import { initBoardChrome, updateSelectionChrome } from './boardchrome.js';
 import { initQuickNotes, isQuickNotesOpen } from './quicknotes.js';
 import { initDocs, isDocumentOpen } from './docs.js';
+import { initDrawEditor, isDrawEditorOpen } from './draw-editor.js';
 import { initTheme } from './theme.js';
+import { performUndo, performRedo } from './undo.js';
 
 // Entry point: canvas loading/navigation, global keyboard + pointer handling,
 // and boot. Wiring for the viewport and toolbar lives in their own modules and
@@ -36,6 +38,7 @@ export async function openCanvas(id) {
 document.addEventListener('keydown', (e) => {
   if (isQuickNotesOpen()) return;   // Quick notes owns the keyboard while it's up
   if (isDocumentOpen()) return;     // Document editor owns the keyboard while it's up (handles its own Escape)
+  if (isDrawEditorOpen()) return;   // Draw editor owns the keyboard while it's up (handles its own Escape/undo)
   const ae = document.activeElement;
   const typing = ae && (ae.isContentEditable || (/^(INPUT|TEXTAREA)$/.test(ae.tagName) && !ae.readOnly));
   if (e.key === 'Escape') { disarm(); deselect(); closePalette(); closeCtx(); }
@@ -45,6 +48,8 @@ document.addEventListener('keydown', (e) => {
   if (mod && e.key.toLowerCase() === 'x') { e.preventDefault(); copySelected(true); return; }
   if (mod && e.key.toLowerCase() === 'v') { e.preventDefault(); pasteClipboard(); return; }
   if (mod && e.key.toLowerCase() === 'd') { e.preventDefault(); duplicateSelected(); return; }
+  if (mod && !e.shiftKey && e.key.toLowerCase() === 'z') { e.preventDefault(); performUndo(); return; }
+  if (mod && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) { e.preventDefault(); performRedo(); return; }
   if (e.key === 'Enter' && state.selectedId && !mod) { e.preventDefault(); renameSelected(); return; }
   if ((e.key === 'Delete' || e.key === 'Backspace') && state.selectedId) { e.preventDefault(); deleteItem(state.selectedId); }
   const map = { n: 'note', l: 'link', t: 'todo', b: 'board', c: 'column', m: 'comment', h: 'heading', d: 'draw' };
@@ -71,6 +76,7 @@ initMobile();
 initBoardChrome();
 initQuickNotes();
 initDocs();
+initDrawEditor();
 initTools();
 initTheme();
 
