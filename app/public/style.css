@@ -425,15 +425,15 @@ input, textarea { font-family: var(--sans); }
 .cline-label:focus { border-color: var(--accent); color: var(--ink); white-space: normal; }
 .cline-label:empty::before { content: attr(data-placeholder); color: var(--ink-faint); }
 
-/* ---------- draw (tile; opens the full-page editor) ---------- */
-.draw { padding: 16px 14px 14px; align-items: center; text-align: center; cursor: pointer; }
-.draw .tile { width: 54px; height: 54px; border-radius: 14px; display: grid; place-items: center; margin-bottom: 10px; box-shadow: 0 2px 6px rgba(0,0,0,.12); overflow: hidden; }
-.draw .tile svg { width: 26px; height: 26px; color: #fff; stroke-width: 1.75; }
-.draw .tile svg.draw-preview { width: 44px; height: 44px; }
-.draw .dwtitle {
-  font-family: var(--serif); font-weight: 600; font-size: 15px; outline: none; border: none;
-  background: none; text-align: center; width: 100%; color: var(--ink);
+/* ---------- draw (renders the actual strokes; opens the full-page editor) ---------- */
+.draw { padding: 0; overflow: hidden; height: 220px; cursor: pointer; }
+.draw .draw-canvas { display: block; width: 100%; height: 100%; pointer-events: none; background: var(--card-bg); }
+.draw-empty {
+  width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; color: var(--ink-faint); pointer-events: none;
 }
+.draw-empty svg { width: 28px; height: 28px; }
+.draw-empty span { font-size: 13px; }
 
 /* ---------- draw editor (full-page overlay) ---------- */
 #drawEditor { position: fixed; inset: 0; z-index: 200; background: var(--card-bg); display: flex; flex-direction: column; }
@@ -472,7 +472,13 @@ input, textarea { font-family: var(--sans); }
 .dw-color::-webkit-color-swatch { border: 1px solid var(--card-border); border-radius: 8px; }
 .dw-width { width: 32px; writing-mode: vertical-lr; direction: rtl; accent-color: var(--accent); }
 .dw-canvas-wrap { flex: 1; overflow: auto; display: flex; align-items: center; justify-content: center; padding: 24px; background: var(--canvas-bg); }
-.dw-svg { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 8px; box-shadow: var(--card-shadow); touch-action: none; }
+/* flex-shrink:0 is load-bearing: the SVG has no viewBox, so its coordinate
+   space is defined by the width/height attributes below. If the flex
+   container ever squeezed it narrower than that, every drawn point would
+   land at the wrong spot (toLocal() converts clicks using the *rendered*
+   size, which would then no longer match the SVG's actual unit space) —
+   overflow:auto on .dw-canvas-wrap scrolls instead of shrinking it. */
+.dw-svg { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 8px; box-shadow: var(--card-shadow); touch-action: none; flex-shrink: 0; }
 .dw-svg.tool-pen { cursor: crosshair; }
 .dw-svg.tool-select { cursor: default; }
 .dw-svg.tool-eraser { cursor: cell; }

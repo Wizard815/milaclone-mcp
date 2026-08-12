@@ -23,7 +23,7 @@ export function defaultsFor(type) {
     case 'document':return { w: 152, data: { title: 'Untitled document', bodyHtml: '' } };
     case 'table':   return { w: 360, data: { rows: [['', ''], ['', '']] } };
     case 'color':   return { w: 160, data: { hex: '#2f6df0' } };
-    case 'draw':    return { w: 152, color: 'slate', data: { title: 'Untitled drawing', strokes: [] } };
+    case 'draw':    return { w: 320, color: 'slate', data: { title: 'Untitled drawing', strokes: [] } };
     default:        return { w: 240, data: {} };
   }
 }
