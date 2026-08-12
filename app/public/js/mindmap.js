@@ -23,6 +23,15 @@ const RING = 220;
 const NODE_R = 26;
 const SAT_R = 10;
 const SAT_DIST = NODE_R + 72;
+// Minimum arc length (px) between adjacent satellites' centers. A fixed
+// ring radius works fine for a handful of cards, but a board with a dozen+
+// items packs them so tight on a fixed-size ring that neighboring icons and
+// labels overlap — so the ring grows with the item count to keep spacing
+// roughly constant instead.
+const SAT_MIN_ARC = 62;
+function satDistFor(count) {
+  return Math.max(SAT_DIST, (SAT_MIN_ARC * count) / (2 * Math.PI));
+}
 
 const ICONS = {
   note: 'file-text', todo: 'list-checks', link: 'link-2', heading: 'heading-1',
@@ -59,24 +68,44 @@ function countNodes(node) {
   return 1 + node.children.reduce((sum, c) => sum + countNodes(c), 0);
 }
 
-function layout(node, angleStart, angleEnd, depth) {
+// A board's own satellite ring radius, if it's currently expanded — best
+// effort when the item count isn't cached yet (falls back to a mid-size
+// guess rather than under-allocating room for it).
+function ringRadiusFor(id) {
+  if (!expanded.has(id)) return 0;
+  const cached = itemCache.get(id);
+  return satDistFor(cached ? cached.length : 8);
+}
+
+function layout(node, angleStart, angleEnd, r) {
   const angle = (angleStart + angleEnd) / 2;
-  const r = depth * RING;
   node._x = r * Math.cos(angle);
   node._y = r * Math.sin(angle);
   node._angle = angle;
   if (!node.children.length) return;
   const span = angleEnd - angleStart;
+  const ownRing = ringRadiusFor(node.id);
   // Expanded boards fan a ring of satellites out around themselves, so they
   // need more room than their nesting weight alone implies — otherwise two
   // adjacent expanded boards' satellite rings can overlap. Give expanded
   // children extra angular weight to push their neighbors further away.
-  const weights = node.children.map(c => Math.max(countNodes(c), 1) + (expanded.has(c.id) ? 3 : 0));
+  const weights = node.children.map(c => {
+    const childRing = ringRadiusFor(c.id);
+    return Math.max(countNodes(c), 1) + (childRing ? Math.max(3, childRing / 30) : 0);
+  });
   const total = weights.reduce((a, b) => a + b, 0);
   let a = angleStart;
+  // A node's own ring and an expanded child's ring sit on the same radial
+  // line (the child is placed along the angle its slice is centered on),
+  // so they can collide head-on even when angular spacing is fine — the
+  // fixed RING distance alone doesn't grow with either ring's size. Widen
+  // the radial gap to fit both rings plus a margin whenever either is expanded.
+  const margin = 40;
   node.children.forEach((c, i) => {
     const share = (weights[i] / total) * span;
-    layout(c, a, a + share, depth + 1);
+    const childRing = ringRadiusFor(c.id);
+    const gap = Math.max(RING, ownRing + childRing + margin);
+    layout(c, a, a + share, r + gap);
     a += share;
   });
 }
@@ -126,9 +155,10 @@ async function renderGraph() {
     const node = byId.get(boardId);
     if (!node) continue;
     const items = await getBoardItems(boardId);
+    const dist = satDistFor(items.length);
     items.forEach((it, i) => {
       const angle = (i / Math.max(items.length, 1)) * Math.PI * 2 - Math.PI / 2;
-      satellites.push({ boardId, it, x: node._x + SAT_DIST * Math.cos(angle), y: node._y + SAT_DIST * Math.sin(angle) });
+      satellites.push({ boardId, it, x: node._x + dist * Math.cos(angle), y: node._y + dist * Math.sin(angle) });
     });
   }
 
