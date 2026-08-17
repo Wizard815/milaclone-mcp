@@ -77,6 +77,19 @@ export function openPalette(it, anchor, mode = 'auto') {
       fillRow.appendChild(btn);
     });
     dom.palette.appendChild(fillRow);
+
+    const sep3 = document.createElement('div'); sep3.className = 'pal-sep'; dom.palette.appendChild(sep3);
+    const thickRow = document.createElement('div'); thickRow.className = 'pal-thick-row';
+    const thickLabel = document.createElement('span'); thickLabel.className = 'pal-thick-label'; thickLabel.textContent = 'Thickness';
+    const thickInput = document.createElement('input');
+    thickInput.type = 'range'; thickInput.min = '1'; thickInput.max = '20'; thickInput.step = '1';
+    thickInput.value = it.data.thickness ?? 4;
+    thickInput.className = 'pal-thick-input';
+    // A slider mid-drag has no single "done" moment, so — unlike the
+    // shape/fill buttons above — this one doesn't closePalette() on change.
+    thickInput.addEventListener('input', () => { saveData(it, { thickness: Number(thickInput.value) }); refreshItem(it); });
+    thickRow.appendChild(thickLabel); thickRow.appendChild(thickInput);
+    dom.palette.appendChild(thickRow);
   }
 
   const r = anchor.getBoundingClientRect();

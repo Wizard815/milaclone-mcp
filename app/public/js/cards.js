@@ -407,12 +407,17 @@ function buildShape(el, it) {
   el.style.zIndex = '0'; // real cards start at z >= 1 (see maxZ in db.js) — this always loses
   const svg = document.createElementNS(SVG_NS, 'svg');
   svg.setAttribute('viewBox', '0 0 100 100');
+  // "none" (not the default "meet") so a non-square card stretches the whole
+  // coordinate system per-axis instead of letterboxing a square shape inside
+  // it — a circle becomes an ellipse, a square a rectangle, etc., matching
+  // the card's own w/h from a shift-stretch instead of staying square.
+  svg.setAttribute('preserveAspectRatio', 'none');
   svg.classList.add('shape-svg');
   const shapeEl = shapeGeometry(it.data.shape || 'circle');
   const color = colorVar(it.color || 'slate');
   shapeEl.setAttribute('fill', it.data.filled ? color : 'none');
   shapeEl.setAttribute('stroke', color);
-  shapeEl.setAttribute('stroke-width', 4);
+  shapeEl.setAttribute('stroke-width', it.data.thickness ?? 4);
   svg.appendChild(shapeEl);
   el.appendChild(svg);
 

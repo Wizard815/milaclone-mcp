@@ -234,13 +234,17 @@ def create_item(
                 `bend`/`along` offset the curve's control point
                 perpendicular/parallel to the straight line between them;
                 omit both for a straight connector.
-            shape:    {"shape": str, "filled": bool} — a single basic shape
-                ("circle", "square", "triangle", "diamond", or "star") as
-                line art (filled: false) or a solid fill (filled: true), in
-                the card's `color`. Always renders behind every other card
+            shape:    {"shape": str, "filled": bool, "thickness": int (optional,
+                1-20, default 4)} — a single basic shape ("circle", "square",
+                "triangle", "diamond", or "star") as line art (filled: false)
+                or a solid fill (filled: true), in the card's `color`.
+                `thickness` sets the outline's stroke width (applies whether
+                filled or not). Always renders behind every other card
                 regardless of creation order or z — it's a background
                 decoration, not meant to be interacted with like a normal
-                card. The card is square (height follows width).
+                card. Pass `h` via `update_item` to make it non-square (a
+                rectangle/ellipse/etc. instead of square/circle/etc.) — the
+                shape's geometry stretches to fill whatever w/h it's given.
         x, y: position on the canvas in board units (default 60, 60). Ignored
             for item_type "line".
         w: card width in pixels (defaults to a sensible per-type value).
