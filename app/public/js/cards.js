@@ -125,7 +125,16 @@ export function renderItem(it) {
   }
 
   el.addEventListener('pointerdown', (e) => onItemPointerDown(e, it, el));
-  el.addEventListener('contextmenu', (e) => openCtx(e, it));
+  el.addEventListener('contextmenu', (e) => {
+    // Right-clicking actively-editable text (typing in a note/comment/etc.)
+    // should show the browser's own menu — spellcheck suggestions on a
+    // misspelled word, in particular — not our card-level actions. Those
+    // stay available everywhere else on the card (background, read-only
+    // fields before you've entered edit mode).
+    const field = e.target.closest('[data-edit]');
+    if (field && !field.readOnly) return;
+    openCtx(e, it);
+  });
   return el;
 }
 
@@ -142,6 +151,7 @@ function buildNote(el, it) {
 
 function buildComment(el, it) {
   el.classList.add('comment');
+  if (it.color) { el.classList.add('colored'); el.style.background = colorVar(it.color); } else { el.style.background = ''; }
   const mark = document.createElement('div');
   mark.className = 'cmark';
   mark.appendChild(lucideEl('message-circle'));
@@ -397,6 +407,12 @@ function buildBoard(el, it) {
   const tile = document.createElement('div'); tile.className = 'tile';
   tile.style.background = colorVar(it.color || it._childColor || 'slate');
   tile.appendChild(lucideEl(it._childIcon || 'layout-grid'));
+  tile.title = 'Color & icon';
+  tile.setAttribute('data-nodrag', '');
+  tile.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openPalette(it, tile, 'auto');
+  });
   el.appendChild(tile);
   const title = makeField('input', 'btitle', it._childTitle || 'Untitled board', 'Board name');
   title.setAttribute('data-nodrag', '');

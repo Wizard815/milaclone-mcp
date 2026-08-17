@@ -18,25 +18,6 @@ function selectedBoard() {
   return it && it.type === 'board' ? it : null;
 }
 
-function paintGlyph(host, name) {
-  if (!host) return;
-  while (host.firstChild) host.removeChild(host.firstChild);
-  host.appendChild(lucideEl(name || 'layout-grid'));
-}
-
-function paintChrome(it) {
-  const color = it.color || it._childColor || 'slate';
-  const icon = it._childIcon || 'layout-grid';
-  const swRail = el('railBoardSwatch');
-  const swMob = el('mfBoardSwatch');
-  if (swRail) swRail.style.background = colorVar(color);
-  if (swMob) swMob.style.background = colorVar(color);
-  paintGlyph(el('railBoardIconGlyph'), icon);
-  paintGlyph(el('mfBoardIconGlyph'), icon);
-  refreshIcons(el('railBoard'));
-  refreshIcons(el('mfBoard'));
-}
-
 export function updateSelectionChrome() {
   const board = selectedBoard();
   const railCreate = el('railCreate');
@@ -53,7 +34,8 @@ export function updateSelectionChrome() {
     if (mfNav) mfNav.hidden = true;
     if (mfTray) mfTray.hidden = true;
     if (mfBoard) mfBoard.hidden = false;
-    paintChrome(board);
+    refreshIcons(el('railBoard'));
+    refreshIcons(el('mfBoard'));
   } else {
     if (railCreate) railCreate.hidden = false;
     if (railBoard) railBoard.hidden = true;
@@ -66,28 +48,12 @@ export function updateSelectionChrome() {
 
 export function initBoardChrome() {
   el('railBoardBack').onclick = () => deselect();
-  el('railBoardColor').onclick = (e) => {
-    const it = selectedBoard(); if (!it) return;
-    openPalette(it, e.currentTarget, 'color');
-  };
-  el('railBoardIcon').onclick = (e) => {
-    const it = selectedBoard(); if (!it) return;
-    openPalette(it, e.currentTarget, 'icon');
-  };
   el('railBoardRename').onclick = () => renameSelected();
   el('railBoardDelete').onclick = () => {
     const it = selectedBoard(); if (!it) return;
     deleteItem(it.id);
   };
 
-  el('mfBoardColor').onclick = (e) => {
-    const it = selectedBoard(); if (!it) return;
-    openPalette(it, e.currentTarget, 'color');
-  };
-  el('mfBoardIcon').onclick = (e) => {
-    const it = selectedBoard(); if (!it) return;
-    openPalette(it, e.currentTarget, 'icon');
-  };
   el('mfBoardRename').onclick = () => renameSelected();
   el('mfBoardDone').onclick = () => deselect();
 

@@ -243,7 +243,7 @@ input, textarea { font-family: var(--sans); }
 
 /* ---------- board ---------- */
 .board { padding: 16px 14px 14px; align-items: center; text-align: center; cursor: pointer; }
-.board .tile { width: 54px; height: 54px; border-radius: 14px; display: grid; place-items: center; margin-bottom: 10px; box-shadow: 0 2px 6px rgba(0,0,0,.12); }
+.board .tile { width: 54px; height: 54px; border-radius: 14px; display: grid; place-items: center; margin-bottom: 10px; box-shadow: 0 2px 6px rgba(0,0,0,.12); cursor: pointer; }
 .board .tile svg { width: 28px; height: 28px; color: #fff; }
 .board .btitle { font-family: var(--serif); font-weight: 600; font-size: 15px; outline: none; border: none; background: none; text-align: center; width: 100%; color: var(--ink); }
 .board .bmeta { font-size: 11.5px; color: var(--ink-faint); margin-top: 3px; }
@@ -285,6 +285,14 @@ input, textarea { font-family: var(--sans); }
   background: none; color: var(--text-2); resize: none; min-height: 20px;
 }
 .comment .cbody::placeholder { color: var(--ink-faint); }
+/* A colored comment (sticky note): the swatch color fills the whole card
+   instead of the default cream paper, so text/icon switch to white — the
+   palette (see state.js COLORS) is saturated enough that white reads
+   fine across all of it, same treatment as a board tile's icon. */
+.comment.colored { border-color: transparent; }
+.comment.colored .cmark { color: #fff; }
+.comment.colored .cbody { color: #fff; }
+.comment.colored .cbody::placeholder { color: rgba(255,255,255,.75); }
 
 /* ---------- file ---------- */
 .file { padding: 14px 16px; gap: 8px; align-items: flex-start; }
@@ -472,7 +480,7 @@ input, textarea { font-family: var(--sans); }
 .dw-color::-webkit-color-swatch-wrapper { padding: 0; }
 .dw-color::-webkit-color-swatch { border: 1px solid var(--card-border); border-radius: 8px; }
 .dw-width { width: 32px; writing-mode: vertical-lr; direction: rtl; accent-color: var(--accent); }
-.dw-canvas-wrap { flex: 1; overflow: auto; display: flex; align-items: center; justify-content: center; padding: 24px; background: var(--canvas-bg); }
+.dw-canvas-wrap { flex: 1; overflow: auto; display: flex; align-items: center; justify-content: center; padding: 24px; background: var(--canvas-bg); user-select: none; }
 /* flex-shrink:0 is load-bearing: the SVG has no viewBox, so its coordinate
    space is defined by the width/height attributes below. If the flex
    container ever squeezed it narrower than that, every drawn point would

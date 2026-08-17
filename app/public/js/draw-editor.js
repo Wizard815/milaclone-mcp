@@ -134,6 +134,7 @@ function wireSurface() {
   const r = refs();
   r.svg.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return;
+    e.preventDefault(); // otherwise dragging across the page drag-selects text
     if (tool === 'pen') {
       current = { points: [toLocal(e)], color, width };
       currentPath = document.createElementNS(SVG_NS, 'path');
@@ -215,10 +216,11 @@ async function save() {
   const title = r.title.value.trim();
   const strokes = draft.strokes.map(s => ({ points: s.points, color: s.color, width: s.width }));
   Object.assign(doc.data, { title, strokes });
+  const savedDoc = doc; // closeEditor() below nulls out the module-level `doc`
   await api.patch(doc.id, { data: { title, strokes } });
   toast('Drawing saved');
   closeEditor();
-  refreshItem(doc); // re-render the tile — title may have changed
+  refreshItem(savedDoc); // re-render the tile — strokes/title may have changed
 }
 
 export function initDrawEditor() {
