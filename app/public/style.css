@@ -1094,8 +1094,9 @@ body.qn-open .toast {
 .mm-legend { font-size: 12px; color: var(--ink-soft); display: inline-flex; align-items: center; gap: 6px; }
 .mm-swatch { width: 10px; height: 3px; display: inline-block; border-radius: 2px; }
 .mm-swatch-tree { background: var(--ink-faint); }
-.mm-canvas-wrap { position: relative; flex: 1; overflow: auto; }
-.mm-svg { width: 100%; height: 100%; display: block; }
+.mm-canvas-wrap { position: relative; flex: 1; overflow: hidden; }
+.mm-svg { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+.mm-svg.panning { cursor: grabbing; }
 .mm-edge { stroke: var(--card-border); stroke-width: 1.5; }
 .mm-sat-edge { stroke: var(--card-border); stroke-width: 1; stroke-dasharray: 2 3; }
 .mm-node { cursor: pointer; }
