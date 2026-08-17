@@ -7,6 +7,7 @@ import { render } from './cards.js';
 import { select, enterEdit } from './editing.js';
 import { openDocument } from './docs.js';
 import { openDrawEditor } from './draw-editor.js';
+import { openPalette } from './menus.js';
 
 // Default shapes for each card type and the toolbar "place a new card" flow.
 
@@ -40,6 +41,13 @@ export async function createAt(type, wx, wy) {
     openDocument(it);
   } else if (type === 'draw') {
     openDrawEditor(it);
+  } else if (type === 'shape') {
+    // Shape/fill/color is one decision, made right after placing it (grey
+    // hollow circle if you just click away) rather than a second click on
+    // the handle to reach the same picker.
+    const el = elMap.get(it.id);
+    const handle = el.querySelector('.shape-handle');
+    if (handle) openPalette(it, handle, 'shape');
   } else if (type !== 'board' && type !== 'image' && type !== 'file') {
     const el = elMap.get(it.id); enterEdit(el); el.querySelector('[data-edit]')?.focus();
   }

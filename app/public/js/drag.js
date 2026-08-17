@@ -20,11 +20,17 @@ export function onItemPointerDown(e, it, el) {
   select(it.id);
   if (isLocked(it)) return;
 
+  // Shapes have no dedicated resize handle (see cards.js) — holding Shift
+  // while dragging the shape itself stretches it (independent width/height)
+  // instead of moving it. Locked in at drag start so it can't flip mid-drag
+  // if Shift is pressed/released partway through.
+  const stretching = it.type === 'shape' && e.shiftKey;
   const start = { sx: e.clientX, sy: e.clientY };
   const fromColumn = !!it.parentItemId;
   let moved = false;
   const rect = el.getBoundingClientRect();
   const startWorld = screenToWorld(rect.left, rect.top);
+  const startSize = { w: rect.width, h: rect.height };
   state.drag = { it, el, start, startWorld, fromColumn, moved: false, dropCol: null };
   el.setPointerCapture(e.pointerId);
 
@@ -41,10 +47,17 @@ export function onItemPointerDown(e, it, el) {
         el.style.zIndex = 99999;
       }
     }
-    const wx = startWorld.x + dx / state.cam.scale;
-    const wy = startWorld.y + dy / state.cam.scale;
-    el.style.left = wx + 'px'; el.style.top = wy + 'px';
-    highlightColumn(ev, it);
+    if (stretching) {
+      const w = Math.max(40, startSize.w + dx / state.cam.scale);
+      const h = Math.max(40, startSize.h + dy / state.cam.scale);
+      el.style.width = w + 'px'; el.style.height = h + 'px';
+      it.w = Math.round(w); it.h = Math.round(h);
+    } else {
+      const wx = startWorld.x + dx / state.cam.scale;
+      const wy = startWorld.y + dy / state.cam.scale;
+      el.style.left = wx + 'px'; el.style.top = wy + 'px';
+      highlightColumn(ev, it);
+    }
     renderLines();
   };
 
@@ -57,7 +70,12 @@ export function onItemPointerDown(e, it, el) {
       if (it.type !== 'board') maybeEdit(el, ev);
       state.drag = null; return;
     }
-    finishDrag(ev);
+    if (stretching) {
+      api.patch(it.id, { w: it.w, h: it.h });
+      state.drag = null;
+    } else {
+      finishDrag(ev);
+    }
   };
   document.addEventListener('pointermove', move);
   document.addEventListener('pointerup', up);

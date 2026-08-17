@@ -66,6 +66,10 @@ export function renderItem(it) {
   if (!it.parentItemId) {
     el.style.left = it.x + 'px'; el.style.top = it.y + 'px';
     el.style.width = (it.w || 240) + 'px';
+    // Shapes stay square (via CSS aspect-ratio) until stretched — once
+    // stretched, it.h is real and wins over that (explicit width+height
+    // always beats aspect-ratio).
+    if (it.type === 'shape' && it.h) el.style.height = it.h + 'px';
     el.style.zIndex = it.z || 1;
   } else {
     el.classList.add('in-column');
@@ -125,7 +129,7 @@ export function renderItem(it) {
     el.appendChild(lockBadge);
   }
 
-  if (it.type !== 'board' && it.type !== 'document' && !it.parentItemId && !isLocked(it)) {
+  if (it.type !== 'board' && it.type !== 'document' && it.type !== 'shape' && !it.parentItemId && !isLocked(it)) {
     const rz = document.createElement('div'); rz.className = 'resize'; rz.setAttribute('data-nodrag', '');
     rz.addEventListener('pointerdown', (e) => startResize(e, it, el));
     el.appendChild(rz);
