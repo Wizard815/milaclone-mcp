@@ -1,10 +1,10 @@
 'use strict';
 
-import { state, dom } from './state.js';
+import { state, dom, elMap } from './state.js';
 import { api } from './api.js';
 import { isLocked } from './util.js';
 import { screenToWorld } from './viewport.js';
-import { select, enterEdit } from './editing.js';
+import { select, toggleSelect, enterEdit } from './editing.js';
 import { render } from './cards.js';
 import { renderLines, pickLineEndpoint } from './lines.js';
 
@@ -13,12 +13,25 @@ import { renderLines, pickLineEndpoint } from './lines.js';
 export function onItemPointerDown(e, it, el) {
   if (e.button !== 0) return;
   if (state.armed === 'line') { e.stopPropagation(); pickLineEndpoint(it); return; }
-  if (state.armed) return;
+  if (state.armed && state.armed !== 'select') return;
   if (e.target.closest('[data-nodrag]')) { e.stopPropagation(); return; }
   if (el.classList.contains('editing') && e.target.closest('[data-edit]')) { e.stopPropagation(); return; }
   e.stopPropagation();
-  select(it.id);
+
+  // Ctrl/Cmd+click only toggles this card in/out of the selection — never
+  // starts a drag, so you can build up a multi-selection one click at a
+  // time without accidentally moving anything.
+  if (e.ctrlKey || e.metaKey) { toggleSelect(it.id); return; }
+
+  // Clicking a card that's already part of a multi-selection keeps the
+  // whole group selected (so you can drag it as one unit) instead of
+  // collapsing down to just this card — that's what a plain click on an
+  // *unselected* card still does.
+  const isGroup = state.selectedIds.has(it.id) && state.selectedIds.size > 1;
+  if (!isGroup) select(it.id);
   if (isLocked(it)) return;
+
+  if (isGroup) { startGroupDrag(e, it, el); return; }
 
   // Shapes have no dedicated resize handle (see cards.js) — holding Shift
   // while dragging the shape itself stretches it (independent width/height)
@@ -77,6 +90,52 @@ export function onItemPointerDown(e, it, el) {
       finishDrag(ev);
     }
   };
+  document.addEventListener('pointermove', move);
+  document.addEventListener('pointerup', up);
+}
+
+// Moves every free-floating (not in a column), unlocked card in the current
+// multi-selection by the same delta. Deliberately simpler than the single-
+// card drag above: no column drop-target detection — a group only ever
+// free-moves, never nests into or out of a column. Persists with one bulk
+// PATCH /api/items call instead of one request per card.
+function startGroupDrag(e, primaryIt, primaryEl) {
+  const members = [...state.selectedIds]
+    .map(id => ({ it: state.view.items.find(x => x.id === id), el: elMap.get(id) }))
+    .filter(m => m.it && m.el && !m.it.parentItemId && !isLocked(m.it));
+  if (!members.length) return;
+
+  const start = { sx: e.clientX, sy: e.clientY };
+  members.forEach(m => { m.startX = m.it.x || 0; m.startY = m.it.y || 0; });
+  let moved = false;
+  primaryEl.setPointerCapture(e.pointerId);
+
+  const move = (ev) => {
+    const dx = ev.clientX - start.sx, dy = ev.clientY - start.sy;
+    if (!moved && Math.hypot(dx, dy) < 4) return;
+    moved = true;
+    const wx = dx / state.cam.scale, wy = dy / state.cam.scale;
+    members.forEach(m => {
+      m.el.style.left = (m.startX + wx) + 'px';
+      m.el.style.top = (m.startY + wy) + 'px';
+    });
+    renderLines();
+  };
+
+  const up = async (ev) => {
+    primaryEl.releasePointerCapture(e.pointerId);
+    document.removeEventListener('pointermove', move);
+    document.removeEventListener('pointerup', up);
+    if (!moved) return;
+    const dx = (ev.clientX - start.sx) / state.cam.scale, dy = (ev.clientY - start.sy) / state.cam.scale;
+    const updates = members.map(m => {
+      m.it.x = Math.round(m.startX + dx);
+      m.it.y = Math.round(m.startY + dy);
+      return { id: m.it.id, x: m.it.x, y: m.it.y };
+    });
+    await api.patchMany(updates);
+  };
+
   document.addEventListener('pointermove', move);
   document.addEventListener('pointerup', up);
 }

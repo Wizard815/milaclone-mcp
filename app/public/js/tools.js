@@ -5,7 +5,7 @@ import { api } from './api.js';
 import { toast, imageSize } from './util.js';
 import { screenToWorld, applyCam } from './viewport.js';
 import { createAt, defaultsFor } from './create.js';
-import { select, deselect } from './editing.js';
+import { select, deselect, selectMany } from './editing.js';
 import { render } from './cards.js';
 import { cancelLine } from './lines.js';
 
@@ -30,6 +30,47 @@ function placeAt(type, clientX, clientY) {
   else createAt(type, w.x - defaultsFor(type).w / 2, w.y - 20);
 }
 
+// Marquee (rubber-band) select: drag on empty canvas while the Select tool
+// is armed to select every free-floating card whose box intersects the
+// dragged rectangle. Shift/Ctrl held on release adds to the existing
+// selection instead of replacing it. Stays armed after use (unlike the
+// creation tools) so you can marquee-select repeatedly without re-arming.
+function startMarquee(e) {
+  const stageRect = dom.stage.getBoundingClientRect();
+  const startX = e.clientX, startY = e.clientY;
+  const box = document.getElementById('marquee');
+  box.hidden = false;
+  let moved = false;
+
+  const move = (ev) => {
+    const x1 = Math.min(startX, ev.clientX), x2 = Math.max(startX, ev.clientX);
+    const y1 = Math.min(startY, ev.clientY), y2 = Math.max(startY, ev.clientY);
+    if (!moved && (x2 - x1 > 3 || y2 - y1 > 3)) moved = true;
+    box.style.left = (x1 - stageRect.left) + 'px';
+    box.style.top = (y1 - stageRect.top) + 'px';
+    box.style.width = (x2 - x1) + 'px';
+    box.style.height = (y2 - y1) + 'px';
+  };
+
+  const up = (ev) => {
+    document.removeEventListener('pointermove', move);
+    document.removeEventListener('pointerup', up);
+    box.hidden = true;
+    if (!moved) { deselect(); return; }
+    const x1 = Math.min(startX, ev.clientX), x2 = Math.max(startX, ev.clientX);
+    const y1 = Math.min(startY, ev.clientY), y2 = Math.max(startY, ev.clientY);
+    const ids = [];
+    dom.world.querySelectorAll(':scope > .item').forEach(el => {
+      const r = el.getBoundingClientRect();
+      if (r.left < x2 && r.right > x1 && r.top < y2 && r.bottom > y1) ids.push(el.dataset.id);
+    });
+    selectMany(ids, ev.shiftKey || ev.ctrlKey || ev.metaKey);
+  };
+
+  document.addEventListener('pointermove', move);
+  document.addEventListener('pointerup', up);
+}
+
 // Press-and-hold-then-drag placement: mirrors the tap-to-arm flow below, but
 // lets a tool button be dragged straight onto the canvas in one gesture.
 // Delegated on document so it also covers the mobile tray's cloned buttons.
@@ -37,7 +78,7 @@ function initDragPlace() {
   document.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return;
     const btn = e.target.closest('.tool[data-tool], .mtool[data-tool]');
-    if (!btn || btn.dataset.tool === 'line') return;
+    if (!btn || btn.dataset.tool === 'line' || btn.dataset.tool === 'select') return;
     const startX = e.clientX, startY = e.clientY;
     let dragging = false, ghost = null;
 
@@ -87,6 +128,7 @@ export function initTools() {
     if (e.button !== 0 && e.button !== 1) return;
     if (state.pinching) return;
     if (state.armed === 'line') { cancelLine(); return; }
+    if (state.armed === 'select') { startMarquee(e); return; }
     if (state.armed) {
       const t = state.armed; disarm();
       placeAt(t, e.clientX, e.clientY);

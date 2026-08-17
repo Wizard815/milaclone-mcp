@@ -31,6 +31,7 @@ export const state = {
   cam: { x: 80, y: 60, scale: 1 },
   armed: null,
   selectedId: null,
+  selectedIds: new Set(), // multi-select; selectedId is the "primary" (last-clicked) member of it — see editing.js
   editingId: null,
   clipboard: null,
   pendingImageWorld: null,

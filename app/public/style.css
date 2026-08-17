@@ -176,6 +176,11 @@ input, textarea { font-family: var(--sans); }
 #stage, .item { touch-action: none; }
 .item.editing { touch-action: auto; }
 #world { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
+#marquee {
+  position: absolute; z-index: 40; border: 1.5px solid var(--accent);
+  background: rgba(47, 109, 240, .12); pointer-events: none;
+}
+#marquee[hidden] { display: none; }
 /* Only applied for the discrete "jump to a board's saved camera position"
    case (opening a board) — never during live pan/zoom/pinch, where a
    transition would make direct-manipulation dragging feel laggy/rubbery. */

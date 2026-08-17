@@ -27,7 +27,7 @@ export async function openCanvas(id) {
   state.view = await api.canvas(id);
   if (state.view.error) { if (id !== state.rootCanvasId) return openCanvas(state.rootCanvasId); toast('Board not found'); return; }
   state.cam = loadCam(id);
-  state.selectedId = null; state.editingId = null;
+  state.selectedId = null; state.selectedIds = new Set(); state.editingId = null;
   closeCtx();
   renderCrumbs();
   updateMobileChrome();
@@ -56,7 +56,7 @@ document.addEventListener('keydown', (e) => {
   if (mod && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) { e.preventDefault(); performRedo(); return; }
   if (e.key === 'Enter' && state.selectedId && !mod) { e.preventDefault(); renameSelected(); return; }
   if ((e.key === 'Delete' || e.key === 'Backspace') && state.selectedId) { e.preventDefault(); deleteItem(state.selectedId); }
-  const map = { n: 'note', l: 'link', t: 'todo', b: 'board', c: 'column', m: 'comment', h: 'heading', d: 'draw' };
+  const map = { v: 'select', n: 'note', l: 'link', t: 'todo', b: 'board', c: 'column', m: 'comment', h: 'heading', d: 'draw' };
   if (map[e.key.toLowerCase()] && !mod) {
     const btn = document.querySelector(`.tool[data-tool="${map[e.key.toLowerCase()]}"]`);
     if (btn) arm(map[e.key.toLowerCase()], btn);
