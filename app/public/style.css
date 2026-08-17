@@ -176,6 +176,10 @@ input, textarea { font-family: var(--sans); }
 #stage, .item { touch-action: none; }
 .item.editing { touch-action: auto; }
 #world { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
+/* Only applied for the discrete "jump to a board's saved camera position"
+   case (opening a board) — never during live pan/zoom/pinch, where a
+   transition would make direct-manipulation dragging feel laggy/rubbery. */
+#world.cam-animate { transition: transform .5s cubic-bezier(.34, 1.56, .64, 1); }
 
 /* ---------- generic card ---------- */
 .item {

@@ -11,6 +11,18 @@ export function applyCam() {
   saveCam();
 }
 
+let camAnimTimer = null;
+// Same as applyCam(), but eases into the new position/zoom over half a
+// second with a slight overshoot instead of snapping instantly — for
+// opening a board (a discrete jump to its saved camera), not for live pan/
+// zoom/pinch, which stay instant so dragging doesn't feel laggy.
+export function applyCamAnimated() {
+  dom.world.classList.add('cam-animate');
+  applyCam();
+  clearTimeout(camAnimTimer);
+  camAnimTimer = setTimeout(() => dom.world.classList.remove('cam-animate'), 520);
+}
+
 export function screenToWorld(clientX, clientY) {
   const r = dom.stage.getBoundingClientRect();
   return { x: (clientX - r.left - state.cam.x) / state.cam.scale, y: (clientY - r.top - state.cam.y) / state.cam.scale };

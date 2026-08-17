@@ -3,7 +3,7 @@
 import { state } from './state.js';
 import { api } from './api.js';
 import { refreshIcons, toast } from './util.js';
-import { loadCam, applyCam, initViewport } from './viewport.js';
+import { loadCam, applyCamAnimated, initViewport } from './viewport.js';
 import { render, renderCrumbs } from './cards.js';
 import { deselect, renameSelected, deleteItem, exitEdit } from './editing.js';
 import { closePalette, closeCtx } from './menus.js';
@@ -33,7 +33,7 @@ export async function openCanvas(id) {
   updateMobileChrome();
   updateSelectionChrome();
   render();
-  applyCam();
+  applyCamAnimated();
   if (location.hash.slice(1) !== id) { history.replaceState(null, '', '#' + id); }
 }
 
