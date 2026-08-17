@@ -56,6 +56,7 @@ let ctxTarget = null;          // {canvasId, itemId|null} for the open context m
 let clickTimer = null;         // pending single-click (see node click handler) — cancelled by a dblclick
 let mmCam = { x: 0, y: 0, scale: 1 }; // this view's own camera, reset each time the map opens
 let panStart = null;           // {sx, sy, cx, cy} while dragging the background
+let renderToken = 0;           // guards against a slower, now-stale renderGraph() call overwriting a newer one
 
 function refs() {
   if (root) return root;
@@ -124,27 +125,43 @@ function flatten(node, acc) {
 // satellites, on most expansions, have nothing nearby and don't move at
 // all. Board nodes themselves are never pushed, so the tree's shape always
 // reads the same regardless of what's expanded.
+function previewText(it) {
+  const d = it.data || {};
+  return d.title || d.text || (d.body && d.body.slice(0, 30)) || d.url || it.type;
+}
+
+// Rough label half-width in px for a satellite's text (9.5px sans-serif,
+// see .mm-sat-label) — no real text metrics available before the label is
+// actually in the DOM, so this is an estimate, not a measurement. Used as
+// extra clearance so two satellites' *labels* don't run into each other
+// even when their circles wouldn't (labels are wider than the 10px dot they
+// hang off of, and a bare circle-radius check was blind to that).
+function labelHalfWidth(it) {
+  return Math.max(20, previewText(it).length * 3);
+}
+
 function resolveCollisions(nodes, rootId, satellites) {
   const obstacles = nodes.map(n => ({ x: n._x, y: n._y, r: n.id === rootId ? NODE_R + 6 : NODE_R }));
-  const ITER = 8;
+  const halfWidths = satellites.map(s => labelHalfWidth(s.it));
+  const ITER = 20;
   for (let iter = 0; iter < ITER; iter++) {
-    for (const s of satellites) {
+    satellites.forEach((s, i) => {
       for (const o of obstacles) {
         const dx = s.x - o.x, dy = s.y - o.y;
         const dist = Math.hypot(dx, dy) || 0.01;
-        const minDist = o.r + SAT_R + 16;
+        const minDist = o.r + SAT_R + halfWidths[i];
         if (dist < minDist) {
           const push = minDist - dist;
           s.x += (dx / dist) * push; s.y += (dy / dist) * push;
         }
       }
-    }
+    });
     for (let i = 0; i < satellites.length; i++) {
       for (let j = i + 1; j < satellites.length; j++) {
         const a = satellites[i], b = satellites[j];
         const dx = b.x - a.x, dy = b.y - a.y;
         const dist = Math.hypot(dx, dy) || 0.01;
-        const minDist = SAT_R * 2 + 34; // leaves room for each one's label text
+        const minDist = SAT_R * 2 + halfWidths[i] + halfWidths[j];
         if (dist < minDist) {
           const push = (minDist - dist) / 2;
           const ux = dx / dist, uy = dy / dist;
@@ -154,11 +171,6 @@ function resolveCollisions(nodes, rootId, satellites) {
       }
     }
   }
-}
-
-function previewText(it) {
-  const d = it.data || {};
-  return d.title || d.text || (d.body && d.body.slice(0, 30)) || d.url || it.type;
 }
 
 async function getBoardItems(boardId) {
@@ -193,11 +205,21 @@ export async function openMindMap() {
   await renderGraph();
 }
 
+// Expanding a node schedules a render 220ms out (see the click handler
+// below), so it's easy to have two renderGraph() calls in flight at once —
+// click one node, click another before the first settles. Each is async
+// (fetches the graph, then each newly-expanded board's items) and they
+// don't necessarily resolve in the order they started, so without a guard
+// a slower *older* call can finish last and overwrite a newer one's result
+// — a real flash of a different, stale layout for a frame. Each call
+// grabs a token and bails before touching the DOM if a newer one has
+// since started.
 async function renderGraph() {
+  const myToken = ++renderToken;
   const r = refs();
   const data = await api.graph();
   const tree = buildTree(data.canvases, data.rootCanvasId);
-  if (!tree) { r.svg.innerHTML = ''; return; }
+  if (!tree) { if (myToken === renderToken) r.svg.innerHTML = ''; return; }
 
   layout(tree, -Math.PI, Math.PI, 0);
   const nodes = flatten(tree, []);
@@ -216,6 +238,7 @@ async function renderGraph() {
     });
   }
   resolveCollisions(nodes, data.rootCanvasId, satellites);
+  if (myToken !== renderToken) return; // a newer render started while we were awaiting — don't clobber it
 
   r.svg.innerHTML = '';
   const world = document.createElementNS(SVG_NS, 'g');
