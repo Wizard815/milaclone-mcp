@@ -53,6 +53,7 @@ export async function pasteClipboard(wx, wy) {
     color: base.color || base._childColor || null,
     data
   };
+  if (base.h != null) body.h = base.h; // e.g. a stretched shape — omit to fall back to the type's default sizing
   const it = await api.create(body);
   if (state.clipboard.cut && state.clipboard.cutIds.length) {
     for (const id of state.clipboard.cutIds) await api.remove(id);
