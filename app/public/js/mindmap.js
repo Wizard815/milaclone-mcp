@@ -146,16 +146,19 @@ async function renderGraph() {
     });
   }
 
+  // viewBox is sized from the board nodes ONLY (never satellites) — those
+  // are stable regardless of expand state, so the "camera" never has a
+  // reason to move. Satellites live inside a generous fixed padding around
+  // each node instead of resizing the box to fit them: sizing to fit
+  // whatever's currently expanded is exactly what made the whole map visibly
+  // reframe (nodes appearing to "jump") every time you expanded anything,
+  // even though their own coordinates never changed.
   let minX = 0, minY = 0, maxX = 0, maxY = 0;
   for (const n of nodes) {
     minX = Math.min(minX, n._x - NODE_R); maxX = Math.max(maxX, n._x + NODE_R);
     minY = Math.min(minY, n._y - NODE_R); maxY = Math.max(maxY, n._y + NODE_R);
   }
-  for (const s of satellites) {
-    minX = Math.min(minX, s.x - SAT_R); maxX = Math.max(maxX, s.x + SAT_R);
-    minY = Math.min(minY, s.y - SAT_R); maxY = Math.max(maxY, s.y + SAT_R);
-  }
-  const pad = 60;
+  const pad = 400; // room for a large expanded ring (comfortably fits 30+ items) without resizing the box
   r.svg.setAttribute('viewBox', `${minX - pad} ${minY - pad} ${(maxX - minX) + pad * 2} ${(maxY - minY) + pad * 2}`);
   r.svg.innerHTML = '';
 
