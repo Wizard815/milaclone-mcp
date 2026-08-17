@@ -16,7 +16,7 @@ and standalone dev setup.
 | `update_canvas` | Rename/recolor/re-icon a board by canvas id (mainly for Home) |
 | `search` | Search card contents and board titles |
 | `list_todo_lists` | List every to-do checklist across the whole tree |
-| `create_item` | Create a note/todo/link/column/comment/board/heading/document/table/color/draw/line card |
+| `create_item` | Create a note/todo/link/column/comment/board/heading/document/table/color/draw/line/shape card |
 | `update_item` | Edit a card's data/position/color/parent |
 | `delete_item` | Delete a card (recursively, if it's a nested board) |
 | `restore_item` | Undo a board's deletion (boards only — see below) |

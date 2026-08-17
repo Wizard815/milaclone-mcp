@@ -36,7 +36,7 @@ _client: MilacloneClient | None = None
 
 CREATABLE_TYPES = (
     "note", "todo", "link", "column", "comment", "board",
-    "heading", "document", "table", "color", "draw", "line",
+    "heading", "document", "table", "color", "draw", "line", "shape",
 )
 
 
@@ -203,7 +203,7 @@ def create_item(
     Args:
         canvas_id: board to add the card to.
         item_type: one of "note", "todo", "link", "column", "comment", "board",
-            "heading", "document", "table", "color", "draw", "line".
+            "heading", "document", "table", "color", "draw", "line", "shape".
             (Images and uploaded files aren't supported here — they require a
             file upload through the web UI.)
         data: shape depends on item_type:
@@ -234,6 +234,13 @@ def create_item(
                 `bend`/`along` offset the curve's control point
                 perpendicular/parallel to the straight line between them;
                 omit both for a straight connector.
+            shape:    {"shape": str, "filled": bool} — a single basic shape
+                ("circle", "square", "triangle", "diamond", or "star") as
+                line art (filled: false) or a solid fill (filled: true), in
+                the card's `color`. Always renders behind every other card
+                regardless of creation order or z — it's a background
+                decoration, not meant to be interacted with like a normal
+                card. The card is square (height follows width).
         x, y: position on the canvas in board units (default 60, 60). Ignored
             for item_type "line".
         w: card width in pixels (defaults to a sensible per-type value).

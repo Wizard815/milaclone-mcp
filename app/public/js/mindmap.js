@@ -203,13 +203,23 @@ async function renderGraph() {
 
   for (const n of nodes) {
     const isRoot = n.id === data.rootCanvasId;
+    const r = isRoot ? NODE_R + 6 : NODE_R;
     const g = document.createElementNS(SVG_NS, 'g');
     g.setAttribute('class', 'mm-node' + (isRoot ? ' mm-root' : '') + (expanded.has(n.id) ? ' mm-expanded' : ''));
     g.setAttribute('transform', `translate(${n._x},${n._y})`);
     const circle = document.createElementNS(SVG_NS, 'circle');
-    circle.setAttribute('r', isRoot ? NODE_R + 6 : NODE_R);
+    circle.setAttribute('r', r);
     circle.setAttribute('fill', colorVar(n.color || 'slate'));
     g.appendChild(circle);
+    // Same icon as the board's own tile on the canvas (buildBoard in
+    // cards.js), so a board reads as the same "thing" in both views.
+    const icon = lucideEl(n.icon || 'layout-grid');
+    const iconSize = r * 0.85;
+    const fo = document.createElementNS(SVG_NS, 'foreignObject');
+    fo.setAttribute('x', -iconSize / 2); fo.setAttribute('y', -iconSize / 2);
+    fo.setAttribute('width', iconSize); fo.setAttribute('height', iconSize);
+    fo.appendChild(icon);
+    g.appendChild(fo);
     const label = document.createElementNS(SVG_NS, 'text');
     label.setAttribute('y', NODE_R + 16);
     label.setAttribute('text-anchor', 'middle');
@@ -246,6 +256,7 @@ async function renderGraph() {
     satLayer.appendChild(g);
   }
 
+  refreshIcons(nodeLayer);
   refreshIcons(satLayer);
 }
 

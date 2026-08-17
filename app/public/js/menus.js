@@ -1,20 +1,21 @@
 'use strict';
 
-import { state, dom, COLORS, BOARD_ICONS } from './state.js';
+import { state, dom, COLORS, BOARD_ICONS, SHAPES, SHAPE_ICONS } from './state.js';
 import { api } from './api.js';
 import { colorVar, lucideEl, refreshIcons, isLocked } from './util.js';
 import { refreshItem } from './cards.js';
-import { select, renameSelected, deleteItem } from './editing.js';
+import { select, renameSelected, deleteItem, saveData } from './editing.js';
 import { copySelected, pasteClipboard, duplicateSelected, toggleLock } from './clipboard.js';
 
 // The floating color/icon palette and the right-click context menu.
 
-// mode: 'color' | 'icon' | 'auto' (auto = colors, plus icons for boards — legacy badge path)
+// mode: 'color' | 'icon' | 'auto' (auto = colors, plus icons for boards — legacy badge path) | 'shape'
 export function openPalette(it, anchor, mode = 'auto') {
   while (dom.palette.firstChild) dom.palette.removeChild(dom.palette.firstChild);
-  const showColor = mode === 'color' || mode === 'auto';
+  const showColor = mode === 'color' || mode === 'auto' || mode === 'shape';
   const showIcon = mode === 'icon' || (mode === 'auto' && it.type === 'board');
-  dom.palette.className = 'open' + (showIcon ? ' board-palette' : '') + (mode === 'icon' ? ' icon-only' : '');
+  const showShape = mode === 'shape';
+  dom.palette.className = 'open' + (showIcon || showShape ? ' board-palette' : '') + (mode === 'icon' ? ' icon-only' : '');
 
   if (showColor) {
     COLORS.forEach(c => {
@@ -48,8 +49,38 @@ export function openPalette(it, anchor, mode = 'auto') {
     dom.palette.appendChild(grid);
   }
 
+  if (showShape) {
+    if (showColor) {
+      const sep = document.createElement('div'); sep.className = 'pal-sep'; dom.palette.appendChild(sep);
+    }
+    const grid = document.createElement('div'); grid.className = 'icon-grid';
+    const currentShape = it.data.shape || 'circle';
+    SHAPES.forEach(name => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'icon-pick' + (name === currentShape ? ' sel' : '');
+      btn.title = name;
+      btn.appendChild(lucideEl(SHAPE_ICONS[name] || 'circle'));
+      btn.onclick = () => { saveData(it, { shape: name }); refreshItem(it); closePalette(); };
+      grid.appendChild(btn);
+    });
+    dom.palette.appendChild(grid);
+
+    const sep2 = document.createElement('div'); sep2.className = 'pal-sep'; dom.palette.appendChild(sep2);
+    const fillRow = document.createElement('div'); fillRow.className = 'pal-fill-row';
+    [['Hollow', false], ['Filled', true]].forEach(([label, val]) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'pal-fill-btn' + ((!!it.data.filled) === val ? ' sel' : '');
+      btn.textContent = label;
+      btn.onclick = () => { saveData(it, { filled: val }); refreshItem(it); closePalette(); };
+      fillRow.appendChild(btn);
+    });
+    dom.palette.appendChild(fillRow);
+  }
+
   const r = anchor.getBoundingClientRect();
-  const w = showIcon ? 280 : 210;
+  const w = (showIcon || showShape) ? 280 : 210;
   let left = Math.min(r.left, window.innerWidth - w - 8);
   let top = r.bottom + 8;
   if (top + 220 > window.innerHeight) top = Math.max(8, r.top - 228);

@@ -1,6 +1,6 @@
 'use strict';
 
-import { state, dom, elMap } from './state.js';
+import { state, dom, elMap, SHAPE_ICONS } from './state.js';
 import { colorVar, lucideEl, refreshIcons, autoGrow, isLocked, rid, normalizeUrl } from './util.js';
 import { select, enterEdit, exitEdit, saveData, deleteItem } from './editing.js';
 import { openPalette, openCtx } from './menus.js';
@@ -84,24 +84,31 @@ export function renderItem(it) {
   else if (it.type === 'table') buildTable(el, it);
   else if (it.type === 'color') buildColor(el, it);
   else if (it.type === 'draw') buildDraw(el, it);
+  else if (it.type === 'shape') buildShape(el, it);
 
   // Boards use the rail / mobile footer for color·icon·rename·delete.
   // Other cards keep the floating properties badge.
   if (it.type !== 'board') {
     const tools = document.createElement('div');
     tools.className = 'card-tools';
-    const colorBtn = document.createElement('div');
-    colorBtn.className = 'swatch';
-    colorBtn.style.background = colorVar(it.color || 'slate');
-    colorBtn.title = 'Color';
-    colorBtn.setAttribute('data-nodrag', '');
-    colorBtn.onclick = (e) => { e.stopPropagation(); openPalette(it, colorBtn, 'color'); };
+    // Shapes pick color from their own on-card handle (bundled with shape
+    // type + fill), so the swatch here would just be a second, redundant
+    // way to do the same thing.
+    if (it.type !== 'shape') {
+      const colorBtn = document.createElement('div');
+      colorBtn.className = 'swatch';
+      colorBtn.style.background = colorVar(it.color || 'slate');
+      colorBtn.title = 'Color';
+      colorBtn.setAttribute('data-nodrag', '');
+      colorBtn.onclick = (e) => { e.stopPropagation(); openPalette(it, colorBtn, 'color'); };
+      tools.appendChild(colorBtn);
+    }
     const delBtn = document.createElement('button');
     delBtn.setAttribute('data-nodrag', '');
     delBtn.appendChild(lucideEl('trash-2'));
     delBtn.title = 'Delete';
     delBtn.onclick = (e) => { e.stopPropagation(); deleteItem(it.id); };
-    tools.appendChild(colorBtn); tools.appendChild(delBtn);
+    tools.appendChild(delBtn);
     if (isLocked(it)) {
       const lockBadge = document.createElement('span');
       lockBadge.className = 'lock-badge';
@@ -361,6 +368,57 @@ function drawPreview(strokes) {
     svg.appendChild(p);
   }
   return svg;
+}
+
+// Geometry for each SHAPES entry (state.js), in a 0-100 square viewBox.
+function shapeGeometry(name) {
+  const el = document.createElementNS(SVG_NS, name === 'circle' ? 'circle' : 'polygon');
+  if (name === 'circle') {
+    el.setAttribute('cx', 50); el.setAttribute('cy', 50); el.setAttribute('r', 46);
+  } else if (name === 'square') {
+    el.setAttribute('points', '6,6 94,6 94,94 6,94');
+  } else if (name === 'triangle') {
+    el.setAttribute('points', '50,6 94,90 6,90');
+  } else if (name === 'diamond') {
+    el.setAttribute('points', '50,4 96,50 50,96 4,50');
+  } else if (name === 'star') {
+    const pts = [];
+    for (let i = 0; i < 10; i++) {
+      const r = i % 2 === 0 ? 48 : 20;
+      const a = (Math.PI / 5) * i - Math.PI / 2;
+      pts.push(`${50 + r * Math.cos(a)},${50 + r * Math.sin(a)}`);
+    }
+    el.setAttribute('points', pts.join(' '));
+  }
+  return el;
+}
+
+// A background decoration card — a single basic shape (line art or filled),
+// always rendered behind every other card (see the forced z-index below)
+// so it can sit under real content like colored paper. Its own color/shape/
+// fill are all picked from one handle rather than the usual swatch, since
+// "which color" and "which shape" are really one decision here.
+function buildShape(el, it) {
+  el.classList.add('shape');
+  el.style.zIndex = '0'; // real cards start at z >= 1 (see maxZ in db.js) — this always loses
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 100 100');
+  svg.classList.add('shape-svg');
+  const shapeEl = shapeGeometry(it.data.shape || 'circle');
+  const color = colorVar(it.color || 'slate');
+  shapeEl.setAttribute('fill', it.data.filled ? color : 'none');
+  shapeEl.setAttribute('stroke', color);
+  shapeEl.setAttribute('stroke-width', 4);
+  svg.appendChild(shapeEl);
+  el.appendChild(svg);
+
+  const handle = document.createElement('div');
+  handle.className = 'shape-handle';
+  handle.title = 'Shape, fill & color';
+  handle.setAttribute('data-nodrag', '');
+  handle.appendChild(lucideEl(SHAPE_ICONS[it.data.shape] || 'circle'));
+  handle.addEventListener('click', (e) => { e.stopPropagation(); openPalette(it, handle, 'shape'); });
+  el.appendChild(handle);
 }
 
 function buildDraw(el, it) {

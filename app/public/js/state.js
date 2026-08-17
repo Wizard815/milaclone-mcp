@@ -17,6 +17,13 @@ export const BOARD_ICONS = [
   'music', 'pen-tool', 'layers', 'folder', 'star', 'zap', 'globe', 'cpu', 'leaf', 'target'
 ];
 
+// A `shape` card's basic line-art options — see buildShape in cards.js.
+export const SHAPES = ['circle', 'square', 'triangle', 'diamond', 'star'];
+// Lucide icon standing in for each shape on its on-card picker handle.
+export const SHAPE_ICONS = {
+  circle: 'circle', square: 'square', triangle: 'triangle', diamond: 'diamond', star: 'star'
+};
+
 // Mutable app state, shared live across every module.
 export const state = {
   rootCanvasId: null,
