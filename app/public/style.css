@@ -215,6 +215,10 @@ input, textarea { font-family: var(--sans); }
 .card-tools button { border: none; background: none; color: #d6d8de; width: 28px; height: 28px; border-radius: 6px; display: grid; place-items: center; }
 .card-tools button:hover { background: rgba(255,255,255,.14); color: #fff; }
 .card-tools .swatch { width: 16px; height: 16px; border-radius: 4px; cursor: pointer; }
+.card-tools .htool-b, .card-tools .htool-u { font-family: var(--serif); font-size: 13px; }
+.card-tools .htool-b { font-weight: 800; }
+.card-tools .htool-u { text-decoration: underline; }
+.card-tools .htool-b.on, .card-tools .htool-u.on { background: var(--accent); color: #fff; }
 
 /* ---------- note ---------- */
 .note { padding: 14px 16px; }
@@ -225,7 +229,8 @@ input, textarea { font-family: var(--sans); }
 
 /* ---------- todo ---------- */
 .todo { padding: 14px 16px; }
-.todo .ttitle { font-family: var(--serif); font-weight: 600; font-size: 15px; border: none; outline: none; width: 100%; background: none; margin-bottom: 8px; }
+.todo .ttitle { font-family: var(--serif); font-weight: 600; font-size: 15px; border: none; outline: none; width: 100%; background: none; margin-bottom: 8px; color: var(--ink); }
+.todo .ttitle::placeholder { color: var(--ink-faint); }
 .todo .tasks { display: flex; flex-direction: column; gap: 2px; }
 .task { display: flex; align-items: flex-start; gap: 9px; padding: 3px 0; }
 .task input[type=checkbox] { appearance: none; width: 17px; height: 17px; border: 1.6px solid #cfd2d8; border-radius: 5px; margin-top: 1px; flex: 0 0 auto; cursor: pointer; position: relative; }

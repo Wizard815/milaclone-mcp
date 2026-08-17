@@ -213,7 +213,9 @@ def create_item(
             column:   {"title": str}
             comment:  {"body": str}
             board:    {"title": str, "icon": str (optional Lucide icon name)}
-            heading:  {"text": str}
+            heading:  {"text": str, "bold": bool (optional), "underline": bool
+                (optional)} — text color comes from the card's `color`, not
+                a data field.
             document: {"title": str, "bodyHtml": str} — bodyHtml is rendered
                 rich text (the in-app editor writes real HTML: <b>, <i>, <ul>,
                 <blockquote>, etc.), not markdown or plain text. The card

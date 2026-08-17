@@ -107,6 +107,22 @@ export function renderItem(it) {
       colorBtn.onclick = (e) => { e.stopPropagation(); openPalette(it, colorBtn, 'color'); };
       tools.appendChild(colorBtn);
     }
+    if (it.type === 'heading') {
+      const boldBtn = document.createElement('button');
+      boldBtn.setAttribute('data-nodrag', '');
+      boldBtn.className = 'htool-b' + (it.data.bold ? ' on' : '');
+      boldBtn.textContent = 'B';
+      boldBtn.title = 'Bold';
+      boldBtn.onclick = (e) => { e.stopPropagation(); saveData(it, { bold: !it.data.bold }); refreshItem(it); };
+      tools.appendChild(boldBtn);
+      const underlineBtn = document.createElement('button');
+      underlineBtn.setAttribute('data-nodrag', '');
+      underlineBtn.className = 'htool-u' + (it.data.underline ? ' on' : '');
+      underlineBtn.textContent = 'U';
+      underlineBtn.title = 'Underline';
+      underlineBtn.onclick = (e) => { e.stopPropagation(); saveData(it, { underline: !it.data.underline }); refreshItem(it); };
+      tools.appendChild(underlineBtn);
+    }
     const delBtn = document.createElement('button');
     delBtn.setAttribute('data-nodrag', '');
     delBtn.appendChild(lucideEl('trash-2'));
@@ -243,6 +259,9 @@ function buildFile(el, it) {
 function buildHeading(el, it) {
   el.classList.add('heading');
   const t = makeField('area', 'htext', it.data.text, 'Heading');
+  if (it.color) t.style.color = colorVar(it.color);
+  if (it.data.bold) t.style.fontWeight = '800';
+  if (it.data.underline) t.style.textDecoration = 'underline';
   t.addEventListener('input', () => saveData(it, { text: t.value }));
   el.appendChild(t);
   requestAnimationFrame(() => autoGrow(t));
