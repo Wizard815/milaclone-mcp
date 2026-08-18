@@ -288,7 +288,20 @@ input, textarea { font-family: var(--sans); }
 /* ---------- comment ---------- */
 .comment {
   padding: 14px 14px 14px 42px; background: #fff9f0; border-color: #f0e2cc;
-  position: relative;
+  /* NOT position:relative -- .item already sets position:absolute, which
+     already gives .cmark a valid containing block below. Redeclaring
+     position here (even to the "same kind" of positioned value) has the
+     same specificity as .item's own rule and comes later in the file, so
+     it silently overrode .item's position:absolute with position:relative
+     for every comment card -- meaning EVERY comment actually sat in normal
+     document flow (stacking below whatever rendered before it) with its
+     intended x/y applied as a relative offset on top of that, instead of
+     being absolutely placed on the canvas. Explains every symptom that
+     was reported as comment-specific: placement drifting further down
+     with each new one (flow position depends on prior siblings), dragging
+     jumping to the wrong spot (drag math assumes true absolute
+     positioning), and lines targeting the wrong point (rectOf() reads the
+     intended x/y, not wherever flow layout actually put it). */
 }
 .comment .cmark {
   position: absolute; left: 12px; top: 14px; color: #c47a3a;
