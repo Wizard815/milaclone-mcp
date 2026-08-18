@@ -99,6 +99,8 @@ let mmCam = { x: 0, y: 0, scale: 1 }; // this view's own camera, reset each time
 let panStart = null;           // {sx, sy, cx, cy} while dragging the background
 let renderToken = 0;           // guards against a slower, now-stale renderGraph() call overwriting a newer one
 let simPositions = new Map();  // id -> {x, y, vx, vy}, persisted across renders
+let adjacency = new Map();     // id -> Set of directly-connected ids, rebuilt every renderGraph() call
+let highlightId = null;        // id "Show connected" was last invoked on, if any (temp, DOM-class-only)
 
 function refs() {
   if (root) return root;
@@ -110,6 +112,7 @@ function refs() {
     ctx: document.getElementById('mmCtx'),
     ctxOpen: document.getElementById('mmCtxOpen'),
     ctxConnect: document.getElementById('mmCtxConnect'),
+    ctxHighlight: document.getElementById('mmCtxHighlight'),
     zoomIn: document.getElementById('mmZoomIn'),
     zoomOut: document.getElementById('mmZoomOut'),
     zoomReset: document.getElementById('mmZoomReset'),
@@ -293,6 +296,7 @@ export async function openMindMap() {
   expanded = new Set();
   itemCache = new Map();
   simPositions = new Map();
+  highlightId = null;
   r.svg.innerHTML = '<text x="16" y="24" fill="var(--ink-faint)" font-size="14">Loading…</text>';
   resetMmCam();
   await renderGraph();
@@ -412,6 +416,16 @@ async function renderGraph() {
   const liveIds = new Set(allIds);
   for (const id of [...simPositions.keys()]) if (!liveIds.has(id)) simPositions.delete(id);
 
+  // Rebuilt from the same edge list every render -- "Show connected" (the
+  // mind map's own context menu) reads this to know what to highlight.
+  adjacency = new Map();
+  for (const e of edges) {
+    if (!adjacency.has(e.a)) adjacency.set(e.a, new Set());
+    if (!adjacency.has(e.b)) adjacency.set(e.b, new Set());
+    adjacency.get(e.a).add(e.b);
+    adjacency.get(e.b).add(e.a);
+  }
+
   const boardR = (id) => {
     const base = id === data.rootCanvasId ? NODE_R + 6 : NODE_R;
     return Math.min(base + (degree.get(id) || 0) * 2.2, base + 26);
@@ -446,6 +460,7 @@ async function renderGraph() {
     line.setAttribute('x1', a.x); line.setAttribute('y1', a.y);
     line.setAttribute('x2', b.x); line.setAttribute('y2', b.y);
     line.setAttribute('class', cls);
+    line.dataset.a = aId; line.dataset.b = bId;
     if (titleText) { const t = document.createElementNS(SVG_NS, 'title'); t.textContent = titleText; line.appendChild(t); }
     layer.appendChild(line);
   };
@@ -468,6 +483,7 @@ async function renderGraph() {
     const poly = document.createElementNS(SVG_NS, 'polyline');
     poly.setAttribute('points', pts.join(' '));
     poly.setAttribute('class', cls);
+    poly.dataset.a = aId; poly.dataset.b = bId;
     layer.appendChild(poly);
   };
 
@@ -488,6 +504,7 @@ async function renderGraph() {
     const pos = simPositions.get(n.id);
     const g = document.createElementNS(SVG_NS, 'g');
     g.setAttribute('class', 'mm-node' + (isRoot ? ' mm-root' : '') + (expanded.has(n.id) ? ' mm-expanded' : ''));
+    g.dataset.id = n.id;
     g.setAttribute('transform', `translate(${pos.x},${pos.y})`);
     const circle = document.createElementNS(SVG_NS, 'circle');
     circle.setAttribute('r', r2);
@@ -532,6 +549,7 @@ async function renderGraph() {
     const pos = simPositions.get(s.it.id);
     const g = document.createElementNS(SVG_NS, 'g');
     g.setAttribute('class', 'mm-sat');
+    g.dataset.id = s.it.id;
     g.setAttribute('transform', `translate(${pos.x},${pos.y})`);
     const circle = document.createElementNS(SVG_NS, 'circle');
     circle.setAttribute('r', sR);
@@ -561,6 +579,7 @@ async function renderGraph() {
 
 function toggleExpand(boardId) {
   if (expanded.has(boardId)) expanded.delete(boardId); else expanded.add(boardId);
+  highlightId = null; // renderGraph() below rebuilds the DOM fresh -- any highlight classes are gone with it
   renderGraph();
 }
 
@@ -576,6 +595,32 @@ function openCtx(e, canvasId, itemId) {
 function closeCtx() {
   refs().ctx.hidden = true;
   ctxTarget = null;
+}
+
+// "Show connected": a temporary, DOM-class-only highlight (no re-render,
+// positions/edges untouched) -- dims everything except the clicked node and
+// its direct neighbors (from `adjacency`, rebuilt fresh every renderGraph()
+// call from that render's own edge list, so it's always exactly what's
+// currently drawn). Cleared by clicking the mind map's own background or
+// pressing Escape -- see initMindMap.
+function showConnected(id) {
+  highlightId = id;
+  const neighbors = adjacency.get(id) || new Set();
+  const keep = new Set(neighbors);
+  keep.add(id);
+  document.querySelectorAll('.mm-node, .mm-sat').forEach(el => {
+    el.classList.toggle('mm-dim', !keep.has(el.dataset.id));
+    el.classList.toggle('mm-highlight-source', el.dataset.id === id);
+  });
+  document.querySelectorAll('#mmSvg line[data-a], #mmSvg polyline[data-a]').forEach(el => {
+    el.classList.toggle('mm-dim', !(keep.has(el.dataset.a) && keep.has(el.dataset.b)));
+  });
+}
+
+function clearHighlight() {
+  if (!highlightId) return;
+  highlightId = null;
+  document.querySelectorAll('.mm-dim, .mm-highlight-source').forEach(el => el.classList.remove('mm-dim', 'mm-highlight-source'));
 }
 
 // Centers the *main canvas's* camera on a world point — used instead of
@@ -663,7 +708,13 @@ export function initMindMap() {
   const r = refs();
   document.getElementById('mindMapBtn').addEventListener('click', openMindMap);
   r.close.addEventListener('click', closeMindMap);
-  r.svg.addEventListener('click', closeCtx);
+  r.svg.addEventListener('click', () => { closeCtx(); clearHighlight(); });
+  r.ctxHighlight.addEventListener('click', () => {
+    if (!ctxTarget) return;
+    const id = ctxTarget.itemId || ctxTarget.canvasId;
+    closeCtx();
+    showConnected(id);
+  });
   r.ctxConnect.addEventListener('click', () => {
     if (!ctxTarget) return;
     const { canvasId, itemId } = ctxTarget;
@@ -691,7 +742,12 @@ export function initMindMap() {
   });
   document.addEventListener('keydown', (e) => {
     if (r.el.hidden) return;
-    if (e.key === 'Escape') { e.preventDefault(); if (!r.ctx.hidden) closeCtx(); else closeMindMap(); }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      if (!r.ctx.hidden) closeCtx();
+      else if (highlightId) clearHighlight();
+      else closeMindMap();
+    }
   });
   initMmCamera();
 }

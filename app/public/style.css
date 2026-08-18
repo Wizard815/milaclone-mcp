@@ -1287,6 +1287,14 @@ body.qn-open .toast {
 /* Items sharing a column -- a literal zigzag polyline (not just a dashed
    straight line), rendered by zigzagPoints() in mindmap.js. */
 .mm-group-edge { stroke: var(--c-teal); stroke-width: 1.5; opacity: .8; fill: none; stroke-linejoin: round; }
+/* "Show connected" (mind-map context menu) -- a temporary, class-only
+   dim/highlight, no layout change. transition makes it read as a toggle
+   rather than a jarring snap. */
+.mm-node, .mm-sat, .mm-edges line, .mm-sat-edges line, .mm-line-edges line, .mm-group-edges polyline, .mm-connect-edges line {
+  transition: opacity .15s ease;
+}
+.mm-dim { opacity: .12; }
+.mm-highlight-source circle { stroke: #fff; stroke-width: 4; }
 .mm-node { cursor: pointer; }
 .mm-node circle { stroke: var(--card-bg); stroke-width: 3; }
 .mm-node svg { width: 100%; height: 100%; color: #fff; pointer-events: none; }
