@@ -373,11 +373,22 @@ router.get('/api/search', (req, res) => {
 });
 
 // ---- Graph (mind map) -------------------------------------------------------
-// Every board, for the nesting tree the mind-map view draws. Titles/colors
-// only — full item data isn't needed for a graph node.
+// Every board (for the nesting tree) and every cross-board `connect` badge
+// (for the links drawn over that tree), in one round trip. Board titles/
+// colors and connect targets only — full item data isn't needed for a graph
+// node.
 router.get('/api/graph', (req, res) => {
   const canvases = stmt.allCanvases.all();
-  res.json({ rootCanvasId: rootCanvasId(), canvases });
+  const connects = stmt.connectItems.all().map(rowToItem).map(it => ({
+    id: it.id,
+    canvasId: it.canvasId,
+    sourceItemId: it.data.sourceItemId || null,
+    targetCanvasId: it.data.targetCanvasId,
+    targetItemId: it.data.targetItemId || null,
+    label: it.data.targetLabel || '',
+    note: it.data.note || ''
+  })).filter(c => c.targetCanvasId);
+  res.json({ rootCanvasId: rootCanvasId(), canvases, connects });
 });
 
 // ---- Tags --------------------------------------------------------------

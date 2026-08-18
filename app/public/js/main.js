@@ -19,6 +19,7 @@ import { performUndo, performRedo } from './undo.js';
 import { initMindMap, isMindMapOpen } from './mindmap.js';
 import { initConfirmDialog, isConfirmOpen } from './confirm.js';
 import { initSettings } from './settings.js';
+import { initConnectPicker, isConnectPickerOpen } from './connect.js';
 
 // Entry point: canvas loading/navigation, global keyboard + pointer handling,
 // and boot. Wiring for the viewport and toolbar lives in their own modules and
@@ -44,6 +45,7 @@ document.addEventListener('keydown', (e) => {
   if (isDrawEditorOpen()) return;   // Draw editor owns the keyboard while it's up (handles its own Escape/undo)
   if (isMindMapOpen()) return;      // Mind map owns the keyboard while it's up (handles its own Escape)
   if (isConfirmOpen()) return;      // Confirm dialog owns the keyboard while it's up (handles its own Escape/Enter)
+  if (isConnectPickerOpen()) return; // Connect picker owns the keyboard while it's up (handles its own Escape)
   const ae = document.activeElement;
   const typing = ae && (ae.isContentEditable || (/^(INPUT|TEXTAREA)$/.test(ae.tagName) && !ae.readOnly));
   if (e.key === 'Escape') { disarm(); deselect(); closePalette(); closeCtx(); }
@@ -88,6 +90,7 @@ initTheme();
 initMindMap();
 initConfirmDialog();
 initSettings();
+initConnectPicker();
 
 (async function boot() {
   refreshIcons();

@@ -70,7 +70,8 @@ const stmt = {
   restoreItemsByBatch: db.prepare(`UPDATE items SET deletedAt = NULL WHERE deletedAt = ?`),
   restoreCanvasesByBatch: db.prepare(`UPDATE canvases SET deletedAt = NULL WHERE deletedAt = ?`),
   searchItems: db.prepare(`SELECT * FROM items WHERE data LIKE ? ESCAPE '\\' AND deletedAt IS NULL ORDER BY createdAt DESC LIMIT ?`),
-  searchCanvases: db.prepare(`SELECT * FROM canvases WHERE title LIKE ? ESCAPE '\\' AND deletedAt IS NULL ORDER BY createdAt DESC LIMIT ?`)
+  searchCanvases: db.prepare(`SELECT * FROM canvases WHERE title LIKE ? ESCAPE '\\' AND deletedAt IS NULL ORDER BY createdAt DESC LIMIT ?`),
+  connectItems: db.prepare(`SELECT * FROM items WHERE type = 'connect' AND deletedAt IS NULL`)
 };
 
 // Seed a root 'Home' canvas on first run.

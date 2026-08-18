@@ -6,6 +6,7 @@ import { colorVar, lucideEl, refreshIcons } from './util.js';
 import { select } from './editing.js';
 import { applyCam } from './viewport.js';
 import { openCanvas } from './main.js';
+import { openConnectPicker } from './connect.js';
 
 // A force-directed graph of every board (plus, per expanded board, its own
 // items as satellites) — repulsion between every node pair, spring
@@ -15,11 +16,17 @@ import { openCanvas } from './main.js';
 // an ever-growing fixed-radius ring, regularly overlapping a neighboring
 // board's own cluster with no sense of what actually related to what.
 //
-// Edges come from three places: board nesting (parent/child canvases),
-// board -> its own expanded satellite items, and (new) item <-> item for
-// any Line the user has actually drawn between two items open on the same
-// board (public/js/lines.js) -- both endpoints have to be currently-visible
-// satellites (their board expanded) for the edge to render.
+// Edges come from five places: board nesting (parent/child canvases),
+// board -> its own expanded satellite items (or -> the item's own column,
+// once columns can themselves be satellites -- see below), item <-> item
+// for any Line the user has actually drawn between two items open on the
+// same board (public/js/lines.js) -- both endpoints have to be currently-
+// visible satellites for the edge to render -- item <-> item zigzag edges
+// between cards sharing a column (visually distinct from a real Line), and
+// cross-board Connect badges (public/js/connect.js), which unlike Line can
+// link two items on entirely different boards and always render (using
+// whichever end -- the specific card or its board's own hub -- is
+// currently visible) rather than requiring both ends expanded.
 //
 // Positions persist across renders in `simPositions`, keyed by node id
 // (board canvasId or item id — distinct id namespaces, no collision) and
@@ -64,6 +71,12 @@ const DAMPING = 0.82;
 const REST_BOARD = 200, SPRING_BOARD = 0.02;
 const REST_SPOKE = 90, SPRING_SPOKE = 0.05;
 const REST_LINE = 70, SPRING_LINE = 0.08;
+// Column siblings should cluster tighter than a normal same-board Line.
+const REST_GROUP = 50, SPRING_GROUP = 0.06;
+// Weak on purpose -- nudges connected boards/items closer without
+// overriding the tree's overall shape, since a connect edge can easily
+// span two otherwise-unrelated branches of the whole graph.
+const REST_CONNECT = 180, SPRING_CONNECT = 0.015;
 // Extra push once two nodes are closer than their combined collision radius
 // (visual circle + estimated label width) — smooth 1/dist^2 repulsion alone
 // keeps circles from overlapping but doesn't know a label sticks out much
@@ -96,6 +109,7 @@ function refs() {
     wrap: document.querySelector('.mm-canvas-wrap'),
     ctx: document.getElementById('mmCtx'),
     ctxOpen: document.getElementById('mmCtxOpen'),
+    ctxConnect: document.getElementById('mmCtxConnect'),
     zoomIn: document.getElementById('mmZoomIn'),
     zoomOut: document.getElementById('mmZoomOut'),
     zoomReset: document.getElementById('mmZoomReset'),
@@ -166,10 +180,14 @@ async function getBoardItems(boardId) {
   if (itemCache.has(boardId)) return itemCache.get(boardId);
   const data = await api.canvas(boardId);
   const all = data.items || [];
-  // shape cards are background decoration on the canvas, not really a
-  // "thing" someone would want to jump to or connect to — no reason to
-  // clutter the satellite ring with them.
-  const items = all.filter(it => !['board', 'line', 'shape'].includes(it.type) && !it.parentItemId);
+  // shape cards are background decoration, not really a "thing" someone
+  // would want to jump to or connect to. Connect badges are represented
+  // purely via the connect-edge layer (see renderGraph), never as a
+  // generic satellite of their own. Column children -- items with a
+  // parentItemId -- USED to be excluded here too; now they're kept so a
+  // column's members can show up as their own satellites, spoking to the
+  // column instead of the board (see renderGraph).
+  const items = all.filter(it => !['board', 'line', 'shape', 'connect'].includes(it.type));
   const lines = all.filter(it => it.type === 'line');
   const result = { items, lines };
   itemCache.set(boardId, result);
@@ -321,9 +339,9 @@ async function renderGraph() {
 
   // Build the edge list + a degree count for node sizing. Boards count
   // nesting + satellite-spoke edges (a board with many children/items
-  // legitimately reads as more central); satellites only count their line
-  // edges (their one spoke to the board is structural/always-present, not
-  // informative the way a real drawn connection is).
+  // legitimately reads as more central); satellites only count edges that
+  // actually mean something -- lines, column-group, connect -- not their
+  // one always-present spoke, which isn't informative the way those are.
   const edges = [];
   const degree = new Map();
   const bump = (id) => degree.set(id, (degree.get(id) || 0) + 1);
@@ -334,9 +352,15 @@ async function renderGraph() {
       bump(n.parentCanvasId); bump(n.id);
     }
   }
+  // A column child spokes to its own column (once the column is also a
+  // visible satellite) instead of straight to the board -- both the
+  // column and the board get their degree bumped by this, which is what
+  // makes a column with several members visibly size up.
   for (const s of satellites) {
-    edges.push({ a: s.boardId, b: s.it.id, rest: REST_SPOKE, k: SPRING_SPOKE });
-    bump(s.boardId);
+    const parentVisible = s.it.parentItemId && visibleSatIds.has(s.it.parentItemId);
+    const target = parentVisible ? s.it.parentItemId : s.boardId;
+    edges.push({ a: target, b: s.it.id, rest: REST_SPOKE, k: SPRING_SPOKE });
+    bump(target);
   }
   const lineEdges = [];
   for (const le of rawLineEdges) {
@@ -345,6 +369,43 @@ async function renderGraph() {
     edges.push({ a: le.fromId, b: le.toId, rest: REST_LINE, k: SPRING_LINE });
     bump(le.fromId); bump(le.toId);
     lineEdges.push(le);
+  }
+
+  // Column-group edges: consecutive siblings (server child order, i.e.
+  // it.y -- not a full pairwise mesh, which would be O(n^2) edges for a
+  // larger column) chained together, rendered as a literal zigzag so
+  // "these are grouped" reads as visually distinct from a real Line.
+  const columnGroups = new Map(); // columnId -> its visible children
+  for (const s of satellites) {
+    if (!s.it.parentItemId || !visibleSatIds.has(s.it.parentItemId)) continue;
+    if (!columnGroups.has(s.it.parentItemId)) columnGroups.set(s.it.parentItemId, []);
+    columnGroups.get(s.it.parentItemId).push(s.it);
+  }
+  const groupEdges = [];
+  for (const members of columnGroups.values()) {
+    if (members.length < 2) continue;
+    members.sort((a, b) => (a.y || 0) - (b.y || 0));
+    for (let i = 0; i < members.length - 1; i++) {
+      const a = members[i].id, b = members[i + 1].id;
+      edges.push({ a, b, rest: REST_GROUP, k: SPRING_GROUP });
+      bump(a); bump(b);
+      groupEdges.push({ a, b });
+    }
+  }
+
+  // Connect-badge edges: prefer the specific card's satellite when it's
+  // currently visible, otherwise fall back to that side's board hub --
+  // unlike Line edges above, these always render with *something*, which
+  // is the point: the link should show up in the map whether or not
+  // you've drilled into either board.
+  const connectEdges = [];
+  for (const c of data.connects) {
+    const fromId = (c.sourceItemId && visibleSatIds.has(c.sourceItemId)) ? c.sourceItemId : (byId.has(c.canvasId) ? c.canvasId : null);
+    const toId = (c.targetItemId && visibleSatIds.has(c.targetItemId)) ? c.targetItemId : (byId.has(c.targetCanvasId) ? c.targetCanvasId : null);
+    if (!fromId || !toId || fromId === toId) continue;
+    edges.push({ a: fromId, b: toId, rest: REST_CONNECT, k: SPRING_CONNECT });
+    bump(fromId); bump(toId);
+    connectEdges.push({ a: fromId, b: toId, label: c.label, note: c.note });
   }
 
   const allIds = boardNodes.map(n => n.id).concat(satellites.map(s => s.it.id));
@@ -373,24 +434,53 @@ async function renderGraph() {
   const edgeLayer = document.createElementNS(SVG_NS, 'g'); edgeLayer.setAttribute('class', 'mm-edges');
   const satEdgeLayer = document.createElementNS(SVG_NS, 'g'); satEdgeLayer.setAttribute('class', 'mm-sat-edges');
   const lineEdgeLayer = document.createElementNS(SVG_NS, 'g'); lineEdgeLayer.setAttribute('class', 'mm-line-edges');
+  const groupEdgeLayer = document.createElementNS(SVG_NS, 'g'); groupEdgeLayer.setAttribute('class', 'mm-group-edges');
+  const connectEdgeLayer = document.createElementNS(SVG_NS, 'g'); connectEdgeLayer.setAttribute('class', 'mm-connect-edges');
   const nodeLayer = document.createElementNS(SVG_NS, 'g'); nodeLayer.setAttribute('class', 'mm-nodes');
   const satLayer = document.createElementNS(SVG_NS, 'g'); satLayer.setAttribute('class', 'mm-sats');
-  world.append(edgeLayer, satEdgeLayer, lineEdgeLayer, nodeLayer, satLayer);
+  world.append(edgeLayer, satEdgeLayer, lineEdgeLayer, groupEdgeLayer, connectEdgeLayer, nodeLayer, satLayer);
 
-  const drawLine = (layer, aId, bId, cls) => {
+  const drawLine = (layer, aId, bId, cls, titleText) => {
     const a = simPositions.get(aId), b = simPositions.get(bId);
     const line = document.createElementNS(SVG_NS, 'line');
     line.setAttribute('x1', a.x); line.setAttribute('y1', a.y);
     line.setAttribute('x2', b.x); line.setAttribute('y2', b.y);
     line.setAttribute('class', cls);
+    if (titleText) { const t = document.createElementNS(SVG_NS, 'title'); t.textContent = titleText; line.appendChild(t); }
     layer.appendChild(line);
+  };
+
+  // A literal zigzag polyline (not just a dashed straight line) between two
+  // column siblings, alternating a fixed perpendicular offset along the
+  // straight path between them.
+  const drawZigzag = (layer, aId, bId, cls) => {
+    const a = simPositions.get(aId), b = simPositions.get(bId);
+    const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len, px = -uy, py = ux;
+    const segments = 6, amp = 7;
+    const pts = [];
+    for (let i = 0; i <= segments; i++) {
+      const t = i / segments;
+      const bx = a.x + dx * t, by = a.y + dy * t;
+      const off = (i === 0 || i === segments) ? 0 : (i % 2 === 0 ? amp : -amp);
+      pts.push((bx + px * off) + ',' + (by + py * off));
+    }
+    const poly = document.createElementNS(SVG_NS, 'polyline');
+    poly.setAttribute('points', pts.join(' '));
+    poly.setAttribute('class', cls);
+    layer.appendChild(poly);
   };
 
   for (const n of boardNodes) {
     if (n.parentCanvasId && byId.has(n.parentCanvasId)) drawLine(edgeLayer, n.parentCanvasId, n.id, 'mm-edge');
   }
-  for (const s of satellites) drawLine(satEdgeLayer, s.boardId, s.it.id, 'mm-sat-edge');
+  for (const s of satellites) {
+    const parentVisible = s.it.parentItemId && visibleSatIds.has(s.it.parentItemId);
+    drawLine(satEdgeLayer, parentVisible ? s.it.parentItemId : s.boardId, s.it.id, 'mm-sat-edge');
+  }
   for (const le of lineEdges) drawLine(lineEdgeLayer, le.fromId, le.toId, 'mm-line-edge');
+  for (const ge of groupEdges) drawZigzag(groupEdgeLayer, ge.a, ge.b, 'mm-group-edge');
+  for (const ce of connectEdges) drawLine(connectEdgeLayer, ce.a, ce.b, 'mm-connect-edge', ce.note ? ce.label + ' — ' + ce.note : ce.label);
 
   for (const n of boardNodes) {
     const isRoot = n.id === data.rootCanvasId;
@@ -574,6 +664,23 @@ export function initMindMap() {
   document.getElementById('mindMapBtn').addEventListener('click', openMindMap);
   r.close.addEventListener('click', closeMindMap);
   r.svg.addEventListener('click', closeCtx);
+  r.ctxConnect.addEventListener('click', () => {
+    if (!ctxTarget) return;
+    const { canvasId, itemId } = ctxTarget;
+    // If a specific card was right-clicked, place the new badge right next
+    // to it (same math as the canvas's own "Connect from here") so the
+    // connection reads as coming from that card, not just "this board".
+    let worldPos = { x: 60, y: 60 };
+    const w = 220;
+    if (itemId) {
+      const cached = itemCache.get(canvasId);
+      const it = cached && cached.items.find(x => x.id === itemId);
+      if (it) worldPos = { x: (it.x || 0) + (it.w || 240) + 20 + w / 2, y: (it.y || 0) + 30 };
+    }
+    closeCtx();
+    closeMindMap();
+    openConnectPicker(worldPos, canvasId, itemId || null);
+  });
   r.ctxOpen.addEventListener('click', () => {
     if (!ctxTarget) return;
     const { canvasId, itemId } = ctxTarget;

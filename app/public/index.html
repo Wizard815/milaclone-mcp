@@ -108,6 +108,10 @@
     <i data-lucide="shapes"></i>
     Shape
   </button>
+  <button class="tool" data-tool="connect" title="Connect">
+    <i data-lucide="radar"></i>
+    Connect
+  </button>
   <div class="rail-sep"></div>
   <button class="tool" data-tool="image" title="Image">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="5" width="16" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M5 17l4.5-4.5L13 16l3-3 3 3" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -332,7 +336,12 @@
   <div class="mm-top">
     <button class="mm-close" id="mmClose"><i data-lucide="x"></i> Close</button>
     <h3>Mind map</h3>
-    <span class="mm-legend"><span class="mm-swatch mm-swatch-tree"></span> nested boards</span>
+    <span class="mm-legend">
+      <span class="mm-legend-item"><span class="mm-swatch mm-swatch-tree"></span>nested boards</span>
+      <span class="mm-legend-item"><span class="mm-swatch mm-swatch-line"></span>lines</span>
+      <span class="mm-legend-item"><span class="mm-swatch mm-swatch-connect"></span>connect badges</span>
+      <span class="mm-legend-item"><span class="mm-swatch mm-swatch-group"></span>column groups</span>
+    </span>
     <div class="zoomwrap mm-zoomwrap">
       <button id="mmZoomOut" title="Zoom out">−</button>
       <span class="lvl" id="mmZoomLvl">100%</span>
@@ -343,8 +352,22 @@
   <div class="mm-canvas-wrap">
     <svg id="mmSvg" class="mm-svg"></svg>
     <div id="mmCtx" class="mm-ctx" hidden>
+      <button id="mmCtxConnect"><i data-lucide="radar"></i> Connect from here</button>
       <button id="mmCtxOpen"><i data-lucide="arrow-up-right"></i> Open</button>
     </div>
+  </div>
+</div>
+
+<div id="connectPicker" hidden>
+  <div class="cp-backdrop"></div>
+  <div class="cp-panel">
+    <div class="cp-header">
+      <h3>Link to…</h3>
+      <button id="cpClose" aria-label="Close"><i data-lucide="x"></i></button>
+    </div>
+    <nav class="cp-crumbs" id="cpCrumbs"></nav>
+    <button class="cp-here" id="cpLinkHere">Link to this board</button>
+    <div class="cp-list" id="cpList"></div>
   </div>
 </div>
 
