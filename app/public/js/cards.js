@@ -185,7 +185,7 @@ function buildNote(el, it) {
   t.addEventListener('input', () => saveData(it, { title: t.value }));
   b.addEventListener('input', () => saveData(it, { body: b.value }));
   el.appendChild(t); el.appendChild(b);
-  requestAnimationFrame(() => { autoGrow(t); autoGrow(b); });
+  requestAnimationFrame(() => { autoGrow(t); autoGrow(b); renderLines(); });
 }
 
 function buildComment(el, it) {
@@ -198,7 +198,11 @@ function buildComment(el, it) {
   const b = makeField('area', 'cbody', it.data.body, 'Add a comment…');
   b.addEventListener('input', () => saveData(it, { body: b.value }));
   el.appendChild(b);
-  requestAnimationFrame(() => autoGrow(b));
+  // Growing to fit existing body text happens one frame after this card is
+  // first in the DOM (its initial height is the default single-row size
+  // until then) — any connector line attached to it was already drawn
+  // against that shorter box by the time this runs, so it needs to redraw.
+  requestAnimationFrame(() => { autoGrow(b); renderLines(); });
 }
 
 function buildTodo(el, it) {
@@ -225,7 +229,7 @@ function buildTodo(el, it) {
       del.onclick = (e) => { e.stopPropagation(); tasks.splice(tasks.indexOf(task), 1); saveData(it, { tasks }); renderTasks(); };
       row.appendChild(cb); row.appendChild(tx); row.appendChild(del);
       list.appendChild(row);
-      requestAnimationFrame(() => autoGrow(tx));
+      requestAnimationFrame(() => { autoGrow(tx); renderLines(); });
     });
   };
   renderTasks();
@@ -273,11 +277,11 @@ function buildHeading(el, it) {
   if (it.data.filled) el.classList.add('filled');
   const t = makeField('area', 'htext', it.data.text, 'Heading');
   if (it.color) t.style.color = colorVar(it.color);
-  if (it.data.bold) t.style.fontWeight = '800';
+  if (it.data.bold) t.style.fontWeight = '700';
   if (it.data.underline) t.style.textDecoration = 'underline';
   t.addEventListener('input', () => saveData(it, { text: t.value }));
   el.appendChild(t);
-  requestAnimationFrame(() => autoGrow(t));
+  requestAnimationFrame(() => { autoGrow(t); renderLines(); });
 }
 
 function buildDocument(el, it) {

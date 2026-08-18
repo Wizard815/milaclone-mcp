@@ -127,7 +127,12 @@ function flatten(node, acc) {
 // reads the same regardless of what's expanded.
 function previewText(it) {
   const d = it.data || {};
-  return d.title || d.text || (d.body && d.body.slice(0, 30)) || d.url || it.type;
+  const raw = String(d.title || d.text || (d.body && d.body.slice(0, 60)) || d.url || it.type || '');
+  // Capped at 5 words so a long note/comment body doesn't bloat its own
+  // satellite (and the spacing every other satellite needs to clear it —
+  // see labelHalfWidth below) far past what a short label would.
+  const words = raw.trim().split(/\s+/).filter(Boolean);
+  return words.length > 5 ? words.slice(0, 5).join(' ') + '…' : raw;
 }
 
 // Rough label half-width in px for a satellite's text (9.5px sans-serif,
