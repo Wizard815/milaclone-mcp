@@ -21,6 +21,38 @@ const BOARD_ICONS = [
 ];
 const randomBoardIcon = () => BOARD_ICONS[Math.floor(Math.random() * BOARD_ICONS.length)];
 
+// Same preview-text rule the client uses (connect.js/mindmap.js) -- kept in
+// sync by hand since there's no shared module between server and client code.
+function previewTextFor(it) {
+  const d = it.data || {};
+  return d.title || d.text || (d.body && d.body.slice(0, 40)) || d.url || it.type;
+}
+
+// A connect badge's label used to be frozen at creation time (whatever the
+// source/target were called then), so renaming either side left it stale --
+// same class of problem `_childTitle` below already solves for board tiles
+// by resolving the live canvas on every read instead of storing a copy.
+// Resolves the *current* source/target names the same way; falls back to
+// the originally-stored label if either side has since been deleted, so a
+// dangling badge still shows something instead of "undefined".
+function liveConnectLabel(it) {
+  const source = it.data.sourceItemId ? stmt.getItem.get(it.data.sourceItemId) : null;
+  const sourcePreview = source ? previewTextFor(rowToItem(source)) : null;
+
+  const targetCanvas = it.data.targetCanvasId ? stmt.getCanvas.get(it.data.targetCanvasId) : null;
+  if (!targetCanvas) return it.data.targetLabel;
+
+  let targetSide = targetCanvas.title;
+  if (it.data.targetItemId) {
+    const target = stmt.getItem.get(it.data.targetItemId);
+    if (!target) return it.data.targetLabel;
+    targetSide = previewTextFor(rowToItem(target));
+  }
+
+  if (sourcePreview) return `${sourcePreview} → ${targetSide}`;
+  return it.data.targetItemId ? `${targetCanvas.title} → ${targetSide}` : targetSide;
+}
+
 const ALLOWED_UPLOAD = (mime) =>
   /^image\//.test(mime) ||
   /^text\//.test(mime) ||
@@ -122,6 +154,9 @@ router.get('/api/canvas/:id', (req, res) => {
         _childColor: child ? child.color : 'slate',
         _childIcon: child ? (child.icon || 'layout-grid') : 'layout-grid'
       });
+    }
+    if (it.type === 'connect') {
+      return Object.assign({}, it, { _liveLabel: liveConnectLabel(it) });
     }
     return it;
   });
@@ -385,7 +420,7 @@ router.get('/api/graph', (req, res) => {
     sourceItemId: it.data.sourceItemId || null,
     targetCanvasId: it.data.targetCanvasId,
     targetItemId: it.data.targetItemId || null,
-    label: it.data.targetLabel || '',
+    label: liveConnectLabel(it) || '',
     note: it.data.note || ''
   })).filter(c => c.targetCanvasId);
   res.json({ rootCanvasId: rootCanvasId(), canvases, connects });

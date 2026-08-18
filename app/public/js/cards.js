@@ -566,7 +566,11 @@ function buildConnect(el, it) {
   const head = document.createElement('div'); head.className = 'cn-head';
   head.appendChild(lucideEl('radar'));
   const label = document.createElement('span'); label.className = 'cn-label';
-  label.textContent = it.data.targetLabel || 'Untitled link';
+  // _liveLabel is resolved fresh by the server on every canvas read (the
+  // source/target's *current* name), same pattern boards already use for
+  // their own tile title -- data.targetLabel is just the fallback for a
+  // stale local record or a dangling target that's since been deleted.
+  label.textContent = it._liveLabel || it.data.targetLabel || 'Untitled link';
   head.appendChild(label);
   body.appendChild(head);
   const note = makeField('area', 'cn-note', it.data.note, 'Add a note…');
