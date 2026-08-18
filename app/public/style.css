@@ -760,9 +760,6 @@ input, textarea { font-family: var(--sans); }
   #mBoardSheet button.danger { color: #c0392b; }
   #mBoardSheet button:hover, #mBoardSheet button:active { background: var(--surface-2); }
 
-  /* Quick notes takes over the whole viewport, canvas chrome included */
-  #quicknotes:not([hidden]) { display: block; }
-
   /* ••• action sheet */
   #msheet:not([hidden]) {
     position: fixed; z-index: 101; left: 12px;
@@ -782,8 +779,8 @@ input, textarea { font-family: var(--sans); }
    Quick notes — the mobile task workspace (overview → list → task + search).
 
    Its own design tokens: a lighter, Reminders-style palette layered over the
-   canvas. Everything is scoped under #quicknotes, which only becomes visible
-   inside the mobile media query above.
+   canvas. Everything is scoped under #quicknotes -- reachable via the
+   #quickNotesBtn topbar icon on desktop, and the mobile footer tab.
    ========================================================================= */
 #quicknotes {
   display: none;
@@ -810,6 +807,7 @@ input, textarea { font-family: var(--sans); }
   --qn-serif: "Source Serif 4", Georgia, serif;
   --qn-ease: cubic-bezier(.32, .72, .28, 1);
 }
+#quicknotes:not([hidden]) { display: block; }
 /* :where() keeps the reset at zero specificity so the component classes below
    (and their padding/background) still win */
 :where(#quicknotes) button { border: none; background: none; padding: 0; color: inherit; font-family: inherit; }

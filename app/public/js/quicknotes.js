@@ -804,6 +804,7 @@ function deleteTask(list, task) {
 // Wiring
 // ---------------------------------------------------------------------------
 export function initQuickNotes() {
+  el('quickNotesBtn').onclick = openQuickNotes;
   el('qnSearchBtn').onclick = openSearch;
   el('qnHomeMenu').onclick = showSettingsSheet;
   el('qnBarMenu').onclick = showSettingsSheet;
@@ -877,12 +878,6 @@ export function initQuickNotes() {
   el('qnSearchCancel').onclick = closeSearch;
   el('qnQueryClear').onclick = () => { qn.query = ''; el('qnQuery').value = ''; renderSearch(); refreshIcons(); el('qnQuery').focus(); };
   el('qnQuery').addEventListener('input', () => { qn.query = el('qnQuery').value; renderSearch(); refreshIcons(); });
-
-  // Quick notes is a phone-sized workspace; on a wide viewport the canvas owns
-  // the screen again, so drop back to it rather than hiding a live overlay.
-  window.addEventListener('resize', () => {
-    if (qn.open && window.innerWidth > 768) closeQuickNotes();
-  });
 
   // Escape backs out one layer at a time: sheet → search → task → list → board.
   document.addEventListener('keydown', e => {
