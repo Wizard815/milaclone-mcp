@@ -894,7 +894,7 @@ input, textarea { font-family: var(--sans); }
   --qn-accent: #3D4A5C;
   --qn-hair: #EEF0F3;
   --qn-bar-hair: #E4E7EB;
-  --qn-star: #E8B94A;
+  --qn-star: var(--star-color);
   --qn-star-off: #B4BCC7;
   --qn-due: #C2410C;
   --qn-sheet: #F4F5F7;
@@ -903,6 +903,26 @@ input, textarea { font-family: var(--sans); }
   --qn-ease: cubic-bezier(.32, .72, .28, 1);
 }
 #quicknotes:not([hidden]) { display: block; }
+/* Dark mode: same token set, remapped onto the app's own dark palette
+   instead of Quick notes' fixed light "Reminders-style" design tokens
+   above -- previously these never changed regardless of :root.dark. */
+:root.dark #quicknotes {
+  --qn-screen: var(--canvas-bg);
+  --qn-surface: var(--card-bg);
+  --qn-shadow: 0 1px 2px rgba(0, 0, 0, .4);
+  --qn-ink: var(--ink);
+  --qn-head: #f2f3f6;
+  --qn-soft: var(--ink-soft);
+  --qn-muted: #82858d;
+  --qn-faint: var(--ink-faint);
+  --qn-accent: var(--accent);
+  --qn-hair: var(--card-border);
+  --qn-bar-hair: var(--rail-border);
+  --qn-star-off: #565a63;
+  --qn-due: #e2691f;
+  --qn-sheet: var(--surface-2);
+  --qn-grab: #4a4d55;
+}
 /* :where() keeps the reset at zero specificity so the component classes below
    (and their padding/background) still win */
 :where(#quicknotes) button { border: none; background: none; padding: 0; color: inherit; font-family: inherit; }
