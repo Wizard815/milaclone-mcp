@@ -628,6 +628,38 @@ input, textarea { font-family: var(--sans); }
 #cmOk.danger { background: #c0392b; color: #fff; }
 #cmOk.danger:hover { opacity: .9; }
 
+/* ---------- settings modal ---------- */
+#settingsModal { position: fixed; inset: 0; z-index: 300; display: flex; align-items: center; justify-content: center; }
+#settingsModal[hidden] { display: none; }
+.set-box { width: min(420px, calc(100vw - 32px)); max-height: calc(100vh - 48px); overflow-y: auto; }
+.set-title { margin: 0; font-size: 17px; font-weight: 700; color: var(--ink); }
+.set-group { display: flex; flex-direction: column; gap: 8px; }
+.set-label { font-size: 12px; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .02em; }
+.set-hint { margin: 0; font-size: 12px; line-height: 1.5; color: var(--ink-soft); }
+.set-seg { display: flex; background: var(--canvas-bg); border-radius: 9px; padding: 3px; gap: 2px; }
+.set-seg button {
+  flex: 1; border: none; background: none; color: var(--ink-soft); font-size: 13px; font-weight: 600;
+  padding: 7px 0; border-radius: 7px; cursor: pointer;
+}
+.set-seg button.on { background: var(--surface-1); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+.set-accent-row { display: flex; align-items: center; gap: 8px; }
+.set-accent-row input[type=color] { width: 36px; height: 36px; border: 1px solid var(--card-border); border-radius: 8px; padding: 2px; background: none; }
+.set-accent-row input[type=text] {
+  flex: 1; border: 1px solid var(--card-border); border-radius: 8px; padding: 8px 10px; font-size: 13px;
+  background: var(--canvas-bg); color: var(--ink);
+}
+.set-accent-row button {
+  border: 1px solid var(--card-border); background: var(--canvas-bg); color: var(--ink);
+  border-radius: 8px; padding: 8px 12px; font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.set-accent-row button:hover { background: var(--surface-3); }
+.set-group input[type=url], .set-group input[type=text], .set-group input[type=password] {
+  border: 1px solid var(--card-border); border-radius: 8px; padding: 8px 10px; font-size: 13px;
+  background: var(--canvas-bg); color: var(--ink); width: 100%; box-sizing: border-box;
+}
+.set-save { background: var(--accent); color: #fff; }
+.set-save:hover { opacity: .9; }
+
 /* hidden file inputs */
 #fileInput, #uploadInput { display: none; }
 

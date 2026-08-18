@@ -85,6 +85,22 @@ function rootCanvasId() {
   return stmt.getMeta.get('rootCanvasId')?.value;
 }
 
+// App-wide settings (theme default, accent color, CalDAV credentials) live as
+// one JSON blob under a single meta key -- there's only ever one settings
+// object for the whole (personal, single-user) app.
+const DEFAULT_SETTINGS = { theme: 'system', accent: null, caldav: null };
+function getSettings() {
+  const row = stmt.getMeta.get('settings');
+  if (!row) return { ...DEFAULT_SETTINGS };
+  try { return { ...DEFAULT_SETTINGS, ...JSON.parse(row.value) }; }
+  catch { return { ...DEFAULT_SETTINGS }; }
+}
+function setSettings(patch) {
+  const next = { ...getSettings(), ...patch };
+  stmt.setMeta.run('settings', JSON.stringify(next));
+  return next;
+}
+
 process.on('SIGINT', () => { db.close(); process.exit(0); });
 process.on('SIGTERM', () => { db.close(); process.exit(0); });
 
@@ -174,6 +190,6 @@ function likeEscape(s) {
 }
 
 module.exports = {
-  DB_FILE, db, stmt, id, rootCanvasId,
+  DB_FILE, db, stmt, id, rootCanvasId, getSettings, setSettings,
   rowToItem, rowToCanvas, breadcrumb, itemsForCanvas, deleteItemDeep, likeEscape
 };

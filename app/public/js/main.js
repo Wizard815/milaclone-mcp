@@ -18,6 +18,7 @@ import { initTheme } from './theme.js';
 import { performUndo, performRedo } from './undo.js';
 import { initMindMap, isMindMapOpen } from './mindmap.js';
 import { initConfirmDialog, isConfirmOpen } from './confirm.js';
+import { initSettings } from './settings.js';
 
 // Entry point: canvas loading/navigation, global keyboard + pointer handling,
 // and boot. Wiring for the viewport and toolbar lives in their own modules and
@@ -86,6 +87,7 @@ initTools();
 initTheme();
 initMindMap();
 initConfirmDialog();
+initSettings();
 
 (async function boot() {
   refreshIcons();

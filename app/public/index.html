@@ -12,7 +12,10 @@
 (function () {
   try {
     var t = localStorage.getItem('theme');
-    if (!t) t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    if (!t) {
+      var def = document.querySelector('meta[name="milaclone-default-theme"]');
+      t = def ? def.content : (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    }
     if (t === 'dark') document.documentElement.classList.add('dark');
   } catch (e) {}
 })();
@@ -33,6 +36,9 @@
     </button>
     <button class="theme-toggle" id="quickNotesBtn" title="Quick notes" aria-label="Open quick notes">
       <i data-lucide="list-checks"></i>
+    </button>
+    <button class="theme-toggle" id="settingsBtn" title="Settings" aria-label="Open settings">
+      <i data-lucide="settings"></i>
     </button>
     <span class="ghost" id="exportBtn">Export</span>
     <div class="zoomwrap">
@@ -354,6 +360,7 @@
   <button data-act="zoomout">Zoom out</button>
   <button data-act="reset">Reset view</button>
   <button data-act="export">Export</button>
+  <button data-act="settings">Settings</button>
 </div>
 
 <div id="mBoardSheet" hidden>
@@ -369,6 +376,45 @@
     <div class="cm-actions">
       <button type="button" id="cmCancel">Cancel</button>
       <button type="button" id="cmOk" class="danger">Delete</button>
+    </div>
+  </div>
+</div>
+
+<div id="settingsModal" hidden>
+  <div class="cm-backdrop" id="setBackdrop"></div>
+  <div class="cm-box set-box" role="dialog" aria-modal="true">
+    <h2 class="set-title">Settings</h2>
+
+    <div class="set-group">
+      <label class="set-label">Default theme</label>
+      <div class="set-seg" id="setThemeSeg">
+        <button type="button" data-val="system">System</button>
+        <button type="button" data-val="light">Light</button>
+        <button type="button" data-val="dark">Dark</button>
+      </div>
+    </div>
+
+    <div class="set-group">
+      <label class="set-label" for="setAccentHex">Accent color</label>
+      <div class="set-accent-row">
+        <input type="color" id="setAccent" value="#2f6df0">
+        <input type="text" id="setAccentHex" placeholder="#2f6df0" maxlength="9">
+        <button type="button" id="setAccentReset">Reset</button>
+      </div>
+    </div>
+
+    <div class="set-group">
+      <label class="set-label">CalDAV sync</label>
+      <p class="set-hint">Milaclone can sync task due dates out to an external CalDAV calendar. Point another CalDAV client at the same server/calendar to see them there too.</p>
+      <input type="url" id="setCaldavUrl" placeholder="https://caldav.example.com/calendars/you/tasks/" autocomplete="off">
+      <input type="text" id="setCaldavUser" placeholder="Username" autocomplete="off">
+      <input type="password" id="setCaldavPass" placeholder="Password" autocomplete="new-password">
+      <p class="set-hint" id="setCaldavStatus"></p>
+    </div>
+
+    <div class="cm-actions">
+      <button type="button" id="setCancel">Cancel</button>
+      <button type="button" id="setSave" class="set-save">Save</button>
     </div>
   </div>
 </div>

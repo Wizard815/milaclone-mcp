@@ -7,7 +7,7 @@ const path = require('path');
 const crypto = require('crypto');
 
 const {
-  db, stmt, id, rootCanvasId,
+  db, stmt, id, rootCanvasId, getSettings, setSettings,
   rowToItem, rowToCanvas, breadcrumb, itemsForCanvas, deleteItemDeep, likeEscape
 } = require('./db');
 
@@ -70,6 +70,39 @@ const upload = multer({
   storage,
   limits: { fileSize: 25 * 1024 * 1024 },
   fileFilter: (req, file, cb) => cb(null, ALLOWED_UPLOAD(file.mimetype))
+});
+
+// ---- Settings ----------------------------------------------------------------
+// One JSON blob for the whole app (theme default, accent color, CalDAV sync).
+// The CalDAV password is never echoed back over GET -- callers see
+// `passwordSet` instead and can PATCH a new caldav.password to replace it;
+// omitting it (or sending '') on PATCH leaves the stored password untouched.
+router.get('/api/settings', (req, res) => {
+  const settings = getSettings();
+  const caldav = settings.caldav
+    ? { ...settings.caldav, password: undefined, passwordSet: !!settings.caldav.password }
+    : null;
+  res.json({ ...settings, caldav });
+});
+
+router.patch('/api/settings', (req, res) => {
+  const { theme, accent, caldav } = req.body || {};
+  const patch = {};
+  if (theme !== undefined) patch.theme = theme;
+  if (accent !== undefined) patch.accent = accent;
+  if (caldav !== undefined) {
+    const prev = getSettings().caldav || {};
+    patch.caldav = caldav === null ? null : {
+      url: caldav.url ?? prev.url ?? '',
+      username: caldav.username ?? prev.username ?? '',
+      password: caldav.password || prev.password || ''
+    };
+  }
+  const settings = setSettings(patch);
+  const outCaldav = settings.caldav
+    ? { ...settings.caldav, password: undefined, passwordSet: !!settings.caldav.password }
+    : null;
+  res.json({ ...settings, caldav: outCaldav });
 });
 
 // ---- Canvas ----------------------------------------------------------------
