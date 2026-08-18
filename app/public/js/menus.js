@@ -21,14 +21,29 @@ function positionPopup(anchor, w) {
 // (same popup element/positioning/outside-click-to-dismiss as openPalette)
 // but with its own content, since a tag checklist doesn't fit the
 // swatch/icon-grid shapes that mode already handles.
-export async function openTagPicker(it, anchor) {
+//
+// `items` is always an array -- a single card's tag button passes a
+// 1-element array (see cards.js); a multi-selection's "Tag N items" context
+// menu row (openCtx below) passes every selected item, so applying a tag
+// applies it to all of them at once. A tag reads "on" only when *every*
+// item in the batch already has it; clicking then removes it from all of
+// them, otherwise adds it to whichever ones are missing it -- so one click
+// always ends with the whole batch uniformly tagged or untagged.
+export async function openTagPicker(items, anchor) {
   const known = new Set((await api.tags().catch(() => ({ tags: [] }))).tags || []);
-  for (const t of it.data.tags || []) known.add(t);
+  for (const it of items) for (const t of it.data.tags || []) known.add(t);
   const all = [...known].sort();
 
   const draw = () => {
     while (dom.palette.firstChild) dom.palette.removeChild(dom.palette.firstChild);
     dom.palette.className = 'open tag-picker';
+
+    if (items.length > 1) {
+      const hdr = document.createElement('div');
+      hdr.className = 'tag-picker-empty';
+      hdr.textContent = `Tagging ${items.length} items`;
+      dom.palette.appendChild(hdr);
+    }
 
     const list = document.createElement('div');
     list.className = 'tag-picker-list';
@@ -37,16 +52,21 @@ export async function openTagPicker(it, anchor) {
       return e;
     })());
     for (const tag of all) {
-      const on = (it.data.tags || []).includes(tag);
+      const onAll = items.every(it => (it.data.tags || []).includes(tag));
       const row = document.createElement('button');
       row.type = 'button';
-      row.className = 'tag-picker-item' + (on ? ' on' : '');
-      row.appendChild(lucideEl(on ? 'check' : 'tag'));
+      row.className = 'tag-picker-item' + (onAll ? ' on' : '');
+      row.appendChild(lucideEl(onAll ? 'check' : 'tag'));
       const label = document.createElement('span'); label.textContent = tag; row.appendChild(label);
       row.onclick = () => {
-        const tags = it.data.tags || [];
-        saveData(it, { tags: on ? tags.filter(t => t !== tag) : tags.concat([tag]) });
-        refreshItem(it);
+        for (const it of items) {
+          const tags = it.data.tags || [];
+          const has = tags.includes(tag);
+          if (onAll && has) saveData(it, { tags: tags.filter(t => t !== tag) });
+          else if (!onAll && !has) saveData(it, { tags: tags.concat([tag]) });
+          else continue;
+          refreshItem(it);
+        }
         draw();
       };
       list.appendChild(row);
@@ -64,8 +84,10 @@ export async function openTagPicker(it, anchor) {
       const tag = input.value.trim().replace(/^#/, '').toLowerCase();
       if (!tag) return;
       if (!all.includes(tag)) { all.push(tag); all.sort(); }
-      if (!(it.data.tags || []).includes(tag)) saveData(it, { tags: (it.data.tags || []).concat([tag]) });
-      refreshItem(it);
+      for (const it of items) {
+        if (!(it.data.tags || []).includes(tag)) saveData(it, { tags: (it.data.tags || []).concat([tag]) });
+        refreshItem(it);
+      }
       input.value = '';
       draw();
     };
@@ -213,7 +235,16 @@ export function closePalette() {
 export function openCtx(e, it) {
   e.preventDefault();
   e.stopPropagation();
-  select(it.id);
+  // Right-clicking a card that's already part of a multi-selection keeps
+  // the whole group selected (so batch actions below act on all of them)
+  // instead of collapsing down to just this one -- same rule the drag
+  // handler already uses (onItemPointerDown in drag.js) so a marquee
+  // selection survives a right-click the same way it survives a drag.
+  const isGroup = state.selectedIds.has(it.id) && state.selectedIds.size > 1;
+  if (!isGroup) select(it.id);
+  const selectedItems = isGroup
+    ? [...state.selectedIds].map(id => state.view.items.find(x => x.id === id)).filter(Boolean)
+    : [it];
   const locked = isLocked(it);
   const mac = /Mac|iPhone|iPad/.test(navigator.platform);
   const mod = mac ? '⌘' : 'Ctrl+';
@@ -222,14 +253,20 @@ export function openCtx(e, it) {
     { label: 'Copy', hint: mod + 'C', fn: () => copySelected(false) },
     { label: 'Paste', hint: mod + 'V', fn: () => pasteClipboard(), disabled: !state.clipboard },
     { label: 'Duplicate', hint: mod + 'D', fn: () => duplicateSelected() },
-    { sep: true },
-    { label: 'Rename', hint: 'Return', fn: () => renameSelected() },
-    { label: locked ? 'Unlock Position' : 'Lock Position', fn: () => toggleLock() },
-    { sep: true },
-    { label: 'Connect from here', fn: () => openConnectFrom(it) },
-    { sep: true },
-    { label: 'Move to Trash', hint: 'Delete', danger: true, fn: () => deleteItem(it.id) }
+    { sep: true }
   ];
+  if (!isGroup) rows.push({ label: 'Rename', hint: 'Return', fn: () => renameSelected() });
+  rows.push({ label: locked ? 'Unlock Position' : 'Lock Position', fn: () => toggleLock() });
+  rows.push({ sep: true });
+  rows.push({
+    label: isGroup ? `Tag ${selectedItems.length} items` : 'Tags',
+    fn: () => openCtxTags(selectedItems, e)
+  });
+  if (!isGroup) rows.push({ label: 'Connect from here', fn: () => openConnectFrom(it) });
+  rows.push({ sep: true });
+  rows.push(isGroup
+    ? { label: `Move ${selectedItems.length} to Trash`, hint: 'Delete', danger: true, fn: () => deleteSelected(selectedItems) }
+    : { label: 'Move to Trash', hint: 'Delete', danger: true, fn: () => deleteItem(it.id) });
   dom.ctxmenu.innerHTML = '';
   rows.forEach(r => {
     if (r.sep) { const s = document.createElement('div'); s.className = 'ctx-sep'; dom.ctxmenu.appendChild(s); return; }
@@ -249,6 +286,26 @@ export function openCtx(e, it) {
   if (top + mh > window.innerHeight) top = window.innerHeight - mh - 8;
   dom.ctxmenu.style.left = left + 'px';
   dom.ctxmenu.style.top = top + 'px';
+}
+
+// Anchors the tag picker at the click point rather than a specific toolbar
+// button, since this is opened from a context-menu row, not a card's own
+// .card-tools -- closeCtx() below clears dom.ctxmenu's content before the
+// picker reads any position from it, so a plain point is simpler than
+// trying to reuse the (by-then-empty) menu element as the anchor.
+function openCtxTags(items, e) {
+  const anchor = { getBoundingClientRect: () => ({ left: e.clientX, top: e.clientY, right: e.clientX, bottom: e.clientY }) };
+  closeCtx();
+  openTagPicker(items, anchor);
+}
+
+// The context menu's own multi-select delete -- deleteItem() already
+// handles per-item undo snapshots and the board-deletion confirmation, so
+// this just calls it once per selected item rather than reimplementing
+// any of that.
+async function deleteSelected(items) {
+  closeCtx();
+  for (const it of items) await deleteItem(it.id, { trackUndo: true });
 }
 
 // "Connect from here": places the new connect badge just to the right of

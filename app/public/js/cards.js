@@ -120,7 +120,7 @@ export function renderItem(it) {
     tagBtn.className = 'card-tool-btn';
     tagBtn.appendChild(lucideEl('tag'));
     tagBtn.title = 'Tags';
-    tagBtn.onclick = (e) => { e.stopPropagation(); openTagPicker(it, tagBtn); };
+    tagBtn.onclick = (e) => { e.stopPropagation(); openTagPicker([it], tagBtn); };
     tools.appendChild(tagBtn);
 
     const starBtn = document.createElement('button');
@@ -197,7 +197,7 @@ export function renderItem(it) {
         chip.textContent = tag;
         tagRow.appendChild(chip);
       }
-      tagRow.onclick = (e) => { e.stopPropagation(); openTagPicker(it, tagRow); };
+      tagRow.onclick = (e) => { e.stopPropagation(); openTagPicker([it], tagRow); };
       el.appendChild(tagRow);
     }
   } else if (isLocked(it)) {
