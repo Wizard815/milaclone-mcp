@@ -1209,6 +1209,10 @@ body.qn-open .toast {
 .mm-svg.panning { cursor: grabbing; }
 .mm-edge { stroke: var(--card-border); stroke-width: 1.5; }
 .mm-sat-edge { stroke: var(--card-border); stroke-width: 1; stroke-dasharray: 2 3; }
+/* Real user-drawn Line connections between two items -- distinct from the
+   structural board/spoke edges above, so "what actually connects to what"
+   reads at a glance. */
+.mm-line-edge { stroke: var(--user-accent); stroke-width: 1.5; opacity: .55; }
 .mm-node { cursor: pointer; }
 .mm-node circle { stroke: var(--card-bg); stroke-width: 3; }
 .mm-node svg { width: 100%; height: 100%; color: #fff; pointer-events: none; }
