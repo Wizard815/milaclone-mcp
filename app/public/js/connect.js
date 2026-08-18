@@ -17,6 +17,7 @@ import { openCanvas } from './main.js';
 let pendingWorld = null;
 let pendingSourceCanvasId = null;
 let pendingSourceItemId = null;
+let pendingSourcePreview = null; // e.g. "comment" -- the source card's own preview text, when known
 let browseCanvasId = null;
 
 // Not shared with mindmap.js's own icon map -- a couple of duplicated
@@ -38,7 +39,7 @@ function refs() {
   };
 }
 
-function previewText(it) {
+export function previewText(it) {
   const d = it.data || {};
   return d.title || d.text || (d.body && d.body.slice(0, 40)) || d.url || it.type;
 }
@@ -53,10 +54,14 @@ export function isConnectPickerOpen() { return !!pendingWorld; }
 // set by "Connect from here" on a card's context menu, on the canvas or in
 // the mind map. Lets the mind map draw the edge starting at that specific
 // card's satellite node instead of just the board it lives on.
-export function openConnectPicker(worldPos, sourceCanvasId, sourceItemId) {
+// sourcePreview: that source card's own preview text (e.g. "comment"),
+// when the caller already has the item in hand -- used to label the badge
+// "source → target" instead of the generic "target's board → target".
+export function openConnectPicker(worldPos, sourceCanvasId, sourceItemId, sourcePreview) {
   pendingWorld = worldPos;
   pendingSourceCanvasId = sourceCanvasId || state.view.canvas.id;
   pendingSourceItemId = sourceItemId || null;
+  pendingSourcePreview = sourceItemId ? (sourcePreview || null) : null;
   browseCanvasId = pendingSourceCanvasId;
   refs().root.hidden = false;
   renderPicker();
@@ -66,6 +71,7 @@ function closePicker() {
   refs().root.hidden = true;
   pendingWorld = null;
   pendingSourceItemId = null;
+  pendingSourcePreview = null;
 }
 
 async function renderPicker() {
@@ -87,7 +93,7 @@ async function renderPicker() {
   });
 
   r.linkHere.textContent = `Link to "${data.canvas.title}"`;
-  r.linkHere.onclick = () => confirmTarget(browseCanvasId, null, data.canvas.title);
+  r.linkHere.onclick = () => confirmTarget(browseCanvasId, null, data.canvas.title, data.canvas.title);
 
   r.list.innerHTML = '';
   const boards = data.items.filter(it => it.type === 'board' && it.data.childCanvasId);
@@ -104,16 +110,23 @@ async function renderPicker() {
     const row = document.createElement('button'); row.className = 'cp-row';
     row.appendChild(lucideEl(ICONS[it.type] || 'square'));
     const span = document.createElement('span'); span.textContent = previewText(it); row.appendChild(span);
-    row.onclick = () => confirmTarget(browseCanvasId, it.id, `${data.canvas.title} → ${previewText(it)}`);
+    row.onclick = () => confirmTarget(browseCanvasId, it.id, previewText(it), data.canvas.title);
     r.list.appendChild(row);
   }
   refreshIcons(r.list);
   refreshIcons(r.crumbs);
 }
 
-async function confirmTarget(targetCanvasId, targetItemId, label) {
+// targetPreview: the target's own preview text (item preview, or the board
+// title when linking to a whole board). targetBoardTitle: the board the
+// target lives on, used only as a fallback label when there's no known
+// source card to name instead.
+async function confirmTarget(targetCanvasId, targetItemId, targetPreview, targetBoardTitle) {
   if (!pendingWorld) return;
   const sourceCanvasId = pendingSourceCanvasId;
+  const label = pendingSourcePreview
+    ? `${pendingSourcePreview} → ${targetPreview}`
+    : (targetItemId ? `${targetBoardTitle} → ${targetPreview}` : targetPreview);
   const body = {
     canvasId: sourceCanvasId, type: 'connect',
     x: Math.round(pendingWorld.x - 110), y: Math.round(pendingWorld.y - 30), w: 220,

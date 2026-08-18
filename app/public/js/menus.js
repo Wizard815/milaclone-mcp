@@ -6,7 +6,7 @@ import { colorVar, lucideEl, refreshIcons, isLocked } from './util.js';
 import { refreshItem } from './cards.js';
 import { select, renameSelected, deleteItem, saveData } from './editing.js';
 import { copySelected, pasteClipboard, duplicateSelected, toggleLock } from './clipboard.js';
-import { openConnectPicker } from './connect.js';
+import { openConnectPicker, previewText } from './connect.js';
 
 function positionPopup(anchor, w) {
   const r = anchor.getBoundingClientRect();
@@ -259,7 +259,7 @@ export function openCtx(e, it) {
 function openConnectFrom(it) {
   const w = 220;
   const worldPos = { x: (it.x || 0) + (it.w || 240) + 20 + w / 2, y: (it.y || 0) + 30 };
-  openConnectPicker(worldPos, state.view.canvas.id, it.id);
+  openConnectPicker(worldPos, state.view.canvas.id, it.id, previewText(it));
 }
 
 export function closeCtx() { dom.ctxmenu.classList.remove('open'); dom.ctxmenu.innerHTML = ''; }

@@ -492,7 +492,11 @@ async function renderGraph() {
   }
   for (const s of satellites) {
     const parentVisible = s.it.parentItemId && visibleSatIds.has(s.it.parentItemId);
-    drawLine(satEdgeLayer, parentVisible ? s.it.parentItemId : s.boardId, s.it.id, 'mm-sat-edge');
+    // A column child's spoke matches the zigzag group-edge color instead of
+    // the generic gray dotted spoke -- two differently-colored lines to the
+    // same column read as two unrelated relationships when they're really
+    // the same one (membership).
+    drawLine(satEdgeLayer, parentVisible ? s.it.parentItemId : s.boardId, s.it.id, parentVisible ? 'mm-sat-edge mm-sat-edge-group' : 'mm-sat-edge');
   }
   for (const le of lineEdges) drawLine(lineEdgeLayer, le.fromId, le.toId, 'mm-line-edge');
   for (const ge of groupEdges) drawZigzag(groupEdgeLayer, ge.a, ge.b, 'mm-group-edge');
@@ -722,15 +726,19 @@ export function initMindMap() {
     // to it (same math as the canvas's own "Connect from here") so the
     // connection reads as coming from that card, not just "this board".
     let worldPos = { x: 60, y: 60 };
+    let sourcePreview = null;
     const w = 220;
     if (itemId) {
       const cached = itemCache.get(canvasId);
       const it = cached && cached.items.find(x => x.id === itemId);
-      if (it) worldPos = { x: (it.x || 0) + (it.w || 240) + 20 + w / 2, y: (it.y || 0) + 30 };
+      if (it) {
+        worldPos = { x: (it.x || 0) + (it.w || 240) + 20 + w / 2, y: (it.y || 0) + 30 };
+        sourcePreview = previewText(it);
+      }
     }
     closeCtx();
     closeMindMap();
-    openConnectPicker(worldPos, canvasId, itemId || null);
+    openConnectPicker(worldPos, canvasId, itemId || null, sourcePreview);
   });
   r.ctxOpen.addEventListener('click', () => {
     if (!ctxTarget) return;
