@@ -11,6 +11,11 @@
   --card-shadow-hover: 0 2px 6px rgba(28, 30, 38, .10), 0 10px 28px rgba(28, 30, 38, .12);
   --accent: #2f6df0;
   --select: #2f6df0;
+  /* Separate from --accent (which the whole UI's buttons/links/checkboxes
+     reuse): this is the one knob the Settings panel's accent picker
+     actually turns, scoped to just the mind map and selection/marquee
+     highlights so a personal color choice doesn't repaint every button. */
+  --user-accent: var(--accent);
   --radius: 12px;
   --serif: "Fraunces", ui-serif, Georgia, "Iowan Old Style", "Palatino Linotype", serif;
   --sans: "Figtree", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
@@ -44,6 +49,7 @@
   --card-shadow-hover: 0 2px 6px rgba(0,0,0,.5), 0 10px 28px rgba(0,0,0,.5);
   --accent: #6d95ff;
   --select: #6d95ff;
+  --user-accent: var(--accent);
   --grid-line: rgba(255,255,255,.06);
   --surface-1: #26272c;
   --surface-2: #303136;
@@ -177,8 +183,8 @@ input, textarea { font-family: var(--sans); }
 .item.editing { touch-action: auto; }
 #world { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
 #marquee {
-  position: absolute; z-index: 40; border: 1.5px solid var(--accent);
-  background: rgba(47, 109, 240, .12); pointer-events: none;
+  position: absolute; z-index: 40; border: 1.5px solid var(--user-accent);
+  background: color-mix(in srgb, var(--user-accent) 12%, transparent); pointer-events: none;
 }
 #marquee[hidden] { display: none; }
 /* Only applied for the discrete "jump to a board's saved camera position"
@@ -195,7 +201,7 @@ input, textarea { font-family: var(--sans); }
 }
 .item.dragging { box-shadow: var(--card-shadow-hover); cursor: grabbing; z-index: 9999 !important; }
 .item:hover { box-shadow: var(--card-shadow-hover); }
-.item.selected { border-color: var(--select); box-shadow: 0 0 0 2px rgba(47,109,240,.35), var(--card-shadow-hover); }
+.item.selected { border-color: var(--user-accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--user-accent) 35%, transparent), var(--card-shadow-hover); }
 
 /* editable text fields are inert until the card is in edit mode, so a click
    on text starts a drag instead of stealing focus */
@@ -478,7 +484,7 @@ input, textarea { font-family: var(--sans); }
   aspect-ratio: 1 / 1; cursor: default;
 }
 .shape:hover { box-shadow: none; }
-.item.selected.shape { box-shadow: 0 0 0 2px rgba(47,109,240,.35); }
+.item.selected.shape { box-shadow: 0 0 0 2px color-mix(in srgb, var(--user-accent) 35%, transparent); }
 .shape-svg { width: 100%; height: 100%; display: block; pointer-events: none; }
 .shape-handle {
   position: absolute; top: 8px; left: 8px; width: 28px; height: 28px; border-radius: 8px;
@@ -1157,14 +1163,14 @@ body.qn-open .toast {
 .mm-node circle { stroke: var(--card-bg); stroke-width: 3; }
 .mm-node svg { width: 100%; height: 100%; color: #fff; pointer-events: none; }
 .mm-node:hover circle { filter: brightness(1.12); }
-.mm-node.mm-root circle { stroke: var(--accent); stroke-width: 3; }
+.mm-node.mm-root circle { stroke: var(--user-accent); stroke-width: 3; }
 .mm-node.mm-expanded circle { stroke: var(--c-purple); stroke-width: 3; }
 .mm-label { font-size: 11px; fill: var(--ink-soft); font-family: var(--sans); }
 .mm-node.mm-root .mm-label { fill: var(--ink); font-weight: 600; }
 
 .mm-sat { cursor: pointer; }
 .mm-sat-circle { fill: var(--card-bg); stroke: var(--ink-faint); stroke-width: 1.5; }
-.mm-sat:hover .mm-sat-circle { stroke: var(--accent); }
+.mm-sat:hover .mm-sat-circle { stroke: var(--user-accent); }
 .mm-sat svg { width: 16px; height: 16px; color: var(--ink-soft); }
 .mm-sat-label { font-size: 9.5px; fill: var(--ink-faint); font-family: var(--sans); }
 

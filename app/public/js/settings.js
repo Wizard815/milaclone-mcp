@@ -28,9 +28,12 @@ function refs() {
   };
 }
 
+// --user-accent, not --accent -- the latter is reused by buttons, links,
+// checkboxes etc. across the whole UI, so overriding it directly repaints
+// far more than the mind map / selection highlights this setting is for.
 function applyAccent(hex) {
-  if (hex) document.documentElement.style.setProperty('--accent', hex);
-  else document.documentElement.style.removeProperty('--accent');
+  if (hex) document.documentElement.style.setProperty('--user-accent', hex);
+  else document.documentElement.style.removeProperty('--user-accent');
 }
 
 function setThemeSeg(r, theme) {

@@ -41,10 +41,12 @@ app.get('/', (req, res) => {
     inject.push(`  <meta name="milaclone-default-theme" content="${settings.theme}">`);
   }
   if (settings.accent && HEX_COLOR.test(settings.accent)) {
-    // !important: :root.dark's own --accent (style.css) has higher
-    // specificity than a plain :root rule and would otherwise win in dark
-    // mode regardless of source order.
-    inject.push(`  <style>:root{--accent:${settings.accent} !important;}</style>`);
+    // --user-accent (not --accent, which the whole UI's buttons/links/
+    // checkboxes reuse) -- scoped to just the mind map and selection/
+    // marquee highlights. !important: :root.dark's own --user-accent
+    // (style.css) has higher specificity than a plain :root rule and would
+    // otherwise win in dark mode regardless of source order.
+    inject.push(`  <style>:root{--user-accent:${settings.accent} !important;}</style>`);
   }
   if (inject.length) out = out.replace('<head>', '<head>\n' + inject.join('\n'));
 
