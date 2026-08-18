@@ -3,7 +3,7 @@
 import { state, dom } from './state.js';
 import { api } from './api.js';
 import { toast, imageSize } from './util.js';
-import { screenToWorld, applyCam } from './viewport.js';
+import { screenToWorld, applyCam, cancelCamAnimation } from './viewport.js';
 import { createAt, defaultsFor } from './create.js';
 import { select, deselect, selectMany } from './editing.js';
 import { render } from './cards.js';
@@ -127,6 +127,7 @@ export function initTools() {
   dom.stage.addEventListener('pointerdown', (e) => {
     if (e.button !== 0 && e.button !== 1) return;
     if (state.pinching) return;
+    cancelCamAnimation();
     if (state.armed === 'line') { cancelLine(); return; }
     if (state.armed === 'select') { startMarquee(e); return; }
     if (state.armed) {

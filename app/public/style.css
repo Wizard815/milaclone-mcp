@@ -218,7 +218,8 @@ input, textarea { font-family: var(--sans); }
 .card-tools .htool-b, .card-tools .htool-u { font-family: var(--serif); font-size: 13px; }
 .card-tools .htool-b { font-weight: 800; }
 .card-tools .htool-u { text-decoration: underline; }
-.card-tools .htool-b.on, .card-tools .htool-u.on { background: var(--accent); color: #fff; }
+.card-tools .htool-b.on, .card-tools .htool-u.on, .card-tools .htool-fill.on { background: var(--accent); color: #fff; }
+.card-tools .htool-fill svg { width: 14px; height: 14px; }
 
 /* ---------- note ---------- */
 .note { padding: 14px 16px; }
@@ -320,7 +321,7 @@ input, textarea { font-family: var(--sans); }
 
 /* ---------- heading ---------- */
 .heading { padding: 8px 10px; background: transparent; border-color: transparent; box-shadow: none; }
-.heading:hover, .heading.selected { background: var(--card-bg); border-color: var(--card-border); box-shadow: var(--card-shadow); }
+.heading:hover, .heading.selected, .heading.filled { background: var(--card-bg); border-color: var(--card-border); box-shadow: var(--card-shadow); }
 .heading .htext {
   font-family: var(--serif); font-weight: 600; font-size: 26px; line-height: 1.25;
   border: none; outline: none; width: 100%; background: none; color: var(--ink); resize: none;

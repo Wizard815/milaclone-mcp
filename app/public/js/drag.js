@@ -3,7 +3,7 @@
 import { state, dom, elMap } from './state.js';
 import { api } from './api.js';
 import { isLocked } from './util.js';
-import { screenToWorld } from './viewport.js';
+import { screenToWorld, cancelCamAnimation } from './viewport.js';
 import { select, toggleSelect, enterEdit } from './editing.js';
 import { render } from './cards.js';
 import { renderLines, pickLineEndpoint } from './lines.js';
@@ -12,6 +12,7 @@ import { renderLines, pickLineEndpoint } from './lines.js';
 
 export function onItemPointerDown(e, it, el) {
   if (e.button !== 0) return;
+  cancelCamAnimation();
   if (state.armed === 'line') { e.stopPropagation(); pickLineEndpoint(it); return; }
   if (state.armed && state.armed !== 'select') return;
   if (e.target.closest('[data-nodrag]')) { e.stopPropagation(); return; }

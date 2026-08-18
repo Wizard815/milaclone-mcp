@@ -53,7 +53,12 @@ export function makeField(tag, cls, value, placeholder) {
   f.className = cls; f.value = value || ''; f.placeholder = placeholder || '';
   f.setAttribute('data-edit', '');
   f.readOnly = true; f.tabIndex = -1;
-  if (tag === 'area') { f.addEventListener('input', () => autoGrow(f)); }
+  // autoGrow changes the card's own height as you type, which any connector
+  // line attached to it needs to know about immediately — otherwise the
+  // line stays anchored to the old, shorter box until something unrelated
+  // forces a re-render, visually hanging above where the card's edge
+  // actually is now.
+  if (tag === 'area') { f.addEventListener('input', () => { autoGrow(f); renderLines(); }); }
   return f;
 }
 
@@ -122,6 +127,13 @@ export function renderItem(it) {
       underlineBtn.title = 'Underline';
       underlineBtn.onclick = (e) => { e.stopPropagation(); saveData(it, { underline: !it.data.underline }); refreshItem(it); };
       tools.appendChild(underlineBtn);
+      const fillBtn = document.createElement('button');
+      fillBtn.setAttribute('data-nodrag', '');
+      fillBtn.className = 'htool-fill' + (it.data.filled ? ' on' : '');
+      fillBtn.appendChild(lucideEl('square'));
+      fillBtn.title = 'Fill background';
+      fillBtn.onclick = (e) => { e.stopPropagation(); saveData(it, { filled: !it.data.filled }); refreshItem(it); };
+      tools.appendChild(fillBtn);
     }
     const delBtn = document.createElement('button');
     delBtn.setAttribute('data-nodrag', '');
@@ -258,6 +270,7 @@ function buildFile(el, it) {
 
 function buildHeading(el, it) {
   el.classList.add('heading');
+  if (it.data.filled) el.classList.add('filled');
   const t = makeField('area', 'htext', it.data.text, 'Heading');
   if (it.color) t.style.color = colorVar(it.color);
   if (it.data.bold) t.style.fontWeight = '800';

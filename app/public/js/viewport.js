@@ -23,6 +23,23 @@ export function applyCamAnimated() {
   camAnimTimer = setTimeout(() => dom.world.classList.remove('cam-animate'), 520);
 }
 
+// state.cam is set to its *final* value the instant applyCamAnimated()
+// runs — only the on-screen position lags behind, easing toward it over
+// the next 500ms via the CSS transition. Anything that reads a card's or
+// the stage's actual rendered position mid-transition (getBoundingClientRect)
+// and feeds it through screenToWorld (which uses that already-final
+// state.cam) gets a mismatched result: an item you start dragging while the
+// view is still easing in would jump to a wrong spot before tracking the
+// mouse correctly, and a newly-placed card could land somewhere other than
+// where you clicked. Call this at the start of any pointerdown that's about
+// to do either — it kills the transition immediately, snapping the visible
+// position to match state.cam (which was already there) before anything
+// reads it.
+export function cancelCamAnimation() {
+  clearTimeout(camAnimTimer);
+  dom.world.classList.remove('cam-animate');
+}
+
 export function screenToWorld(clientX, clientY) {
   const r = dom.stage.getBoundingClientRect();
   return { x: (clientX - r.left - state.cam.x) / state.cam.scale, y: (clientY - r.top - state.cam.y) / state.cam.scale };

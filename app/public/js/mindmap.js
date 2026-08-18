@@ -176,7 +176,10 @@ function resolveCollisions(nodes, rootId, satellites) {
 async function getBoardItems(boardId) {
   if (itemCache.has(boardId)) return itemCache.get(boardId);
   const data = await api.canvas(boardId);
-  const items = (data.items || []).filter(it => !['board', 'line'].includes(it.type) && !it.parentItemId);
+  // shape cards are background decoration on the canvas, not really a
+  // "thing" someone would want to jump to or connect to — no reason to
+  // clutter the satellite ring with them.
+  const items = (data.items || []).filter(it => !['board', 'line', 'shape'].includes(it.type) && !it.parentItemId);
   itemCache.set(boardId, items);
   return items;
 }
