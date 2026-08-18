@@ -2,7 +2,7 @@
 
 import { state } from './state.js';
 import { api } from './api.js';
-import { autoGrow, colorVar, lucideEl, refreshIcons, toast, rid } from './util.js';
+import { colorVar, lucideEl, refreshIcons, toast, rid, daysUntil, dueInfo } from './util.js';
 import { screenToWorld } from './viewport.js';
 import { createAt, defaultsFor } from './create.js';
 import { openCanvas } from './main.js';
@@ -14,12 +14,15 @@ import { openCanvas } from './main.js';
    all living inside #quicknotes. Every `todo` card on the board is a list
    here and its `data.tasks` entries are the tasks, so edits made here land
    on the same card the canvas renders. Tasks carry a few extra fields the
-   canvas ignores (starred, due, tags, note); they are only written when the
-   user actually edits something, so existing cards stay untouched.
+   canvas ignores (starred, due, tags); they are only written when the user
+   actually edits something, so existing cards stay untouched. This is a
+   separate mechanism from the item-level tags/star/due-date on whole cards
+   (cards.js/menus.js) -- per-task fields here live inside one todo card's
+   task list, item-level fields apply to any card on the board as a unit.
 
    Static chrome lives in index.html; this module fills the [id] regions and
    owns navigation, so the fields that hold a caret (list title, new-task
-   input, note) survive a re-render.
+   input) survive a re-render.
    ========================================================================= */
 
 const el = id => document.getElementById(id);
@@ -43,14 +46,6 @@ const SMART_KEYS = ['today', 'starred', 'all', 'completed'];
 const LIST_COLORS = ['#4C7CBE', '#6E8B74', '#B0724F', '#8A6FA8'];
 const LIST_ICONS = ['moon', 'sun', 'lightbulb', 'leaf'];
 
-const FMT_BUTTONS = [
-  { key: 'bullet', title: 'Bullet list', icon: 'list' },
-  { key: 'number', title: 'Numbered list', icon: 'list-ordered' },
-  { key: 'b', title: 'Bold', glyph: 'B', cls: 'qn-fmt-b' },
-  { key: 'i', title: 'Italic', glyph: 'I', cls: 'qn-fmt-i' },
-  { key: 'u', title: 'Underline', glyph: 'U', cls: 'qn-fmt-u' }
-];
-
 const SETTINGS_KEY = 'quicknotes.settings';
 
 const qn = {
@@ -61,6 +56,8 @@ const qn = {
   taskRef: null,           // { listId, taskId }
   lists: [],
   rootCanvasId: null,
+  canvases: new Map(),     // canvasId -> {id, title, parentCanvasId, color, icon}, from api.graph()
+  collapsed: new Set(),    // canvasId -> group collapsed in the home tree (session-only)
   homeTag: null,
   searchOpen: false,
   query: '',
@@ -94,15 +91,14 @@ function normTask(t) {
     starred: !!t.starred,
     due: t.due || null,
     tags: Array.isArray(t.tags) ? t.tags.slice() : [],
-    note: typeof t.note === 'string' ? t.note : '',
-    noteStyle: t.noteStyle && typeof t.noteStyle === 'object' ? t.noteStyle : {},
     createdAt: t.createdAt || null
   };
 }
 
 async function load() {
-  const r = await api.todos();
+  const [r, g] = await Promise.all([api.todos(), api.graph().catch(() => ({ canvases: [] }))]);
   qn.rootCanvasId = r.rootCanvasId;
+  qn.canvases = new Map((g.canvases || []).map(c => [c.id, c]));
   if (savePending.size) return;   // a local edit is still in flight — keep ours
   qn.lists = (r.lists || []).map(l => ({
     id: l.id,
@@ -174,39 +170,9 @@ function findTask(ref) {
 }
 
 // ---------------------------------------------------------------------------
-// Dates
+// Dates (parseISO/daysUntil/relDays/dueInfo live in util.js, shared with the
+// canvas due-date badge)
 // ---------------------------------------------------------------------------
-const DAY = 86400000;
-const parseISO = s => {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || '');
-  return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
-};
-function daysUntil(iso) {
-  const d = parseISO(iso);
-  if (!d) return null;
-  const now = new Date();
-  return Math.round((d - new Date(now.getFullYear(), now.getMonth(), now.getDate())) / DAY);
-}
-function relDays(n) {
-  if (n === 0) return 'due today';
-  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
-  const abs = Math.abs(n);
-  if (abs < 7) return rtf.format(n, 'day');
-  if (abs < 30) return rtf.format(Math.round(n / 7), 'week');
-  return rtf.format(Math.round(n / 30), 'month');
-}
-function dueInfo(iso) {
-  const n = daysUntil(iso);
-  if (n === null) return null;
-  const short = parseISO(iso).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
-  const near = n === 0 ? 'Today' : n === 1 ? 'Tomorrow' : n === -1 ? 'Yesterday' : null;
-  return {
-    label: near || short,
-    full: near || 'Due ' + short,
-    sub: relDays(n),
-    color: n <= 0 ? 'var(--qn-due)' : 'var(--qn-muted)'
-  };
-}
 function agoLabel(ms) {
   const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
   const mins = Math.round((Date.now() - ms) / 60000);
@@ -327,22 +293,71 @@ function renderHome() {
       : 'No todo lists yet. Tap + to make one.'));
     return;
   }
-  shown.forEach((list) => {
-    const i = qn.lists.indexOf(list);
-    const row = h('button', 'qn-row-btn');
-    row.dataset.list = list.id;
-    const circle = h('span', 'qn-circle');
-    circle.style.background = list.color ? colorVar(list.color) : LIST_COLORS[i % LIST_COLORS.length];
-    circle.appendChild(lucideEl(LIST_ICONS[i % LIST_ICONS.length]));
-    row.appendChild(circle);
-    row.appendChild(h('span', 'qn-row-name', list.title));
-    row.appendChild(h('span', 'qn-row-count', String(openCount(list))));
-    const chev = h('span', 'qn-chev');
-    chev.appendChild(lucideEl('chevron-right'));
-    row.appendChild(chev);
-    row.onclick = () => openList(list.id);
-    rows.appendChild(row);
-  });
+  renderListTree(rows, shown);
+}
+
+function listRow(list) {
+  const i = qn.lists.indexOf(list);
+  const row = h('button', 'qn-row-btn');
+  row.dataset.list = list.id;
+  const circle = h('span', 'qn-circle');
+  circle.style.background = list.color ? colorVar(list.color) : LIST_COLORS[i % LIST_COLORS.length];
+  circle.appendChild(lucideEl(LIST_ICONS[i % LIST_ICONS.length]));
+  row.appendChild(circle);
+  row.appendChild(h('span', 'qn-row-name', list.title));
+  row.appendChild(h('span', 'qn-row-count', String(openCount(list))));
+  const chev = h('span', 'qn-chev');
+  chev.appendChild(lucideEl('chevron-right'));
+  row.appendChild(chev);
+  row.onclick = () => openList(list.id);
+  return row;
+}
+
+// Groups lists by the board hierarchy (via api.graph()'s canvases, cached in
+// qn.canvases) instead of one flat list. The root board's own lists render
+// inline with no header, exactly like the old flat view; every other board
+// that has a list (directly or in a descendant) gets a collapsible header,
+// indented under its parent. Boards with no lists anywhere in their subtree
+// are skipped entirely rather than cluttering the tree with empty branches.
+function renderListTree(container, shown) {
+  const byCanvas = new Map();
+  for (const list of shown) {
+    if (!byCanvas.has(list.canvasId)) byCanvas.set(list.canvasId, []);
+    byCanvas.get(list.canvasId).push(list);
+  }
+  const childrenOfCanvas = id => [...qn.canvases.values()].filter(c => c.parentCanvasId === id);
+  const hasListsBelow = id => {
+    if ((byCanvas.get(id) || []).length) return true;
+    return childrenOfCanvas(id).some(c => hasListsBelow(c.id));
+  };
+
+  const rootId = qn.rootCanvasId;
+  for (const list of byCanvas.get(rootId) || []) container.appendChild(listRow(list));
+
+  const walk = (canvasId, parent, depth) => {
+    for (const child of childrenOfCanvas(canvasId)) {
+      if (!hasListsBelow(child.id)) continue;
+      const group = h('div', 'qn-group');
+      group.style.marginLeft = (depth * 14) + 'px';
+      const header = h('button', 'qn-group-header');
+      const collapsed = qn.collapsed.has(child.id);
+      header.appendChild(lucideEl(collapsed ? 'chevron-right' : 'chevron-down'));
+      header.appendChild(h('span', 'qn-group-title', child.title || 'Untitled board'));
+      header.onclick = () => {
+        if (collapsed) qn.collapsed.delete(child.id); else qn.collapsed.add(child.id);
+        renderHome(); refreshIcons();
+      };
+      group.appendChild(header);
+      if (!collapsed) {
+        const body = h('div', 'qn-group-body');
+        for (const list of byCanvas.get(child.id) || []) body.appendChild(listRow(list));
+        walk(child.id, body, depth + 1);
+        group.appendChild(body);
+      }
+      parent.appendChild(group);
+    }
+  };
+  walk(rootId, container, 1);
 }
 
 function buildChips(parent, active, onPick) {
@@ -426,8 +441,7 @@ function taskRow(list, task, sub) {
   if (sub) mid.appendChild(h('span', 'qn-task-sub', sub));
   const due = dueInfo(task.due);
   if (due && !task.done) {
-    const line = h('span', 'qn-task-due');
-    line.style.color = due.color;
+    const line = h('span', 'qn-task-due' + (due.overdue ? ' overdue' : ''));
     line.appendChild(lucideEl('calendar'));
     line.appendChild(h('span', null, due.label));
     mid.appendChild(line);
@@ -500,54 +514,9 @@ function renderTaskScreen() {
   tagRow.appendChild(tagList);
   details.appendChild(tagRow);
 
-  // note card
-  const fmt = el('qnFmt');
-  fmt.innerHTML = '';
-  for (const b of FMT_BUTTONS) {
-    const btn = h('button', (b.cls || '') + (task.noteStyle[b.key] ? ' on' : ''), b.glyph || null);
-    btn.title = b.title;
-    btn.setAttribute('aria-label', b.title);
-    btn.dataset.fmt = b.key;
-    if (b.icon) btn.appendChild(lucideEl(b.icon));
-    btn.onclick = () => applyFormat(list, task, b.key);
-    fmt.appendChild(btn);
-  }
-  const note = el('qnNote');
-  if (document.activeElement !== note) note.value = task.note;
-  requestAnimationFrame(() => autoGrow(note));
-  note.style.fontWeight = task.noteStyle.b ? '700' : '400';
-  note.style.fontStyle = task.noteStyle.i ? 'italic' : 'normal';
-  note.style.textDecoration = task.noteStyle.u ? 'underline' : 'none';
-
   el('qnCreated').textContent = task.createdAt || list.createdAt
     ? 'Created ' + agoLabel(task.createdAt || list.createdAt)
     : '';
-}
-
-// Bullets/numbers rewrite the note's lines; B/I/U style the whole note and are
-// stored with the task so the styling survives a reload.
-function applyFormat(list, task, key) {
-  if (key === 'bullet' || key === 'number') {
-    task.note = toggleListPrefix(el('qnNote').value, key);
-  } else {
-    task.noteStyle = Object.assign({}, task.noteStyle, { [key]: !task.noteStyle[key] });
-  }
-  saveTasks(list);
-  el('qnNote').value = task.note;
-  autoGrow(el('qnNote'));
-  renderTaskScreen();
-  refreshIcons();
-}
-
-function toggleListPrefix(note, kind) {
-  const lines = (note || '').split('\n');
-  const isBul = l => /^• /.test(l);
-  const isNum = l => /^\d+\. /.test(l);
-  const strip = l => l.replace(/^• /, '').replace(/^\d+\. /, '');
-  const marked = lines.every(l => !l.trim() || (kind === 'bullet' ? isBul(l) : isNum(l)));
-  if (marked && lines.some(l => l.trim())) return lines.map(strip).join('\n');
-  let n = 0;
-  return lines.map(l => !l.trim() ? l : (kind === 'bullet' ? '• ' + strip(l) : (++n) + '. ' + strip(l))).join('\n');
 }
 
 // ---- search ----------------------------------------------------------------
@@ -557,7 +526,7 @@ function searchResults() {
   const out = [];
   for (const list of qn.lists) {
     for (const task of tasksOf(list)) {
-      const textHit = !q || task.text.toLowerCase().includes(q) || task.note.toLowerCase().includes(q);
+      const textHit = !q || task.text.toLowerCase().includes(q);
       const tagHit = !qn.searchTag || task.tags.includes(qn.searchTag) || list.tags.includes(qn.searchTag);
       if (textHit && tagHit) out.push({ list, task });
     }
@@ -864,12 +833,6 @@ export function initQuickNotes() {
     saveTasks(f.list);
   });
   taskTitle.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); taskTitle.blur(); } });
-  el('qnNote').addEventListener('input', () => {
-    autoGrow(el('qnNote'));
-    const f = findTask(qn.taskRef); if (!f) return;
-    f.task.note = el('qnNote').value;
-    saveTasks(f.list);
-  });
   el('qnDelTask').onclick = () => {
     const f = findTask(qn.taskRef); if (!f) return;
     deleteTask(f.list, f.task);

@@ -88,7 +88,7 @@ function rootCanvasId() {
 // App-wide settings (theme default, accent color, CalDAV credentials) live as
 // one JSON blob under a single meta key -- there's only ever one settings
 // object for the whole (personal, single-user) app.
-const DEFAULT_SETTINGS = { theme: 'system', accent: null, caldav: null };
+const DEFAULT_SETTINGS = { theme: 'system', accent: null, starColor: null, caldav: null };
 function getSettings() {
   const row = stmt.getMeta.get('settings');
   if (!row) return { ...DEFAULT_SETTINGS };

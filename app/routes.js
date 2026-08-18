@@ -86,10 +86,11 @@ router.get('/api/settings', (req, res) => {
 });
 
 router.patch('/api/settings', (req, res) => {
-  const { theme, accent, caldav } = req.body || {};
+  const { theme, accent, starColor, caldav } = req.body || {};
   const patch = {};
   if (theme !== undefined) patch.theme = theme;
   if (accent !== undefined) patch.accent = accent;
+  if (starColor !== undefined) patch.starColor = starColor;
   if (caldav !== undefined) {
     const prev = getSettings().caldav || {};
     patch.caldav = caldav === null ? null : {
@@ -377,6 +378,17 @@ router.get('/api/search', (req, res) => {
 router.get('/api/graph', (req, res) => {
   const canvases = stmt.allCanvases.all();
   res.json({ rootCanvasId: rootCanvasId(), canvases });
+});
+
+// ---- Tags --------------------------------------------------------------
+// Union of every item's data.tags, for the tag picker's autocomplete list.
+router.get('/api/tags', (req, res) => {
+  const rows = db.prepare('SELECT data FROM items WHERE deletedAt IS NULL').all();
+  const seen = new Set();
+  for (const r of rows) {
+    try { for (const t of JSON.parse(r.data).tags || []) seen.add(t); } catch (e) { /* skip malformed row */ }
+  }
+  res.json({ tags: [...seen].sort() });
 });
 
 router.get('/api/health', (req, res) => res.json({ ok: true }));

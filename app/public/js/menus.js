@@ -7,6 +7,108 @@ import { refreshItem } from './cards.js';
 import { select, renameSelected, deleteItem, saveData } from './editing.js';
 import { copySelected, pasteClipboard, duplicateSelected, toggleLock } from './clipboard.js';
 
+function positionPopup(anchor, w) {
+  const r = anchor.getBoundingClientRect();
+  let left = Math.min(r.left, window.innerWidth - w - 8);
+  let top = r.bottom + 8;
+  if (top + 220 > window.innerHeight) top = Math.max(8, r.top - 228);
+  dom.palette.style.left = Math.max(8, left) + 'px';
+  dom.palette.style.top = top + 'px';
+}
+
+// Multi-select tag checklist + an "add new tag" field. Reuses dom.palette
+// (same popup element/positioning/outside-click-to-dismiss as openPalette)
+// but with its own content, since a tag checklist doesn't fit the
+// swatch/icon-grid shapes that mode already handles.
+export async function openTagPicker(it, anchor) {
+  const known = new Set((await api.tags().catch(() => ({ tags: [] }))).tags || []);
+  for (const t of it.data.tags || []) known.add(t);
+  const all = [...known].sort();
+
+  const draw = () => {
+    while (dom.palette.firstChild) dom.palette.removeChild(dom.palette.firstChild);
+    dom.palette.className = 'open tag-picker';
+
+    const list = document.createElement('div');
+    list.className = 'tag-picker-list';
+    if (!all.length) list.appendChild((() => {
+      const e = document.createElement('div'); e.className = 'tag-picker-empty'; e.textContent = 'No tags yet';
+      return e;
+    })());
+    for (const tag of all) {
+      const on = (it.data.tags || []).includes(tag);
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'tag-picker-item' + (on ? ' on' : '');
+      row.appendChild(lucideEl(on ? 'check' : 'tag'));
+      const label = document.createElement('span'); label.textContent = tag; row.appendChild(label);
+      row.onclick = () => {
+        const tags = it.data.tags || [];
+        saveData(it, { tags: on ? tags.filter(t => t !== tag) : tags.concat([tag]) });
+        refreshItem(it);
+        draw();
+      };
+      list.appendChild(row);
+    }
+    dom.palette.appendChild(list);
+
+    const field = document.createElement('div');
+    field.className = 'tag-picker-add';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = all.length ? 'New tag' : 'First tag';
+    input.setAttribute('aria-label', 'New tag');
+    input.onkeydown = (e) => {
+      if (e.key !== 'Enter') return;
+      const tag = input.value.trim().replace(/^#/, '').toLowerCase();
+      if (!tag) return;
+      if (!all.includes(tag)) { all.push(tag); all.sort(); }
+      if (!(it.data.tags || []).includes(tag)) saveData(it, { tags: (it.data.tags || []).concat([tag]) });
+      refreshItem(it);
+      input.value = '';
+      draw();
+    };
+    field.appendChild(input);
+    dom.palette.appendChild(field);
+
+    positionPopup(anchor, 220);
+    refreshIcons(dom.palette);
+    if (!all.length) setTimeout(() => input.focus(), 0);
+  };
+  draw();
+}
+
+// Single date input + a clear button when a due date is already set. Reuses
+// dom.palette the same way openTagPicker does.
+export function openDueEditor(it, anchor) {
+  while (dom.palette.firstChild) dom.palette.removeChild(dom.palette.firstChild);
+  dom.palette.className = 'open due-editor';
+
+  const row = document.createElement('div');
+  row.className = 'due-editor-row';
+  const input = document.createElement('input');
+  input.type = 'date';
+  input.className = 'due-editor-input';
+  input.value = it.data.due || '';
+  input.setAttribute('aria-label', 'Due date');
+  input.onchange = () => { saveData(it, { due: input.value || null }); refreshItem(it); closePalette(); };
+  row.appendChild(input);
+  dom.palette.appendChild(row);
+
+  if (it.data.due) {
+    const clear = document.createElement('button');
+    clear.type = 'button';
+    clear.className = 'due-editor-clear';
+    clear.appendChild(lucideEl('x'));
+    clear.appendChild(document.createTextNode('Clear due date'));
+    clear.onclick = () => { saveData(it, { due: null }); refreshItem(it); closePalette(); };
+    dom.palette.appendChild(clear);
+  }
+
+  positionPopup(anchor, 200);
+  refreshIcons(dom.palette);
+}
+
 // The floating color/icon palette and the right-click context menu.
 
 // mode: 'color' | 'icon' | 'auto' (auto = colors, plus icons for boards — legacy badge path) | 'shape'
@@ -103,7 +205,7 @@ export function openPalette(it, anchor, mode = 'auto') {
 }
 
 export function closePalette() {
-  dom.palette.classList.remove('open', 'board-palette', 'icon-only');
+  dom.palette.classList.remove('open', 'board-palette', 'icon-only', 'tag-picker', 'due-editor');
   while (dom.palette.firstChild) dom.palette.removeChild(dom.palette.firstChild);
 }
 

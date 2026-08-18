@@ -241,13 +241,6 @@
         <button class="qn-star qn-star-lg" id="qnTaskStar" aria-label="Star task"><i data-lucide="star"></i></button>
       </div>
       <div class="qn-card qn-details" id="qnDetails"></div>
-      <div class="qn-card qn-notecard">
-        <div class="qn-noterow">
-          <span class="qn-notelabel">NOTE</span>
-          <div class="qn-fmt" id="qnFmt"></div>
-        </div>
-        <textarea id="qnNote" rows="4" placeholder="Add note" aria-label="Note"></textarea>
-      </div>
     </div>
     <div class="qn-taskfoot">
       <span class="qn-foot-pad"></span>
@@ -400,6 +393,15 @@
         <input type="color" id="setAccent" value="#2f6df0">
         <input type="text" id="setAccentHex" placeholder="#2f6df0" maxlength="9">
         <button type="button" id="setAccentReset">Reset</button>
+      </div>
+    </div>
+
+    <div class="set-group">
+      <label class="set-label" for="setStarColorHex">Starred color</label>
+      <div class="set-accent-row">
+        <input type="color" id="setStarColor" value="#E8B94A">
+        <input type="text" id="setStarColorHex" placeholder="#E8B94A" maxlength="9">
+        <button type="button" id="setStarColorReset">Reset</button>
       </div>
     </div>
 

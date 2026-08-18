@@ -1,9 +1,9 @@
 'use strict';
 
 import { state, dom, elMap, SHAPE_ICONS } from './state.js';
-import { colorVar, lucideEl, refreshIcons, autoGrow, isLocked, rid, normalizeUrl } from './util.js';
+import { colorVar, lucideEl, refreshIcons, autoGrow, isLocked, rid, normalizeUrl, dueInfo } from './util.js';
 import { select, enterEdit, exitEdit, saveData, deleteItem } from './editing.js';
-import { openPalette, openCtx } from './menus.js';
+import { openPalette, openCtx, openTagPicker, openDueEditor } from './menus.js';
 import { updateSelectionChrome } from './boardchrome.js';
 import { onItemPointerDown, startResize } from './drag.js';
 import { openCanvas } from './main.js';
@@ -68,6 +68,7 @@ export function renderItem(it) {
   el.dataset.id = it.id;
   if (state.selectedIds.has(it.id)) el.classList.add('selected');
   if (isLocked(it)) el.classList.add('locked');
+  if (it.type !== 'board' && it.data.starred) el.classList.add('starred');
   if (!it.parentItemId) {
     el.style.left = it.x + 'px'; el.style.top = it.y + 'px';
     el.style.width = (it.w || 240) + 'px';
@@ -112,6 +113,30 @@ export function renderItem(it) {
       colorBtn.onclick = (e) => { e.stopPropagation(); openPalette(it, colorBtn, 'color'); };
       tools.appendChild(colorBtn);
     }
+    const tagBtn = document.createElement('button');
+    tagBtn.setAttribute('data-nodrag', '');
+    tagBtn.className = 'card-tool-btn';
+    tagBtn.appendChild(lucideEl('tag'));
+    tagBtn.title = 'Tags';
+    tagBtn.onclick = (e) => { e.stopPropagation(); openTagPicker(it, tagBtn); };
+    tools.appendChild(tagBtn);
+
+    const starBtn = document.createElement('button');
+    starBtn.setAttribute('data-nodrag', '');
+    starBtn.className = 'card-tool-btn' + (it.data.starred ? ' on' : '');
+    starBtn.appendChild(lucideEl('star'));
+    starBtn.title = it.data.starred ? 'Unstar' : 'Star';
+    starBtn.onclick = (e) => { e.stopPropagation(); saveData(it, { starred: !it.data.starred }); refreshItem(it); };
+    tools.appendChild(starBtn);
+
+    const dueBtn = document.createElement('button');
+    dueBtn.setAttribute('data-nodrag', '');
+    dueBtn.className = 'card-tool-btn' + (it.data.due ? ' on' : '');
+    dueBtn.appendChild(lucideEl('calendar'));
+    dueBtn.title = 'Due date';
+    dueBtn.onclick = (e) => { e.stopPropagation(); openDueEditor(it, dueBtn); };
+    tools.appendChild(dueBtn);
+
     if (it.type === 'heading') {
       const boldBtn = document.createElement('button');
       boldBtn.setAttribute('data-nodrag', '');
@@ -149,6 +174,30 @@ export function renderItem(it) {
       tools.appendChild(lockBadge);
     }
     el.appendChild(tools);
+
+    // Always-visible badges (unlike .card-tools, not gated behind .selected)
+    // so tags/star/due mean something at a glance, not just when editing.
+    const due = it.data.due ? dueInfo(it.data.due) : null;
+    if (due) {
+      const dueBadge = document.createElement('span');
+      dueBadge.className = 'due-badge' + (due.overdue ? ' overdue' : '');
+      dueBadge.textContent = due.label;
+      dueBadge.title = due.full;
+      el.appendChild(dueBadge);
+    }
+    if (it.data.tags && it.data.tags.length) {
+      const tagRow = document.createElement('div');
+      tagRow.className = 'item-tags';
+      tagRow.setAttribute('data-nodrag', '');
+      for (const tag of it.data.tags) {
+        const chip = document.createElement('span');
+        chip.className = 'item-tag';
+        chip.textContent = tag;
+        tagRow.appendChild(chip);
+      }
+      tagRow.onclick = (e) => { e.stopPropagation(); openTagPicker(it, tagRow); };
+      el.appendChild(tagRow);
+    }
   } else if (isLocked(it)) {
     const lockBadge = document.createElement('span');
     lockBadge.className = 'lock-badge board-lock';

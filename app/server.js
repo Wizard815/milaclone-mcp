@@ -48,6 +48,9 @@ app.get('/', (req, res) => {
     // otherwise win in dark mode regardless of source order.
     inject.push(`  <style>:root{--user-accent:${settings.accent} !important;}</style>`);
   }
+  if (settings.starColor && HEX_COLOR.test(settings.starColor)) {
+    inject.push(`  <style>:root{--star-color:${settings.starColor} !important;}</style>`);
+  }
   if (inject.length) out = out.replace('<head>', '<head>\n' + inject.join('\n'));
 
   res.set('Cache-Control', 'no-cache').type('html').send(out);

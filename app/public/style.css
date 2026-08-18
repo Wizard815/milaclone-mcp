@@ -16,6 +16,7 @@
      actually turns, scoped to just the mind map and selection/marquee
      highlights so a personal color choice doesn't repaint every button. */
   --user-accent: var(--accent);
+  --star-color: #E8B94A;
   --radius: 12px;
   --serif: "Fraunces", ui-serif, Georgia, "Iowan Old Style", "Palatino Linotype", serif;
   --sans: "Figtree", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
@@ -50,6 +51,7 @@
   --accent: #6d95ff;
   --select: #6d95ff;
   --user-accent: var(--accent);
+  --star-color: #E8B94A;
   --grid-line: rgba(255,255,255,.06);
   --surface-1: #26272c;
   --surface-2: #303136;
@@ -201,6 +203,10 @@ input, textarea { font-family: var(--sans); }
 }
 .item.dragging { box-shadow: var(--card-shadow-hover); cursor: grabbing; z-index: 9999 !important; }
 .item:hover { box-shadow: var(--card-shadow-hover); }
+/* .starred before .selected (equal specificity, so source order decides):
+   selection should visually win over the starred glow while a card is
+   actively selected, so .selected must cascade after it. */
+.item.starred { border-color: var(--star-color); box-shadow: 0 0 0 2px color-mix(in srgb, var(--star-color) 45%, transparent); }
 .item.selected { border-color: var(--user-accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--user-accent) 35%, transparent), var(--card-shadow-hover); }
 
 /* editable text fields are inert until the card is in edit mode, so a click
@@ -226,6 +232,8 @@ input, textarea { font-family: var(--sans); }
 .card-tools .htool-u { text-decoration: underline; }
 .card-tools .htool-b.on, .card-tools .htool-u.on, .card-tools .htool-fill.on { background: var(--accent); color: #fff; }
 .card-tools .htool-fill svg { width: 14px; height: 14px; }
+.card-tools .card-tool-btn svg { width: 14px; height: 14px; }
+.card-tools .card-tool-btn.on { background: var(--accent); color: #fff; }
 
 /* ---------- note ---------- */
 .note { padding: 14px 16px; }
@@ -554,6 +562,22 @@ input, textarea { font-family: var(--sans); }
   width: 26px; height: 26px; border-radius: 8px; background: #2b2d31; color: #d6d8de;
 }
 
+/* ---------- due-date + tag badges (always visible, not selection-gated) ---------- */
+.due-badge {
+  position: absolute; top: -10px; right: 8px; z-index: 15;
+  background: var(--surface-1); border: 1px solid var(--card-border); border-radius: 999px;
+  padding: 2px 9px; font-size: 11px; font-weight: 600; color: var(--ink-soft);
+  box-shadow: var(--card-shadow);
+}
+.due-badge.overdue { color: #fff; background: var(--danger); border-color: var(--danger); }
+.item-tags {
+  display: flex; flex-wrap: wrap; gap: 4px; padding: 0 14px 10px; cursor: pointer;
+}
+.item-tag {
+  background: var(--surface-2); color: var(--ink-soft); border-radius: 999px;
+  padding: 3px 9px; font-size: 11px; font-weight: 600;
+}
+
 /* ---------- board tile lucide ---------- */
 .board .tile svg { width: 28px; height: 28px; color: #fff; stroke-width: 1.75; }
 
@@ -593,6 +617,38 @@ input, textarea { font-family: var(--sans); }
 #palette .pal-thick-row { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; }
 #palette .pal-thick-label { font-size: 12px; color: var(--ink-soft); flex: 0 0 auto; }
 #palette .pal-thick-input { flex: 1; accent-color: var(--accent); }
+
+/* ---------- tag picker + due-date editor (share #palette's popup shell) ---------- */
+/* Higher specificity than #palette.open's own display:grid (style.css above)
+   so these always win regardless of source order -- same kind of same-
+   specificity cascade collision that broke .comment earlier this session. */
+#palette.tag-picker.open, #palette.due-editor.open { display: block; width: 220px; }
+.tag-picker-list { display: flex; flex-direction: column; gap: 2px; max-height: 240px; overflow-y: auto; }
+.tag-picker-empty { padding: 8px 4px; font-size: 12.5px; color: var(--ink-soft); font-style: italic; }
+.tag-picker-item {
+  display: flex; align-items: center; gap: 8px; padding: 7px 8px; border: none; border-radius: 7px;
+  background: none; color: var(--ink); font-size: 13px; text-align: left; width: 100%;
+}
+.tag-picker-item svg { width: 15px; height: 15px; color: var(--ink-soft); flex: 0 0 auto; }
+.tag-picker-item:hover { background: var(--surface-2); }
+.tag-picker-item.on { color: var(--accent); }
+.tag-picker-item.on svg { color: var(--accent); }
+.tag-picker-add { margin-top: 6px; padding-top: 8px; border-top: 1px solid var(--rail-border); }
+.tag-picker-add input {
+  width: 100%; box-sizing: border-box; border: 1px solid var(--card-border); border-radius: 7px;
+  padding: 7px 9px; font-size: 13px; background: var(--canvas-bg); color: var(--ink);
+}
+.due-editor-row { display: flex; }
+.due-editor-input {
+  width: 100%; box-sizing: border-box; border: 1px solid var(--card-border); border-radius: 7px;
+  padding: 7px 9px; font-size: 13px; background: var(--canvas-bg); color: var(--ink);
+}
+.due-editor-clear {
+  display: flex; align-items: center; gap: 8px; margin-top: 8px; padding: 7px 8px; width: 100%;
+  border: none; border-radius: 7px; background: none; color: var(--danger); font-size: 13px; text-align: left;
+}
+.due-editor-clear svg { width: 15px; height: 15px; }
+.due-editor-clear:hover { background: var(--surface-2); }
 
 /* ---------- context menu ---------- */
 #ctxmenu {
@@ -954,6 +1010,16 @@ input, textarea { font-family: var(--sans); }
 .qn-chev { display: flex; flex: 0 0 auto; color: var(--qn-faint); }
 .qn-chev :is(svg, i) { width: 15px; height: 15px; stroke-width: 2; }
 
+/* ---- home list tree (grouped by board hierarchy) ---- */
+.qn-group { border-top: 1px solid var(--qn-hair); }
+.qn-group-header {
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 10px 18px;
+  color: var(--qn-soft); font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .02em;
+}
+.qn-group-header :is(svg, i) { width: 14px; height: 14px; stroke-width: 2.2; }
+.qn-group-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qn-group-body { display: flex; flex-direction: column; }
+
 .qn-bar {
   position: absolute; bottom: 0; left: 0; right: 0; background: var(--qn-surface);
   border-top: 1px solid var(--qn-bar-hair); display: flex; align-items: center;
@@ -993,7 +1059,8 @@ input, textarea { font-family: var(--sans); }
 .qn-task-text { font-size: 16px; color: var(--qn-ink); }
 .qn-task.done .qn-task-text { color: var(--qn-faint); text-decoration: line-through; }
 .qn-task-sub { font-size: 13px; color: var(--qn-muted); }
-.qn-task-due { font-size: 13px; display: flex; align-items: center; gap: 5px; }
+.qn-task-due { font-size: 13px; display: flex; align-items: center; gap: 5px; color: var(--qn-muted); }
+.qn-task-due.overdue { color: var(--qn-due); }
 .qn-task-due :is(svg, i) { width: 13px; height: 13px; stroke-width: 2; }
 .qn-comphead {
   display: flex; align-items: center; gap: 10px; padding: 12px 16px 2px;
@@ -1050,24 +1117,6 @@ input, textarea { font-family: var(--sans); }
   border: 1.5px dashed var(--qn-star-off); color: var(--qn-muted); border-radius: 999px;
   padding: 5px 12px; font-size: 13px; font-weight: 600;
 }
-.qn-notecard { border-radius: 16px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
-.qn-noterow { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.qn-notelabel { font-size: 13px; font-weight: 600; color: var(--qn-muted); letter-spacing: .02em; }
-.qn-fmt { display: flex; gap: 4px; background: var(--qn-sheet); border-radius: 10px; padding: 3px; }
-.qn-fmt button {
-  width: 30px; height: 28px; border-radius: 8px; display: grid; place-items: center;
-  color: var(--qn-soft); font-size: 14px; transition: background .15s, color .15s;
-}
-.qn-fmt button :is(svg, i) { width: 16px; height: 16px; stroke-width: 2; }
-.qn-fmt button.on { background: var(--qn-accent); color: #fff; }
-.qn-fmt .qn-fmt-b { font-weight: 800; }
-.qn-fmt .qn-fmt-i { font-style: italic; font-family: Georgia, serif; font-weight: 600; }
-.qn-fmt .qn-fmt-u { text-decoration: underline; font-weight: 600; }
-#qnNote {
-  border: none; outline: none; resize: none; background: none; padding: 0;
-  font-size: 15px; color: var(--qn-ink); line-height: 1.55;
-}
-#qnNote::placeholder { color: var(--qn-muted); }
 .qn-taskfoot {
   position: absolute; bottom: 0; left: 0; right: 0; display: flex; align-items: center;
   justify-content: space-between; padding: 14px 24px calc(30px + env(safe-area-inset-bottom));

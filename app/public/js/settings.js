@@ -3,11 +3,11 @@
 import { api } from './api.js';
 import { toast } from './util.js';
 
-// App-wide settings modal: default theme, accent color, CalDAV credentials.
-// Server-side default theme/accent are also baked into index.html on every
-// request (see server.js) so a fresh device gets them before first paint;
-// this module is what lets you change them, plus live-preview the accent
-// and apply theme changes to the current browser immediately on save.
+// App-wide settings modal: default theme, accent color, star color, CalDAV
+// credentials. Server-side default theme/accent/starColor are also baked
+// into index.html on every request (see server.js) so a fresh device gets
+// them before first paint; this module is what lets you change them, plus
+// live-preview accent/star color and apply theme changes immediately on save.
 
 let cached = null; // last-loaded settings, so Cancel can revert a live accent preview
 
@@ -19,6 +19,9 @@ function refs() {
     accent: document.getElementById('setAccent'),
     accentHex: document.getElementById('setAccentHex'),
     accentReset: document.getElementById('setAccentReset'),
+    starColor: document.getElementById('setStarColor'),
+    starColorHex: document.getElementById('setStarColorHex'),
+    starColorReset: document.getElementById('setStarColorReset'),
     caldavUrl: document.getElementById('setCaldavUrl'),
     caldavUser: document.getElementById('setCaldavUser'),
     caldavPass: document.getElementById('setCaldavPass'),
@@ -36,6 +39,11 @@ function applyAccent(hex) {
   else document.documentElement.style.removeProperty('--user-accent');
 }
 
+function applyStarColor(hex) {
+  if (hex) document.documentElement.style.setProperty('--star-color', hex);
+  else document.documentElement.style.removeProperty('--star-color');
+}
+
 function setThemeSeg(r, theme) {
   r.seg.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.val === theme));
 }
@@ -47,6 +55,9 @@ async function open() {
   const accent = cached.accent || '#2f6df0';
   r.accent.value = accent;
   r.accentHex.value = cached.accent || '';
+  const starColor = cached.starColor || '#E8B94A';
+  r.starColor.value = starColor;
+  r.starColorHex.value = cached.starColor || '';
   r.caldavUrl.value = (cached.caldav && cached.caldav.url) || '';
   r.caldavUser.value = (cached.caldav && cached.caldav.username) || '';
   r.caldavPass.value = '';
@@ -58,6 +69,7 @@ async function open() {
 function close() {
   refs().root.hidden = true;
   applyAccent(cached && cached.accent); // undo any unsaved live preview
+  applyStarColor(cached && cached.starColor);
 }
 
 function applyThemeToThisBrowser(theme) {
@@ -75,8 +87,10 @@ async function save() {
   const theme = r.seg.querySelector('button.on')?.dataset.val || 'system';
   const accentHex = r.accentHex.value.trim();
   const accent = /^#[0-9a-fA-F]{3,8}$/.test(accentHex) ? accentHex : null;
+  const starColorHex = r.starColorHex.value.trim();
+  const starColor = /^#[0-9a-fA-F]{3,8}$/.test(starColorHex) ? starColorHex : null;
 
-  const patch = { theme, accent };
+  const patch = { theme, accent, starColor };
   const url = r.caldavUrl.value.trim();
   const username = r.caldavUser.value.trim();
   const password = r.caldavPass.value;
@@ -86,6 +100,7 @@ async function save() {
   cached = saved;
   applyThemeToThisBrowser(theme);
   applyAccent(accent);
+  applyStarColor(starColor);
   toast('Settings saved');
   refs().root.hidden = true;
 }
@@ -103,6 +118,16 @@ export function initSettings() {
     if (/^#[0-9a-fA-F]{3,8}$/.test(v)) { r.accent.value = v.length <= 7 ? v : v.slice(0, 7); applyAccent(v); }
   });
   r.accentReset.onclick = () => { r.accentHex.value = ''; r.accent.value = '#2f6df0'; applyAccent(null); };
+
+  r.starColor.addEventListener('input', () => {
+    r.starColorHex.value = r.starColor.value;
+    applyStarColor(r.starColor.value);
+  });
+  r.starColorHex.addEventListener('input', () => {
+    const v = r.starColorHex.value.trim();
+    if (/^#[0-9a-fA-F]{3,8}$/.test(v)) { r.starColor.value = v.length <= 7 ? v : v.slice(0, 7); applyStarColor(v); }
+  });
+  r.starColorReset.onclick = () => { r.starColorHex.value = ''; r.starColor.value = '#E8B94A'; applyStarColor(null); };
 
   r.seg.querySelectorAll('button').forEach(b => {
     b.onclick = () => setThemeSeg(r, b.dataset.val);
