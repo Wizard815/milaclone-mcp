@@ -255,6 +255,7 @@ input, textarea { font-family: var(--sans); }
 .task.done .txt { color: var(--ink-faint); text-decoration: line-through; }
 .task .del { opacity: 0; border: none; background: none; color: var(--ink-faint); font-size: 16px; line-height: 1; padding: 0 2px; }
 .task:hover .del { opacity: 1; }
+.task.starred { outline: 1.5px solid var(--star-color); outline-offset: 3px; border-radius: 6px; }
 .todo .add { margin-top: 6px; border: none; background: none; color: var(--ink-soft); font-size: 13px; padding: 4px 0; display: inline-flex; align-items: center; gap: 6px; }
 .todo .add:hover { color: var(--accent); }
 

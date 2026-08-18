@@ -265,7 +265,7 @@ function buildTodo(el, it) {
   const renderTasks = () => {
     list.innerHTML = '';
     tasks.forEach((task) => {
-      const row = document.createElement('div'); row.className = 'task' + (task.done ? ' done' : '');
+      const row = document.createElement('div'); row.className = 'task' + (task.done ? ' done' : '') + (task.starred ? ' starred' : '');
       const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !!task.done; cb.setAttribute('data-nodrag', '');
       cb.onclick = (e) => { e.stopPropagation(); task.done = cb.checked; row.classList.toggle('done', task.done); saveData(it, { tasks }); };
       const tx = makeField('area', 'txt', task.text, 'List item');
