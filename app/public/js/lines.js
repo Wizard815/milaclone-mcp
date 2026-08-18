@@ -63,9 +63,22 @@ function addArrowMarker(defs, id, color) {
 function rectOf(id) {
   const el = elMap.get(id);
   if (!el) return null;
-  const x = parseFloat(el.style.left) || 0, y = parseFloat(el.style.top) || 0;
-  const w = el.offsetWidth, h = el.offsetHeight;
-  return { x, y, w, h, cx: x + w / 2, cy: y + h / 2 };
+  if (el.style.left) {
+    const x = parseFloat(el.style.left) || 0, y = parseFloat(el.style.top) || 0;
+    const w = el.offsetWidth, h = el.offsetHeight;
+    return { x, y, w, h, cx: x + w / 2, cy: y + h / 2 };
+  }
+  // Column children never get an inline left/top (they're positioned by
+  // normal document flow inside the column body, not absolute placement --
+  // see renderItem in cards.js) -- without this fallback, a line to/from a
+  // card in a column silently anchored at world (0,0) instead of the card's
+  // actual position, whether the line was drawn to it directly or it was
+  // dragged into a column after the line already existed. Read the real
+  // rendered screen rect and convert to world space instead.
+  const r = el.getBoundingClientRect();
+  const topLeft = screenToWorld(r.left, r.top);
+  const w = r.width / state.cam.scale, h = r.height / state.cam.scale;
+  return { x: topLeft.x, y: topLeft.y, w, h, cx: topLeft.x + w / 2, cy: topLeft.y + h / 2 };
 }
 
 // Where a ray from the rect's center toward (tx,ty) exits the rectangle.
