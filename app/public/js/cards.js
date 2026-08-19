@@ -11,6 +11,7 @@ import { openDocument } from './docs.js';
 import { openDrawEditor } from './draw-editor.js';
 import { renderLines } from './lines.js';
 import { navigateToConnect } from './connect.js';
+import { snapshotTaskEdit } from './undo.js';
 
 // Rendering of the canvas and every card type. This module owns the DOM for
 // items; other modules ask it to (re)render when data changes.
@@ -274,14 +275,14 @@ function buildTodo(el, it) {
       tx.addEventListener('input', () => { task.text = tx.value; saveData(it, { tasks }); });
       tx.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') { e.preventDefault(); const ni = { id: rid(), text: '', done: false }; tasks.splice(tasks.indexOf(task) + 1, 0, ni); saveData(it, { tasks }); renderTasks(); enterEdit(el); list.querySelectorAll('.txt')[tasks.indexOf(ni)].focus(); }
-        if (e.key === 'Backspace' && tx.value === '' && tasks.length > 1) { e.preventDefault(); tasks.splice(tasks.indexOf(task), 1); saveData(it, { tasks }); renderTasks(); }
+        if (e.key === 'Backspace' && tx.value === '' && tasks.length > 1) { e.preventDefault(); snapshotTaskEdit(it, tasks); tasks.splice(tasks.indexOf(task), 1); saveData(it, { tasks }); renderTasks(); }
       });
       const star = document.createElement('button'); star.className = 'task-star' + (task.starred ? ' on' : ''); star.setAttribute('data-nodrag', '');
       star.appendChild(lucideEl('star'));
       star.title = task.starred ? 'Unstar' : 'Star';
       star.onclick = (e) => { e.stopPropagation(); task.starred = !task.starred; saveData(it, { tasks }); renderTasks(); };
       const del = document.createElement('button'); del.className = 'del'; del.textContent = '×'; del.setAttribute('data-nodrag', '');
-      del.onclick = (e) => { e.stopPropagation(); tasks.splice(tasks.indexOf(task), 1); saveData(it, { tasks }); renderTasks(); };
+      del.onclick = (e) => { e.stopPropagation(); snapshotTaskEdit(it, tasks); tasks.splice(tasks.indexOf(task), 1); saveData(it, { tasks }); renderTasks(); };
       row.appendChild(cb); row.appendChild(tx); row.appendChild(star); row.appendChild(del);
       list.appendChild(row);
       requestAnimationFrame(() => { autoGrow(tx); renderLines(); });

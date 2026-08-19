@@ -40,6 +40,17 @@ export function snapshotForUndo(id) {
   state.redoStack.length = 0;
 }
 
+// Undo for a Quick-Notes-style task list edit (deleting a task row) --
+// these live inside a todo item's data.tasks array, not as their own
+// canvas items, so they can't go through the create/restore machinery
+// above. Snapshot the whole array before the mutating change; undo/redo
+// just swaps the item's data.tasks between the two snapshots.
+export function snapshotTaskEdit(it, prevTasks) {
+  state.undoStack.push({ taskEdit: { itemId: it.id, tasks: JSON.parse(JSON.stringify(prevTasks)) } });
+  if (state.undoStack.length > MAX_STACK) state.undoStack.shift();
+  state.redoStack.length = 0;
+}
+
 function remapData(type, data, idMap) {
   if (type === 'line') {
     return Object.assign({}, data, {
@@ -84,6 +95,18 @@ async function recreate(items) {
 export async function performUndo() {
   const entry = state.undoStack.pop();
   if (!entry) { toast('Nothing to undo'); return; }
+  if (entry.taskEdit) {
+    const { itemId, tasks } = entry.taskEdit;
+    const it = state.view.items.find(x => x.id === itemId);
+    if (!it) { toast('Could not undo'); return; }
+    const redoTasks = JSON.parse(JSON.stringify(it.data.tasks || []));
+    it.data.tasks = JSON.parse(JSON.stringify(tasks));
+    await api.patch(itemId, { data: { tasks: it.data.tasks } });
+    state.redoStack.push({ taskEdit: { itemId, tasks: redoTasks } });
+    render();
+    toast('Undone');
+    return;
+  }
   if (entry.restoreBoardId) {
     const restored = await api.restore(entry.restoreBoardId);
     if (!restored || restored.error) { toast('Could not undo'); return; }
@@ -102,6 +125,18 @@ export async function performUndo() {
 export async function performRedo() {
   const entry = state.redoStack.pop();
   if (!entry) { toast('Nothing to redo'); return; }
+  if (entry.taskEdit) {
+    const { itemId, tasks } = entry.taskEdit;
+    const it = state.view.items.find(x => x.id === itemId);
+    if (!it) { toast('Nothing to redo'); return; }
+    const undoTasks = JSON.parse(JSON.stringify(it.data.tasks || []));
+    it.data.tasks = JSON.parse(JSON.stringify(tasks));
+    await api.patch(itemId, { data: { tasks: it.data.tasks } });
+    state.undoStack.push({ taskEdit: { itemId, tasks: undoTasks } });
+    render();
+    toast('Redone');
+    return;
+  }
   const idSet = new Set(entry.items);
   const live = entry.items.map(id => state.view.items.find(it => it.id === id)).filter(Boolean);
   if (!live.length) { toast('Nothing to redo'); return; }
