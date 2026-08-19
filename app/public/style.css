@@ -1318,3 +1318,100 @@ body.qn-open .toast {
 }
 .mm-ctx button:hover { background: var(--canvas-bg); }
 .mm-ctx button svg { width: 15px; height: 15px; color: var(--ink-soft); }
+
+/* ---------- calendar ---------- */
+#calendarView { position: fixed; inset: 0; z-index: 220; background: var(--canvas-bg); display: flex; flex-direction: column; }
+#calendarView[hidden] { display: none; }
+.cal-top {
+  display: flex; align-items: center; gap: 16px; padding: 10px 16px; flex: 0 0 auto; flex-wrap: wrap;
+  background: var(--card-bg); border-bottom: 1px solid var(--card-border);
+}
+.cal-top h3 { margin: 0; font-family: var(--serif); font-size: 16px; color: var(--ink); }
+.cal-view-toggle { display: flex; background: var(--canvas-bg); border-radius: 9px; padding: 3px; gap: 2px; }
+.cal-view-toggle button {
+  border: none; background: none; color: var(--ink-soft); font-size: 13px; font-weight: 600;
+  padding: 6px 12px; border-radius: 7px; cursor: pointer;
+}
+.cal-view-toggle button.on { background: var(--surface-1); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+.cal-nav { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.cal-nav button {
+  border: none; background: none; color: var(--ink-soft); border-radius: 8px; padding: 6px 10px;
+  display: inline-flex; align-items: center; font-size: 13px; cursor: pointer;
+}
+.cal-nav button:hover { background: var(--canvas-bg); color: var(--ink); }
+.cal-nav svg { width: 16px; height: 16px; }
+#calPeriodLabel { font-size: 13.5px; font-weight: 600; color: var(--ink); min-width: 140px; text-align: center; }
+
+.cal-scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
+.cal-body { padding: 16px; }
+
+/* month grid */
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.cal-grid-head { font-size: 11px; font-weight: 700; color: var(--ink-soft); text-align: center; padding-bottom: 4px; text-transform: uppercase; }
+.cal-day {
+  border: 1px solid var(--card-border); background: var(--card-bg); border-radius: 9px;
+  min-height: 56px; padding: 6px; display: flex; flex-direction: column; align-items: flex-start;
+  cursor: pointer; position: relative;
+}
+.cal-day:hover { background: var(--surface-2); }
+.cal-day.dim { opacity: .4; }
+.cal-day.today { border-color: var(--user-accent); }
+.cal-day-num { font-size: 12.5px; color: var(--ink); font-weight: 600; }
+.cal-day.today .cal-day-num { color: var(--user-accent); }
+.cal-dot {
+  position: absolute; bottom: 6px; right: 6px; min-width: 16px; height: 16px; padding: 0 4px;
+  border-radius: 999px; background: var(--user-accent); color: #fff; font-size: 10px; font-weight: 700;
+  display: grid; place-items: center;
+}
+
+/* week grid */
+.cal-week-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; align-items: start; }
+.cal-week-col { display: flex; flex-direction: column; gap: 4px; min-height: 120px; }
+.cal-week-head {
+  border: none; background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 8px;
+  padding: 6px; font-size: 12px; font-weight: 700; color: var(--ink-soft); cursor: pointer;
+}
+.cal-week-head.today { color: var(--user-accent); border-color: var(--user-accent); }
+.cal-week-head:hover { background: var(--surface-2); }
+
+/* shared entry row (week col + day view list) */
+.cal-day-entry, .cal-day-list-row {
+  border: none; text-align: left; background: var(--surface-2); color: var(--ink); border-radius: 7px;
+  padding: 7px 9px; font-size: 12.5px; cursor: pointer; width: 100%;
+}
+.cal-day-entry:hover, .cal-day-list-row:hover { background: var(--surface-3); }
+.cal-day-list-row { display: flex; flex-direction: column; gap: 2px; margin-bottom: 8px; padding: 10px 12px; }
+.cal-entry-title { font-weight: 600; }
+.cal-day-entry.done .cal-entry-title, .cal-day-list-row.done .cal-entry-title { color: var(--ink-faint); text-decoration: line-through; }
+.cal-entry-board { font-size: 11.5px; color: var(--ink-soft); }
+
+/* year grid */
+.cal-year-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 18px; }
+.cal-year-month { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 10px; padding: 10px; }
+.cal-year-month-title {
+  border: none; background: none; font-size: 12.5px; font-weight: 700; color: var(--ink); padding: 0 0 8px;
+  cursor: pointer; width: 100%; text-align: left;
+}
+.cal-year-month-title:hover { color: var(--user-accent); }
+.cal-year-mini { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.cal-year-dot { width: 100%; aspect-ratio: 1; border-radius: 3px; background: var(--canvas-bg); }
+.cal-year-dot.dim { opacity: .3; }
+.cal-year-dot.today { outline: 1.5px solid var(--user-accent); outline-offset: -1px; }
+.cal-year-dot.has-entries { background: var(--user-accent); }
+
+.cal-empty { color: var(--ink-soft); font-size: 13px; padding: 20px; text-align: center; }
+
+/* upcoming panel -- present under every view mode */
+.cal-upcoming { flex: 0 0 auto; padding: 0 16px 20px; border-top: 1px solid var(--card-border); margin-top: 4px; }
+.cal-upcoming h4 { font-size: 12px; font-weight: 700; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .02em; padding: 14px 0 8px; margin: 0; }
+.cal-upcoming-row {
+  width: 100%; display: flex; align-items: center; gap: 10px; border: none; background: none;
+  padding: 9px 4px; border-bottom: 1px solid var(--card-border); cursor: pointer; text-align: left;
+}
+.cal-upcoming-row:last-child { border-bottom: none; }
+.cal-upcoming-row:hover { background: var(--surface-2); }
+.cal-upcoming-title { font-size: 13px; font-weight: 600; color: var(--ink); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cal-upcoming-row.done .cal-upcoming-title { color: var(--ink-faint); text-decoration: line-through; }
+.cal-upcoming-board { font-size: 11.5px; color: var(--ink-soft); flex: 0 0 auto; }
+.cal-upcoming-when { font-size: 11.5px; color: var(--ink-soft); flex: 0 0 auto; }
+.cal-upcoming-row.overdue .cal-upcoming-when { color: var(--danger); font-weight: 600; }

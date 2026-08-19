@@ -437,6 +437,39 @@ router.get('/api/tags', (req, res) => {
   res.json({ tags: [...seen].sort() });
 });
 
+// ---- Calendar ----------------------------------------------------------
+// Every due date in the workspace, from both sources that carry one: a
+// whole item's own data.due (any card type) and a to-do card's per-task
+// due dates. One flat, date-sorted list -- the client groups it by day
+// itself for whichever of the four views (day/week/month/year) is active.
+router.get('/api/calendar', (req, res) => {
+  const canvasTitles = new Map(stmt.allCanvases.all().map(c => [c.id, c.title]));
+  const rows = db.prepare('SELECT id, canvasId, type, data FROM items WHERE deletedAt IS NULL').all();
+  const entries = [];
+  for (const r of rows) {
+    let data;
+    try { data = JSON.parse(r.data); } catch (e) { continue; }
+    const canvasTitle = canvasTitles.get(r.canvasId) || '';
+    if (data.due) {
+      entries.push({
+        date: data.due, kind: 'item', id: r.id, canvasId: r.canvasId, canvasTitle,
+        title: previewTextFor({ type: r.type, data }), itemType: r.type, done: false
+      });
+    }
+    if (r.type === 'todo' && Array.isArray(data.tasks)) {
+      for (const t of data.tasks) {
+        if (!t.due) continue;
+        entries.push({
+          date: t.due, kind: 'task', id: t.id, canvasId: r.canvasId, canvasTitle,
+          listId: r.id, title: t.text || 'Task', done: !!t.done
+        });
+      }
+    }
+  }
+  entries.sort((a, b) => a.date.localeCompare(b.date));
+  res.json({ entries });
+});
+
 router.get('/api/health', (req, res) => res.json({ ok: true }));
 
 module.exports = router;

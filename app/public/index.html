@@ -37,6 +37,9 @@
     <button class="theme-toggle" id="quickNotesBtn" title="Quick notes" aria-label="Open quick notes">
       <i data-lucide="list-checks"></i>
     </button>
+    <button class="theme-toggle" id="calendarBtn" title="Calendar" aria-label="Open calendar">
+      <i data-lucide="calendar-days"></i>
+    </button>
     <button class="theme-toggle" id="settingsBtn" title="Settings" aria-label="Open settings">
       <i data-lucide="settings"></i>
     </button>
@@ -356,6 +359,32 @@
       <button id="mmCtxHighlight"><i data-lucide="git-fork"></i> Show connected</button>
       <button id="mmCtxConnect"><i data-lucide="radar"></i> Connect from here</button>
       <button id="mmCtxOpen"><i data-lucide="arrow-up-right"></i> Open</button>
+    </div>
+  </div>
+</div>
+
+<div id="calendarView" hidden>
+  <div class="cal-top">
+    <button class="mm-close" id="calClose"><i data-lucide="x"></i> Close</button>
+    <h3>Calendar</h3>
+    <div class="cal-view-toggle" id="calViewToggle">
+      <button type="button" data-view="day">Day</button>
+      <button type="button" data-view="week">Week</button>
+      <button type="button" data-view="month" class="on">Month</button>
+      <button type="button" data-view="year">Year</button>
+    </div>
+    <div class="cal-nav">
+      <button id="calPrev" aria-label="Previous"><i data-lucide="chevron-left"></i></button>
+      <span id="calPeriodLabel"></span>
+      <button id="calNext" aria-label="Next"><i data-lucide="chevron-right"></i></button>
+      <button id="calToday">Today</button>
+    </div>
+  </div>
+  <div class="cal-scroll">
+    <div class="cal-body" id="calBody"></div>
+    <div class="cal-upcoming">
+      <h4>Upcoming</h4>
+      <div id="calUpcomingList"></div>
     </div>
   </div>
 </div>
