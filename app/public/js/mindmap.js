@@ -16,17 +16,18 @@ import { openConnectPicker } from './connect.js';
 // an ever-growing fixed-radius ring, regularly overlapping a neighboring
 // board's own cluster with no sense of what actually related to what.
 //
-// Edges come from five places: board nesting (parent/child canvases),
+// Edges come from four places: board nesting (parent/child canvases),
 // board -> its own expanded satellite items (or -> the item's own column,
-// once columns can themselves be satellites -- see below), item <-> item
-// for any Line the user has actually drawn between two items open on the
-// same board (public/js/lines.js) -- both endpoints have to be currently-
-// visible satellites for the edge to render -- item <-> item zigzag edges
-// between cards sharing a column (visually distinct from a real Line), and
-// cross-board Connect badges (public/js/connect.js), which unlike Line can
-// link two items on entirely different boards and always render (using
-// whichever end -- the specific card or its board's own hub -- is
-// currently visible) rather than requiring both ends expanded.
+// once columns can themselves be satellites -- teal instead of the usual
+// gray, since a column child's spoke *is* its "these are grouped" signal --
+// no separate line drawn on top of it), item <-> item for any Line the user
+// has actually drawn between two items open on the same board
+// (public/js/lines.js) -- both endpoints have to be currently-visible
+// satellites for the edge to render -- and cross-board Connect badges
+// (public/js/connect.js), which unlike Line can link two items on entirely
+// different boards and always render (using whichever end -- the specific
+// card or its board's own hub -- is currently visible) rather than
+// requiring both ends expanded.
 //
 // Positions persist across renders in `simPositions`, keyed by node id
 // (board canvasId or item id — distinct id namespaces, no collision) and
@@ -375,17 +376,18 @@ async function renderGraph() {
     lineEdges.push(le);
   }
 
-  // Column-group edges: consecutive siblings (server child order, i.e.
-  // it.y -- not a full pairwise mesh, which would be O(n^2) edges for a
-  // larger column) chained together, rendered as a literal zigzag so
-  // "these are grouped" reads as visually distinct from a real Line.
+  // Column-group *attraction*: consecutive siblings (server child order,
+  // i.e. it.y -- not a full pairwise mesh, which would be O(n^2) edges for
+  // a larger column) chained together so they cluster tightly in the
+  // simulation. Not rendered as its own line anymore -- the column-child
+  // spoke edge is already teal (mm-sat-edge-group, see below), and a
+  // second zigzag line on top of that was two lines for one relationship.
   const columnGroups = new Map(); // columnId -> its visible children
   for (const s of satellites) {
     if (!s.it.parentItemId || !visibleSatIds.has(s.it.parentItemId)) continue;
     if (!columnGroups.has(s.it.parentItemId)) columnGroups.set(s.it.parentItemId, []);
     columnGroups.get(s.it.parentItemId).push(s.it);
   }
-  const groupEdges = [];
   for (const members of columnGroups.values()) {
     if (members.length < 2) continue;
     members.sort((a, b) => (a.y || 0) - (b.y || 0));
@@ -393,7 +395,6 @@ async function renderGraph() {
       const a = members[i].id, b = members[i + 1].id;
       edges.push({ a, b, rest: REST_GROUP, k: SPRING_GROUP });
       bump(a); bump(b);
-      groupEdges.push({ a, b });
     }
   }
 
@@ -448,11 +449,10 @@ async function renderGraph() {
   const edgeLayer = document.createElementNS(SVG_NS, 'g'); edgeLayer.setAttribute('class', 'mm-edges');
   const satEdgeLayer = document.createElementNS(SVG_NS, 'g'); satEdgeLayer.setAttribute('class', 'mm-sat-edges');
   const lineEdgeLayer = document.createElementNS(SVG_NS, 'g'); lineEdgeLayer.setAttribute('class', 'mm-line-edges');
-  const groupEdgeLayer = document.createElementNS(SVG_NS, 'g'); groupEdgeLayer.setAttribute('class', 'mm-group-edges');
   const connectEdgeLayer = document.createElementNS(SVG_NS, 'g'); connectEdgeLayer.setAttribute('class', 'mm-connect-edges');
   const nodeLayer = document.createElementNS(SVG_NS, 'g'); nodeLayer.setAttribute('class', 'mm-nodes');
   const satLayer = document.createElementNS(SVG_NS, 'g'); satLayer.setAttribute('class', 'mm-sats');
-  world.append(edgeLayer, satEdgeLayer, lineEdgeLayer, groupEdgeLayer, connectEdgeLayer, nodeLayer, satLayer);
+  world.append(edgeLayer, satEdgeLayer, lineEdgeLayer, connectEdgeLayer, nodeLayer, satLayer);
 
   const drawLine = (layer, aId, bId, cls, titleText) => {
     const a = simPositions.get(aId), b = simPositions.get(bId);
@@ -463,28 +463,6 @@ async function renderGraph() {
     line.dataset.a = aId; line.dataset.b = bId;
     if (titleText) { const t = document.createElementNS(SVG_NS, 'title'); t.textContent = titleText; line.appendChild(t); }
     layer.appendChild(line);
-  };
-
-  // A literal zigzag polyline (not just a dashed straight line) between two
-  // column siblings, alternating a fixed perpendicular offset along the
-  // straight path between them.
-  const drawZigzag = (layer, aId, bId, cls) => {
-    const a = simPositions.get(aId), b = simPositions.get(bId);
-    const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
-    const ux = dx / len, uy = dy / len, px = -uy, py = ux;
-    const segments = 6, amp = 7;
-    const pts = [];
-    for (let i = 0; i <= segments; i++) {
-      const t = i / segments;
-      const bx = a.x + dx * t, by = a.y + dy * t;
-      const off = (i === 0 || i === segments) ? 0 : (i % 2 === 0 ? amp : -amp);
-      pts.push((bx + px * off) + ',' + (by + py * off));
-    }
-    const poly = document.createElementNS(SVG_NS, 'polyline');
-    poly.setAttribute('points', pts.join(' '));
-    poly.setAttribute('class', cls);
-    poly.dataset.a = aId; poly.dataset.b = bId;
-    layer.appendChild(poly);
   };
 
   for (const n of boardNodes) {
@@ -499,7 +477,6 @@ async function renderGraph() {
     drawLine(satEdgeLayer, parentVisible ? s.it.parentItemId : s.boardId, s.it.id, parentVisible ? 'mm-sat-edge mm-sat-edge-group' : 'mm-sat-edge');
   }
   for (const le of lineEdges) drawLine(lineEdgeLayer, le.fromId, le.toId, 'mm-line-edge');
-  for (const ge of groupEdges) drawZigzag(groupEdgeLayer, ge.a, ge.b, 'mm-group-edge');
   for (const ce of connectEdges) drawLine(connectEdgeLayer, ce.a, ce.b, 'mm-connect-edge', ce.note ? ce.label + ' — ' + ce.note : ce.label);
 
   for (const n of boardNodes) {

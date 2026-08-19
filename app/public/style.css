@@ -1285,13 +1285,10 @@ body.qn-open .toast {
    needs both endpoints visible), since the point is showing the link
    exists even when you haven't expanded either board yet. */
 .mm-connect-edge { stroke: var(--c-purple); stroke-width: 1.8; opacity: .7; fill: none; }
-/* Items sharing a column -- a literal zigzag polyline (not just a dashed
-   straight line), rendered by zigzagPoints() in mindmap.js. */
-.mm-group-edge { stroke: var(--c-teal); stroke-width: 1.5; opacity: .8; fill: none; stroke-linejoin: round; }
 /* "Show connected" (mind-map context menu) -- a temporary, class-only
    dim/highlight, no layout change. transition makes it read as a toggle
    rather than a jarring snap. */
-.mm-node, .mm-sat, .mm-edges line, .mm-sat-edges line, .mm-line-edges line, .mm-group-edges polyline, .mm-connect-edges line {
+.mm-node, .mm-sat, .mm-edges line, .mm-sat-edges line, .mm-line-edges line, .mm-connect-edges line {
   transition: opacity .15s ease;
 }
 .mm-dim { opacity: .12; }
