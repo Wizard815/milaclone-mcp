@@ -7,7 +7,6 @@ import { select, deleteItem, saveData } from './editing.js';
 import { disarm } from './tools.js';
 import { screenToWorld } from './viewport.js';
 
-const GAP = 20; // px between a card's edge and where the solid connector starts
 
 // Connector lines between two cards. Unlike every other item type, a line
 // has no box of its own on the canvas — it's just a fromId/toId pair drawn
@@ -90,16 +89,13 @@ function edgePoint(rect, tx, ty) {
   return { x: rect.cx + dx * scale, y: rect.cy + dy * scale };
 }
 
-// The dot sits GAP px outside the card, along the same ray, so the main
-// connector line and its arrowhead never overlap the card face itself. The
-// gap between the card edge and the dot is bridged by a short dashed stub
-// (drawn separately) — the connector itself stays solid.
+// Direct connection: the dot (and the line itself) sits right on the card
+// edge, no offset — this used to sit a fixed gap outside the card, bridged
+// by a separate dashed stub, but that read as a gap in the connection
+// rather than a direct one.
 function attachPoint(rect, tx, ty) {
   const edge = edgePoint(rect, tx, ty);
-  const dx = edge.x - rect.cx, dy = edge.y - rect.cy;
-  const len = Math.hypot(dx, dy) || 1;
-  const dot = { x: edge.x + (dx / len) * GAP, y: edge.y + (dy / len) * GAP };
-  return { edge, dot };
+  return { edge, dot: edge };
 }
 
 export function renderLines() {
@@ -150,20 +146,12 @@ export function renderLines() {
     vis.setAttribute('stroke', color);
     vis.setAttribute('marker-end', `url(#${markerId})`);
     g.appendChild(hit); g.appendChild(vis);
-    // Short dashed stub bridging the card's edge to where the solid
-    // connector starts, plus the dot marker sitting right on the edge. The
-    // dot itself is decorative (pointer-events:none in CSS) — a much bigger
-    // invisible circle underneath it is the actual, easy-to-grab drag
-    // target, same trick as the wide invisible .chit under the visible line.
+    // A dot marker sits right on the card edge, decorative (pointer-
+    // events:none in CSS) — a much bigger invisible circle underneath it is
+    // the actual, easy-to-grab drag target, same trick as the wide
+    // invisible .chit under the visible line.
     for (const attach of [fromAttach, toAttach]) {
       const isFrom = attach === fromAttach;
-      const stub = document.createElementNS(SVG_NS, 'line');
-      stub.setAttribute('x1', attach.edge.x); stub.setAttribute('y1', attach.edge.y);
-      stub.setAttribute('x2', attach.dot.x); stub.setAttribute('y2', attach.dot.y);
-      stub.setAttribute('class', 'cstub');
-      stub.setAttribute('stroke', color);
-      g.appendChild(stub);
-
       const grabArea = document.createElementNS(SVG_NS, 'circle');
       grabArea.setAttribute('cx', attach.edge.x); grabArea.setAttribute('cy', attach.edge.y); grabArea.setAttribute('r', 14);
       grabArea.setAttribute('class', 'cdot-grab');

@@ -54,6 +54,48 @@ export function loadCam(id) {
   return { x: 80, y: 60, scale: 1 };
 }
 
+const DEFAULT_CAM = { x: 80, y: 60, scale: 1 };
+
+// A per-board "Home View" (right-click the reset-view button to set it to
+// wherever you're currently looking) — distinct from the hardcoded default
+// above, and from the per-board cam: saved on every pan/zoom (loadCam) --
+// this one only changes when explicitly set, so it's a stable "reset to
+// here" point rather than wherever you last happened to leave the camera.
+function loadHomeCam(id) {
+  try { const c = JSON.parse(localStorage.getItem('homeCam:' + id)); if (c && c.scale) return c; } catch (e) {}
+  return null;
+}
+
+// Small one-row popup reusing #ctxmenu (the item context menu's own DOM
+// element and .ctx-item styling) rather than a dedicated component — it
+// already dismisses on an outside click/Escape via the existing global
+// listeners in main.js, which key off the element itself, not anything
+// menus.js-specific.
+function openResetCtx(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  if (!state.view.canvas) return;
+  dom.ctxmenu.innerHTML = '';
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'ctx-item';
+  b.textContent = 'Set current view as Home';
+  b.onclick = () => {
+    localStorage.setItem('homeCam:' + state.view.canvas.id, JSON.stringify(state.cam));
+    toast('Home view set for this board');
+    dom.ctxmenu.classList.remove('open');
+    dom.ctxmenu.innerHTML = '';
+  };
+  dom.ctxmenu.appendChild(b);
+  dom.ctxmenu.classList.add('open');
+  const mw = 220, mh = dom.ctxmenu.offsetHeight || 50;
+  let left = e.clientX, top = e.clientY;
+  if (left + mw > window.innerWidth) left = window.innerWidth - mw - 8;
+  if (top + mh > window.innerHeight) top = window.innerHeight - mh - 8;
+  dom.ctxmenu.style.left = left + 'px';
+  dom.ctxmenu.style.top = top + 'px';
+}
+
 export function zoomBy(factor) {
   const r = dom.stage.getBoundingClientRect();
   const px = r.width / 2, py = r.height / 2;
@@ -103,7 +145,12 @@ function initPinch() {
 export function initViewport() {
   document.getElementById('zoomIn').onclick = () => zoomBy(1.2);
   document.getElementById('zoomOut').onclick = () => zoomBy(1 / 1.2);
-  document.getElementById('zoomReset').onclick = () => { state.cam = { x: 80, y: 60, scale: 1 }; applyCam(); };
+  document.getElementById('zoomReset').onclick = () => {
+    const home = state.view.canvas ? loadHomeCam(state.view.canvas.id) : null;
+    state.cam = home || { ...DEFAULT_CAM };
+    applyCam();
+  };
+  document.getElementById('zoomReset').addEventListener('contextmenu', openResetCtx);
   document.getElementById('exportBtn').onclick = () => toast('Tip: your boards auto-save to the server');
 
   dom.stage.addEventListener('wheel', (e) => {

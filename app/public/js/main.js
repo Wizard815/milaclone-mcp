@@ -25,7 +25,15 @@ import { initConnectPicker, isConnectPickerOpen } from './connect.js';
 // and boot. Wiring for the viewport and toolbar lives in their own modules and
 // is activated here.
 
+// "Last Page" (topbar button) always jumps to wherever you were immediately
+// before the board you're on now -- one level of back, not a full history
+// stack. Recorded here, before state.view is overwritten, so it's always
+// the board being *left*, not the one being entered; skips same-board
+// navigation (e.g. a hash update that doesn't actually change boards) so it
+// never points at itself.
 export async function openCanvas(id) {
+  const prevId = state.view.canvas ? state.view.canvas.id : null;
+  if (prevId && prevId !== id) localStorage.setItem('lastCanvasId', prevId);
   state.view = await api.canvas(id);
   if (state.view.error) { if (id !== state.rootCanvasId) return openCanvas(state.rootCanvasId); toast('Board not found'); return; }
   state.cam = loadCam(id);
@@ -78,6 +86,12 @@ window.addEventListener('hashchange', () => {
   const id = location.hash.slice(1);
   if (id && (!state.view.canvas || id !== state.view.canvas.id)) openCanvas(id);
 });
+
+document.getElementById('lastPageBtn').onclick = () => {
+  const id = localStorage.getItem('lastCanvasId');
+  if (!id) { toast('No previous board yet'); return; }
+  openCanvas(id);
+};
 
 initViewport();
 initMobile();
