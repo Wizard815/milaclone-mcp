@@ -2,7 +2,7 @@
 
 import { state, dom } from './state.js';
 import { api } from './api.js';
-import { dueInfo } from './util.js';
+import { dueInfo, lucideEl } from './util.js';
 import { applyCam } from './viewport.js';
 import { select } from './editing.js';
 import { openCanvas } from './main.js';
@@ -113,13 +113,14 @@ function monthCell(d) {
   const dayEntries = byDate.get(iso) || [];
   const cell = document.createElement('button');
   cell.type = 'button';
-  cell.className = 'cal-day' + (dayEntries.length ? ' has-entries' : '') + (sameDay(d, new Date()) ? ' today' : '');
+  const hasStar = dayEntries.some(e => e.starred);
+  cell.className = 'cal-day' + (dayEntries.length ? ' has-entries' : '') + (hasStar ? ' has-starred' : '') + (sameDay(d, new Date()) ? ' today' : '');
   if (d.getMonth() !== refDate.getMonth()) cell.classList.add('dim');
   const num = document.createElement('span'); num.className = 'cal-day-num'; num.textContent = d.getDate();
   cell.appendChild(num);
   if (dayEntries.length) {
     const dot = document.createElement('span');
-    dot.className = 'cal-dot';
+    dot.className = 'cal-dot' + (hasStar ? ' starred' : '');
     if (dayEntries.length > 1) dot.textContent = String(dayEntries.length);
     cell.appendChild(dot);
   }
@@ -190,9 +191,11 @@ function renderYear() {
     const start = startOfWeek(new Date(refDate.getFullYear(), m, 1));
     for (let i = 0; i < 42; i++) {
       const d = new Date(start); d.setDate(start.getDate() + i);
-      const has = byDate.has(toISO(d));
+      const dayEntries = byDate.get(toISO(d)) || [];
+      const has = dayEntries.length > 0;
+      const hasStar = dayEntries.some(e => e.starred);
       const dot = document.createElement('span');
-      dot.className = 'cal-year-dot' + (has ? ' has-entries' : '') + (d.getMonth() !== m ? ' dim' : '') + (sameDay(d, new Date()) ? ' today' : '');
+      dot.className = 'cal-year-dot' + (has ? ' has-entries' : '') + (hasStar ? ' has-starred' : '') + (d.getMonth() !== m ? ' dim' : '') + (sameDay(d, new Date()) ? ' today' : '');
       mini.appendChild(dot);
     }
     wrap.appendChild(mini);
@@ -204,7 +207,8 @@ function renderYear() {
 function entryRow(en, cls, withBoard) {
   const row = document.createElement('button');
   row.type = 'button';
-  row.className = cls + (en.done ? ' done' : '');
+  row.className = cls + (en.done ? ' done' : '') + (en.starred ? ' starred' : '');
+  if (en.starred) { const s = document.createElement('span'); s.className = 'cal-star'; s.appendChild(lucideEl('star')); row.appendChild(s); }
   const title = document.createElement('span'); title.className = 'cal-entry-title'; title.textContent = en.title;
   row.appendChild(title);
   if (withBoard) { const board = document.createElement('span'); board.className = 'cal-entry-board'; board.textContent = en.canvasTitle; row.appendChild(board); }
@@ -228,8 +232,11 @@ function renderUpcoming() {
     const info = dueInfo(en.date);
     const row = document.createElement('button');
     row.type = 'button';
-    row.className = 'cal-upcoming-row' + (en.done ? ' done' : '') + (info && info.overdue && !en.done ? ' overdue' : '');
-    const title = document.createElement('span'); title.className = 'cal-upcoming-title'; title.textContent = en.title;
+    row.className = 'cal-upcoming-row' + (en.done ? ' done' : '') + (info && info.overdue && !en.done ? ' overdue' : '') + (en.starred ? ' starred' : '');
+    const title = document.createElement('span'); title.className = 'cal-upcoming-title';
+    if (en.starred) { const s = document.createElement('span'); s.className = 'cal-star'; s.appendChild(lucideEl('star')); title.appendChild(s); }
+    const titleText = document.createElement('span'); titleText.textContent = en.title;
+    title.appendChild(titleText);
     const board = document.createElement('span'); board.className = 'cal-upcoming-board'; board.textContent = en.canvasTitle;
     const when = document.createElement('span'); when.className = 'cal-upcoming-when'; when.textContent = info ? info.full : en.date;
     row.append(title, board, when);

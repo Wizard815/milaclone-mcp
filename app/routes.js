@@ -453,7 +453,7 @@ router.get('/api/calendar', (req, res) => {
     if (data.due) {
       entries.push({
         date: data.due, kind: 'item', id: r.id, canvasId: r.canvasId, canvasTitle,
-        title: previewTextFor({ type: r.type, data }), itemType: r.type, done: false
+        title: previewTextFor({ type: r.type, data }), itemType: r.type, done: false, starred: !!data.starred
       });
     }
     if (r.type === 'todo' && Array.isArray(data.tasks)) {
@@ -461,7 +461,7 @@ router.get('/api/calendar', (req, res) => {
         if (!t.due) continue;
         entries.push({
           date: t.due, kind: 'task', id: t.id, canvasId: r.canvasId, canvasTitle,
-          listId: r.id, title: t.text || 'Task', done: !!t.done
+          listId: r.id, title: t.text || 'Task', done: !!t.done, starred: !!t.starred
         });
       }
     }

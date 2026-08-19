@@ -276,9 +276,13 @@ function buildTodo(el, it) {
         if (e.key === 'Enter') { e.preventDefault(); const ni = { id: rid(), text: '', done: false }; tasks.splice(tasks.indexOf(task) + 1, 0, ni); saveData(it, { tasks }); renderTasks(); enterEdit(el); list.querySelectorAll('.txt')[tasks.indexOf(ni)].focus(); }
         if (e.key === 'Backspace' && tx.value === '' && tasks.length > 1) { e.preventDefault(); tasks.splice(tasks.indexOf(task), 1); saveData(it, { tasks }); renderTasks(); }
       });
+      const star = document.createElement('button'); star.className = 'task-star' + (task.starred ? ' on' : ''); star.setAttribute('data-nodrag', '');
+      star.appendChild(lucideEl('star'));
+      star.title = task.starred ? 'Unstar' : 'Star';
+      star.onclick = (e) => { e.stopPropagation(); task.starred = !task.starred; saveData(it, { tasks }); renderTasks(); };
       const del = document.createElement('button'); del.className = 'del'; del.textContent = '×'; del.setAttribute('data-nodrag', '');
       del.onclick = (e) => { e.stopPropagation(); tasks.splice(tasks.indexOf(task), 1); saveData(it, { tasks }); renderTasks(); };
-      row.appendChild(cb); row.appendChild(tx); row.appendChild(del);
+      row.appendChild(cb); row.appendChild(tx); row.appendChild(star); row.appendChild(del);
       list.appendChild(row);
       requestAnimationFrame(() => { autoGrow(tx); renderLines(); });
     });
