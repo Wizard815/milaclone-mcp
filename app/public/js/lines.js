@@ -80,21 +80,34 @@ function rectOf(id) {
   return { x: topLeft.x, y: topLeft.y, w, h, cx: topLeft.x + w / 2, cy: topLeft.y + h / 2 };
 }
 
-// Where a ray from the rect's center toward (tx,ty) exits the rectangle.
-function edgePoint(rect, tx, ty) {
-  const dx = tx - rect.cx, dy = ty - rect.cy;
+// Where a ray from the rect's center in direction (dx,dy) exits the
+// rectangle — dx/dy don't need to be normalized, only their ratio matters.
+function edgeAlongDir(rect, dx, dy) {
   if (!dx && !dy) return { x: rect.cx, y: rect.cy };
   const hw = rect.w / 2, hh = rect.h / 2;
   const scale = Math.min(dx ? Math.abs(hw / dx) : Infinity, dy ? Math.abs(hh / dy) : Infinity);
   return { x: rect.cx + dx * scale, y: rect.cy + dy * scale };
 }
 
+// Where a ray from the rect's center toward (tx,ty) exits the rectangle —
+// the default, automatic attach point (always the side facing the other
+// card) used whenever there's no manual override.
+function edgePoint(rect, tx, ty) {
+  return edgeAlongDir(rect, tx - rect.cx, ty - rect.cy);
+}
+
 // Direct connection: the dot (and the line itself) sits right on the card
 // edge, no offset — this used to sit a fixed gap outside the card, bridged
 // by a separate dashed stub, but that read as a gap in the connection
 // rather than a direct one.
-function attachPoint(rect, tx, ty) {
-  const edge = edgePoint(rect, tx, ty);
+//
+// anchorDir (optional): a stored {x,y} direction from the card's center,
+// set by dragging the endpoint dot around on its own card (see
+// grabArea's pointerdown below) — overrides the automatic side-facing-the-
+// other-card placement so a line can point at a specific corner/edge
+// instead of always the geometrically closest point.
+function attachPoint(rect, tx, ty, anchorDir) {
+  const edge = anchorDir ? edgeAlongDir(rect, anchorDir.x, anchorDir.y) : edgePoint(rect, tx, ty);
   return { edge, dot: edge };
 }
 
@@ -111,8 +124,8 @@ export function renderLines() {
       deleteItem(line.id, { trackUndo: false });
       continue;
     }
-    const fromAttach = attachPoint(fromRect, toRect.cx, toRect.cy);
-    const toAttach = attachPoint(toRect, fromRect.cx, fromRect.cy);
+    const fromAttach = attachPoint(fromRect, toRect.cx, toRect.cy, line.data.fromAnchorDir);
+    const toAttach = attachPoint(toRect, fromRect.cx, fromRect.cy, line.data.toAnchorDir);
     const from = fromAttach.dot, to = toAttach.dot;
     const mx = (from.x + to.x) / 2, my = (from.y + to.y) / 2;
     const ddx = to.x - from.x, ddy = to.y - from.y;
@@ -161,16 +174,36 @@ export function renderLines() {
       dot.setAttribute('fill', color);
       g.appendChild(grabArea); g.appendChild(dot);
 
-      // Drag an endpoint dot onto a different card to re-point the
-      // connector at it. Dropping on empty canvas or the same card cancels.
+      // Drag an endpoint dot onto a *different* card to re-point the
+      // connector at it. Drag it around while staying off any other card
+      // (over its own card, or empty space) to instead slide where on its
+      // own card's edge it attaches — a live preview follows the cursor via
+      // the same anchorDir attachPoint() reads, reverted if you drop on
+      // empty canvas, kept if you drop back on the own card, replaced with
+      // the default automatic placement if you retarget to a new card.
       grabArea.addEventListener('pointerdown', (e) => {
         e.stopPropagation(); e.preventDefault();
         select(line.id);
+        const ownId = isFrom ? line.data.fromId : line.data.toId;
         const otherId = isFrom ? line.data.toId : line.data.fromId;
+        const origDir = isFrom ? line.data.fromAnchorDir : line.data.toAnchorDir;
+        const setDir = (dir) => { if (isFrom) line.data.fromAnchorDir = dir; else line.data.toAnchorDir = dir; };
         const move = (ev) => {
           document.querySelectorAll('.item.line-target').forEach(el => el.classList.remove('line-target'));
           const overEl = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.item');
-          if (overEl && overEl.dataset.id !== otherId) overEl.classList.add('line-target');
+          if (overEl && overEl.dataset.id !== otherId && overEl.dataset.id !== ownId) {
+            overEl.classList.add('line-target');
+            return;
+          }
+          // Not hovering a valid retarget candidate — slide the attach
+          // point toward the cursor along the own card's own edge instead.
+          const rect = rectOf(ownId);
+          if (!rect) return;
+          const w = screenToWorld(ev.clientX, ev.clientY);
+          const dx = w.x - rect.cx, dy = w.y - rect.cy;
+          const len = Math.hypot(dx, dy) || 1;
+          setDir({ x: dx / len, y: dy / len });
+          renderLines();
         };
         const up = (ev) => {
           document.removeEventListener('pointermove', move);
@@ -178,9 +211,17 @@ export function renderLines() {
           document.querySelectorAll('.item.line-target').forEach(el => el.classList.remove('line-target'));
           const overEl = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.item');
           const newId = overEl && overEl.dataset.id;
-          if (newId && newId !== otherId && newId !== (isFrom ? line.data.fromId : line.data.toId)) {
-            const patch = isFrom ? { fromId: newId } : { toId: newId };
-            saveData(line, patch);
+          if (newId && newId !== otherId && newId !== ownId) {
+            // Retargeted to a different card — the old custom anchor was
+            // relative to the card that's no longer this endpoint, so drop
+            // it in favor of the new target's automatic placement.
+            setDir(null);
+            saveData(line, isFrom ? { fromId: newId, fromAnchorDir: null } : { toId: newId, toAnchorDir: null });
+          } else if (newId === ownId) {
+            saveData(line, isFrom ? { fromAnchorDir: line.data.fromAnchorDir } : { toAnchorDir: line.data.toAnchorDir });
+          } else {
+            // Dropped on empty canvas — cancel, revert the live preview.
+            setDir(origDir);
           }
           renderLines();
         };
