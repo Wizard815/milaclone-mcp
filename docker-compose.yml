@@ -22,6 +22,10 @@ services:
       # same value up automatically. Leave unset to run the API open (fine
       # on a trusted LAN + tunnel setup).
       - API_KEY=${API_KEY:-}
+      # Miladash "Promote to a project": where Pondering Orb is, and an Orb
+      # API token (one of Orb's ORB_API_TOKENS). Server-side only.
+      - ORB_URL=${ORB_URL:-}
+      - ORB_TOKEN=${ORB_TOKEN:-}
     networks:
       - edge
     deploy:
