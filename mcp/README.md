@@ -16,8 +16,10 @@ and standalone dev setup.
 | `update_canvas` | Rename/recolor/re-icon a board by canvas id (mainly for Home) |
 | `search` | Search card contents and board titles |
 | `list_todo_lists` | List every to-do checklist across the whole tree |
-| `create_item` | Create a note/todo/link/column/comment/board/heading/document/table/color/draw/line/shape card |
-| `update_item` | Edit a card's data/position/color/parent |
+| `create_item` | Create a note/todo/link/column/comment/board/heading/document/table/color/draw/line/shape card (optional `stage`; lines take `kind`) |
+| `update_item` | Edit a card's data/position/color/parent/stage |
+| `list_pipeline` | Miladash: every staged idea (thought/design/code), newest change first |
+| `promote_item` | Miladash: turn a Code-stage idea into a Pondering Orb project |
 | `delete_item` | Delete a card (recursively, if it's a nested board) |
 | `restore_item` | Undo a board's deletion (boards only — see below) |
 | `add_todo_task` | Append a task to a to-do card |

@@ -34,6 +34,15 @@ mcp = MCPServer("milaclone")
 
 _client: MilacloneClient | None = None
 
+STAGES = ("thought", "design", "code")
+LINE_KINDS = ("relates", "depends", "became")
+
+
+def _check_stage(stage: str | None) -> None:
+    if stage is not None and stage not in STAGES and stage not in ("", "none"):
+        raise ValueError(f"stage must be one of {STAGES} (or 'none' to clear), got {stage!r}")
+
+
 CREATABLE_TYPES = (
     "note", "todo", "link", "column", "comment", "board",
     "heading", "document", "table", "color", "draw", "line", "shape",
@@ -196,6 +205,7 @@ def create_item(
     w: int | None = None,
     color: str | None = None,
     parent_item_id: str | None = None,
+    stage: str | None = None,
 ) -> dict[str, Any]:
     """
     Create a card on a board.
@@ -229,6 +239,9 @@ def create_item(
                 pixel space (top-left = 0,0). Not practical to hand-author;
                 mainly useful for reading back what a user drew.
             line:     {"fromId": str, "toId": str, "label": str (optional),
+                "kind": "relates" | "depends" | "became" (optional, default
+                "relates"; "depends" draws dashed, "became" marks an idea
+                that turned into something else),
                 "bend": number (optional), "along": number (optional)} — a
                 connector between two *other* items already on this board
                 (by id). x/y/w are ignored for this type — the connector's
@@ -254,9 +267,16 @@ def create_item(
             can't be resized after creation.
         color: one of milaclone's palette names (e.g. "blue", "slate", "rose").
         parent_item_id: set to nest this card inside a `column` card.
+        stage: Miladash idea stage, one of "thought", "design", "code" (omit
+            for a card that isn't in the idea pipeline). Stage is a field,
+            not a position: it shows as a chip on the card and puts the card
+            in the Pipeline view's matching column.
 
     Returns the created item, including its new `id`.
     """
+    _check_stage(stage)
+    if item_type == "line" and data.get("kind") not in (None, *LINE_KINDS):
+        raise ValueError(f"line kind must be one of {LINE_KINDS}")
     if item_type not in CREATABLE_TYPES:
         raise ValueError(f"item_type must be one of {CREATABLE_TYPES}, got {item_type!r}")
     body: dict[str, Any] = {
@@ -272,6 +292,8 @@ def create_item(
         body["color"] = color
     if parent_item_id is not None:
         body["parentItemId"] = parent_item_id
+    if stage:
+        body["stage"] = stage
     return _get_client().create_item(body)
 
 
@@ -286,6 +308,7 @@ def update_item(
     color: str | None = None,
     canvas_id: str | None = None,
     parent_item_id: str | None = None,
+    stage: str | None = None,
 ) -> dict[str, Any]:
     """
     Partially update a card. Only pass the fields you want to change.
@@ -297,7 +320,12 @@ def update_item(
     pass the full tasks list yourself.
 
     `canvas_id`/`parent_item_id` move the card to a different board/column.
+
+    `stage` sets the Miladash idea stage ("thought", "design", "code"); pass
+    "none" to take the card out of the pipeline. For a `line`, set
+    data={"kind": "relates" | "depends" | "became"} and/or {"label": str}.
     """
+    _check_stage(stage)
     body: dict[str, Any] = {}
     if data is not None:
         body["data"] = data
@@ -315,7 +343,30 @@ def update_item(
         body["canvasId"] = canvas_id
     if parent_item_id is not None:
         body["parentItemId"] = parent_item_id
+    if stage is not None:
+        body["stage"] = None if stage in ("", "none") else stage
     return _get_client().patch_item(item_id, body)
+
+
+@mcp.tool()
+def list_pipeline() -> dict[str, Any]:
+    """
+    List every card that has a Miladash stage, across all boards, newest
+    change first. Each item has `stage`, `_title` and `_canvasTitle` (the
+    board it sits on), and `data.promoted` once it became an Orb project.
+    """
+    return _get_client().get_pipeline()
+
+
+@mcp.tool()
+def promote_item(item_id: str) -> dict[str, Any]:
+    """
+    Promote a Code-stage idea to a project in Pondering Orb. The Miladash
+    server makes the call (it holds ORB_URL/ORB_TOKEN) and marks the card
+    promoted. Fails if the card isn't at stage "code", is already promoted,
+    or the server has no ORB_URL.
+    """
+    return _get_client().promote_item(item_id)
 
 
 @mcp.tool()

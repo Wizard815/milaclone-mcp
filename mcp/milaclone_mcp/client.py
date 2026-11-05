@@ -28,6 +28,15 @@ class MilacloneClient:
             )
         if resp.status_code == 404:
             raise NotFoundError(f"Not found: {resp.request.url}")
+        if resp.status_code >= 400:
+            # Surface the server's own explanation (e.g. "Only ideas at the
+            # Code stage can be promoted.") instead of a bare status code.
+            try:
+                msg = resp.json().get("error")
+            except ValueError:
+                msg = None
+            if msg:
+                raise MilacloneError(f"milaclone answered {resp.status_code}: {msg}")
         resp.raise_for_status()
         try:
             return resp.json()
@@ -81,6 +90,14 @@ class MilacloneClient:
     def restore_item(self, item_id: str) -> dict[str, Any]:
         """POST /api/item/{id}/restore — undo a board's deletion (see delete_item)."""
         return self._post(f"/api/item/{item_id}/restore", {})
+
+    def promote_item(self, item_id: str) -> dict[str, Any]:
+        """POST /api/item/{id}/promote — create an Orb project from a Code-stage idea."""
+        return self._post(f"/api/item/{item_id}/promote", {})
+
+    def get_pipeline(self) -> dict[str, Any]:
+        """GET /api/pipeline — every staged card, newest change first."""
+        return self._get("/api/pipeline")
 
     # ---- Quick notes / search ---------------------------------------------
     def get_todos(self) -> dict[str, Any]:
