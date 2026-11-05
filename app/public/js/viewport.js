@@ -151,7 +151,6 @@ export function initViewport() {
     applyCam();
   };
   document.getElementById('zoomReset').addEventListener('contextmenu', openResetCtx);
-  document.getElementById('exportBtn').onclick = () => toast('Tip: your boards auto-save to the server');
 
   dom.stage.addEventListener('wheel', (e) => {
     e.preventDefault();

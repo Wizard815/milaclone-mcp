@@ -16,6 +16,7 @@ function clonePayload(it) {
     w: it.w,
     h: it.h,
     color: it.color,
+    stage: it.stage || null,
     data: JSON.parse(JSON.stringify(it.data || {})),
     _childTitle: it._childTitle,
     _childIcon: it._childIcon,
@@ -40,6 +41,7 @@ export async function pasteClipboard(wx, wy) {
   const y = Math.round(wy != null ? wy : ((sel && sel.y) || 80) + 24);
   const data = Object.assign({}, base.data);
   delete data.locked;
+  if (!state.clipboard.cut) delete data.promoted; // a copy is a new idea; a cut-paste is the same one
   if (base.type === 'board') {
     data.title = (base._childTitle || 'Untitled board') + ' copy';
     if (base._childIcon) data.icon = base._childIcon;
@@ -51,6 +53,7 @@ export async function pasteClipboard(wx, wy) {
     x, y,
     w: base.w || defaultsFor(base.type).w,
     color: base.color || base._childColor || null,
+    stage: base.stage || null,
     data
   };
   if (base.h != null) body.h = base.h; // e.g. a stretched shape — omit to fall back to the type's default sizing

@@ -15,6 +15,9 @@ import { screenToWorld } from './viewport.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
+// Miladash arrow kinds (stored in data.kind; missing means "relates").
+export const LINE_KINDS = { relates: 'Relates to', depends: 'Depends on', became: 'Became' };
+
 // Reused across calls rather than recreated, since renderLines() runs on
 // every drag/resize tick (not just on a full render()) — recreating it each
 // time would pile up stale detached-looking duplicates as the drag proceeds.
@@ -147,8 +150,11 @@ export function renderLines() {
     const markerId = 'arrow-' + line.id;
     addArrowMarker(defs, markerId, color);
 
+    const kind = LINE_KINDS[line.data.kind] ? line.data.kind : 'relates';
     const g = document.createElementNS(SVG_NS, 'g');
-    g.classList.add('cline');
+    g.classList.add('cline', 'kind-' + kind);
+    g.dataset.id = line.id;
+    g.dataset.kind = kind;
     const selected = line.id === state.selectedId;
     if (selected) g.classList.add('selected');
     const d = `M ${from.x},${from.y} Q ${ctrl.x},${ctrl.y} ${to.x},${to.y}`;
@@ -158,6 +164,8 @@ export function renderLines() {
     vis.setAttribute('d', d); vis.setAttribute('class', 'cvis');
     vis.setAttribute('stroke', color);
     vis.setAttribute('marker-end', `url(#${markerId})`);
+    // depends on: dashed. became: heavier. relates to: plain.
+    if (kind === 'depends') vis.setAttribute('stroke-dasharray', '7 5');
     g.appendChild(hit); g.appendChild(vis);
     // A dot marker sits right on the card edge, decorative (pointer-
     // events:none in CSS) — a much bigger invisible circle underneath it is
@@ -182,7 +190,9 @@ export function renderLines() {
       // empty canvas, kept if you drop back on the own card, replaced with
       // the default automatic placement if you retarget to a new card.
       grabArea.addEventListener('pointerdown', (e) => {
-        e.stopPropagation(); e.preventDefault();
+        e.stopPropagation();
+        if (e.button === 2) return; // right-click: the line's context menu
+        e.preventDefault();
         select(line.id);
         const ownId = isFrom ? line.data.fromId : line.data.toId;
         const otherId = isFrom ? line.data.toId : line.data.fromId;
@@ -229,7 +239,14 @@ export function renderLines() {
         document.addEventListener('pointerup', up);
       });
     }
-    g.addEventListener('pointerdown', (e) => { e.stopPropagation(); e.preventDefault(); select(line.id); renderLines(); });
+    g.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      // Right button: leave the DOM alone so the contextmenu event still
+      // reaches this element (re-rendering here would detach it first).
+      if (e.button === 2) return;
+      e.preventDefault(); select(line.id); renderLines();
+    });
+    g.addEventListener('contextmenu', (e) => openLineCtx(e, line));
     layer.appendChild(g);
 
     if (selected) {
@@ -239,8 +256,11 @@ export function renderLines() {
       const handle = document.createElementNS(SVG_NS, 'circle');
       handle.setAttribute('cx', ctrl.x); handle.setAttribute('cy', ctrl.y); handle.setAttribute('r', 5);
       handle.setAttribute('class', 'cbend');
+      bendGrab.addEventListener('contextmenu', (e) => openLineCtx(e, line));
       bendGrab.addEventListener('pointerdown', (e) => {
-        e.stopPropagation(); e.preventDefault();
+        e.stopPropagation();
+        if (e.button === 2) return;
+        e.preventDefault();
         const move = (ev) => {
           const w = screenToWorld(ev.clientX, ev.clientY);
           const vx = w.x - mx, vy = w.y - my;
@@ -263,6 +283,7 @@ export function renderLines() {
     if (selected || line.data.label) {
       const label = document.createElement('div');
       label.className = 'cline-label';
+      label.dataset.lineId = line.id;
       label.contentEditable = 'true';
       label.dataset.placeholder = 'Add label';
       label.textContent = line.data.label || '';
@@ -295,6 +316,50 @@ export function renderLines() {
   }
 }
 
+// Right-click menu on a connector: its kind, its label, delete.
+function openLineCtx(e, line) {
+  e.preventDefault(); e.stopPropagation();
+  select(line.id);
+  renderLines();
+  const menu = dom.ctxmenu;
+  menu.innerHTML = '';
+  const add = (label, fn, opts = {}) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'ctx-item' + (opts.danger ? ' danger' : '') + (opts.on ? ' on' : '');
+    if (opts.act) b.dataset.act = opts.act;
+    const lab = document.createElement('span'); lab.textContent = label; b.appendChild(lab);
+    if (opts.on) { const k = document.createElement('kbd'); k.textContent = '✓'; b.appendChild(k); }
+    b.onclick = () => { menu.classList.remove('open'); menu.innerHTML = ''; fn(); };
+    menu.appendChild(b);
+  };
+  const sep = () => { const s = document.createElement('div'); s.className = 'ctx-sep'; menu.appendChild(s); };
+  const cur = LINE_KINDS[line.data.kind] ? line.data.kind : 'relates';
+  for (const [k, text] of Object.entries(LINE_KINDS)) {
+    add(text, () => { saveData(line, { kind: k }); renderLines(); }, { on: k === cur, act: 'kind-' + k });
+  }
+  sep();
+  add(line.data.label ? 'Edit label' : 'Add label', () => editLineLabel(line.id), { act: 'label' });
+  sep();
+  add('Delete line', () => deleteItem(line.id), { danger: true, act: 'delete' });
+  menu.classList.add('open');
+  const mw = 220, mh = menu.offsetHeight || 200;
+  let left = e.clientX, top = e.clientY;
+  if (left + mw > window.innerWidth) left = window.innerWidth - mw - 8;
+  if (top + mh > window.innerHeight) top = window.innerHeight - mh - 8;
+  menu.style.left = left + 'px'; menu.style.top = top + 'px';
+}
+
+function editLineLabel(lineId) {
+  select(lineId);
+  renderLines();
+  const label = labelEls.find(el => el.dataset.lineId === lineId);
+  if (!label) return;
+  label.focus();
+  const range = document.createRange(); range.selectNodeContents(label);
+  const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+}
+
 // Called from onItemPointerDown while the Line tool is armed, instead of
 // the normal select/drag flow: first card clicked becomes "from", second
 // becomes "to". Clicking the same card twice, or empty canvas, cancels.
@@ -317,7 +382,7 @@ export function cancelLine() {
 }
 
 async function createLine(fromId, toId) {
-  const body = { canvasId: state.view.canvas.id, type: 'line', x: 0, y: 0, w: 0, color: 'slate', data: { fromId, toId } };
+  const body = { canvasId: state.view.canvas.id, type: 'line', x: 0, y: 0, w: 0, color: 'slate', data: { fromId, toId, kind: 'relates' } };
   const it = await api.create(body);
   state.view.items.push(it);
   renderLines();

@@ -20,5 +20,9 @@ export const api = {
   async getSettings() { return (await fetch('/api/settings', { headers: authHeaders })).json(); },
   async patchSettings(body) { return (await fetch('/api/settings', { method:'PATCH', headers: jsonHeaders, body:JSON.stringify(body) })).json(); },
   async tags() { return (await fetch('/api/tags', { headers: authHeaders })).json(); },
-  async calendar() { return (await fetch('/api/calendar', { headers: authHeaders })).json(); }
+  async pipeline() { return (await fetch('/api/pipeline', { headers: authHeaders })).json(); },
+  async orb() { return (await fetch('/api/orb', { headers: authHeaders })).json(); },
+  async promote(id) { const r = await fetch('/api/item/' + id + '/promote', { method:'POST', headers: jsonHeaders, body:'{}' }); return { ok: r.ok, body: await r.json() }; },
+  async exportCanvas(id, nested) { const r = await fetch('/api/canvas/' + id + '/export' + (nested ? '?nested=1' : ''), { headers: authHeaders }); return r.json(); },
+  async importCanvas(id, body) { const r = await fetch('/api/canvas/' + id + '/import', { method:'POST', headers: jsonHeaders, body:JSON.stringify(body) }); return { ok: r.ok, body: await r.json() }; }
 };

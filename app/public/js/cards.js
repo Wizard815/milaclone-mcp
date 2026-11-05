@@ -12,6 +12,7 @@ import { openDrawEditor } from './draw-editor.js';
 import { renderLines } from './lines.js';
 import { navigateToConnect } from './connect.js';
 import { snapshotTaskEdit } from './undo.js';
+import { STAGE_LABELS } from './stages.js';
 
 // Rendering of the canvas and every card type. This module owns the DOM for
 // items; other modules ask it to (re)render when data changes.
@@ -70,7 +71,6 @@ export function renderItem(it) {
   el.dataset.id = it.id;
   if (state.selectedIds.has(it.id)) el.classList.add('selected');
   if (isLocked(it)) el.classList.add('locked');
-  if (it.type !== 'board' && it.data.starred) el.classList.add('starred');
   if (!it.parentItemId) {
     el.style.left = it.x + 'px'; el.style.top = it.y + 'px';
     el.style.width = (it.w || 240) + 'px';
@@ -99,6 +99,24 @@ export function renderItem(it) {
   else if (it.type === 'shape') buildShape(el, it);
   else if (it.type === 'connect') buildConnect(el, it);
 
+  // Miladash: stage chip (Thought / Design / Code) and the promoted state.
+  if (it.stage) {
+    el.dataset.stage = it.stage;
+    const chip = document.createElement('span');
+    chip.className = 'stage-chip stage-' + it.stage;
+    chip.textContent = STAGE_LABELS[it.stage] || it.stage;
+    chip.title = 'Stage (right-click to change)';
+    el.appendChild(chip);
+  }
+  if (it.data && it.data.promoted) {
+    el.classList.add('promoted');
+    const p = document.createElement('span');
+    p.className = 'promoted-chip';
+    p.textContent = 'Project';
+    p.title = 'Promoted to Pondering Orb' + (it.data.promoted.name ? ' as "' + it.data.promoted.name + '"' : '');
+    el.appendChild(p);
+  }
+
   // Boards use the rail / mobile footer for color·icon·rename·delete.
   // Other cards keep the floating properties badge.
   if (it.type !== 'board') {
@@ -123,14 +141,6 @@ export function renderItem(it) {
     tagBtn.title = 'Tags';
     tagBtn.onclick = (e) => { e.stopPropagation(); openTagPicker([it], tagBtn); };
     tools.appendChild(tagBtn);
-
-    const starBtn = document.createElement('button');
-    starBtn.setAttribute('data-nodrag', '');
-    starBtn.className = 'card-tool-btn' + (it.data.starred ? ' on' : '');
-    starBtn.appendChild(lucideEl('star'));
-    starBtn.title = it.data.starred ? 'Unstar' : 'Star';
-    starBtn.onclick = (e) => { e.stopPropagation(); saveData(it, { starred: !it.data.starred }); refreshItem(it); };
-    tools.appendChild(starBtn);
 
     const dueBtn = document.createElement('button');
     dueBtn.setAttribute('data-nodrag', '');
@@ -179,7 +189,7 @@ export function renderItem(it) {
     el.appendChild(tools);
 
     // Always-visible badges (unlike .card-tools, not gated behind .selected)
-    // so tags/star/due mean something at a glance, not just when editing.
+    // so tags/due mean something at a glance, not just when editing.
     const due = it.data.due ? dueInfo(it.data.due) : null;
     if (due) {
       const dueBadge = document.createElement('span');
@@ -268,7 +278,7 @@ function buildTodo(el, it) {
   const renderTasks = () => {
     list.innerHTML = '';
     tasks.forEach((task) => {
-      const row = document.createElement('div'); row.className = 'task' + (task.done ? ' done' : '') + (task.starred ? ' starred' : '');
+      const row = document.createElement('div'); row.className = 'task' + (task.done ? ' done' : '');
       const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !!task.done; cb.setAttribute('data-nodrag', '');
       cb.onclick = (e) => { e.stopPropagation(); task.done = cb.checked; row.classList.toggle('done', task.done); saveData(it, { tasks }); };
       const tx = makeField('area', 'txt', task.text, 'List item');
@@ -277,13 +287,9 @@ function buildTodo(el, it) {
         if (e.key === 'Enter') { e.preventDefault(); const ni = { id: rid(), text: '', done: false }; tasks.splice(tasks.indexOf(task) + 1, 0, ni); saveData(it, { tasks }); renderTasks(); enterEdit(el); list.querySelectorAll('.txt')[tasks.indexOf(ni)].focus(); }
         if (e.key === 'Backspace' && tx.value === '' && tasks.length > 1) { e.preventDefault(); snapshotTaskEdit(it, tasks); tasks.splice(tasks.indexOf(task), 1); saveData(it, { tasks }); renderTasks(); }
       });
-      const star = document.createElement('button'); star.className = 'task-star' + (task.starred ? ' on' : ''); star.setAttribute('data-nodrag', '');
-      star.appendChild(lucideEl('star'));
-      star.title = task.starred ? 'Unstar' : 'Star';
-      star.onclick = (e) => { e.stopPropagation(); task.starred = !task.starred; saveData(it, { tasks }); renderTasks(); };
       const del = document.createElement('button'); del.className = 'del'; del.textContent = '×'; del.setAttribute('data-nodrag', '');
       del.onclick = (e) => { e.stopPropagation(); snapshotTaskEdit(it, tasks); tasks.splice(tasks.indexOf(task), 1); saveData(it, { tasks }); renderTasks(); };
-      row.appendChild(cb); row.appendChild(tx); row.appendChild(star); row.appendChild(del);
+      row.appendChild(cb); row.appendChild(tx); row.appendChild(del);
       list.appendChild(row);
       requestAnimationFrame(() => { autoGrow(tx); renderLines(); });
     });

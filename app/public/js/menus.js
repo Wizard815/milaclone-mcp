@@ -7,6 +7,7 @@ import { refreshItem } from './cards.js';
 import { select, renameSelected, deleteItem, saveData } from './editing.js';
 import { copySelected, pasteClipboard, duplicateSelected, toggleLock } from './clipboard.js';
 import { openConnectPicker, previewText } from './connect.js';
+import { STAGE_LABELS, setStage, promoteItem } from './stages.js';
 
 function positionPopup(anchor, w) {
   const r = anchor.getBoundingClientRect();
@@ -258,6 +259,12 @@ export function openCtx(e, it) {
   if (!isGroup) rows.push({ label: 'Rename', hint: 'Return', fn: () => renameSelected() });
   rows.push({ label: locked ? 'Unlock Position' : 'Lock Position', fn: () => toggleLock() });
   rows.push({ sep: true });
+  const stageable = selectedItems.filter(x => x.type !== 'line');
+  if (stageable.length) {
+    rows.push({ stages: stageable });
+    if (!isGroup && it.stage === 'code') rows.push(promoteRow(it));
+    rows.push({ sep: true });
+  }
   rows.push({
     label: isGroup ? `Tag ${selectedItems.length} items` : 'Tags',
     fn: () => openCtxTags(selectedItems, e)
@@ -270,12 +277,15 @@ export function openCtx(e, it) {
   dom.ctxmenu.innerHTML = '';
   rows.forEach(r => {
     if (r.sep) { const s = document.createElement('div'); s.className = 'ctx-sep'; dom.ctxmenu.appendChild(s); return; }
+    if (r.stages) { dom.ctxmenu.appendChild(stageRow(r.stages)); return; }
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'ctx-item' + (r.danger ? ' danger' : '');
     if (r.disabled) b.disabled = true;
     const lab = document.createElement('span'); lab.textContent = r.label; b.appendChild(lab);
     if (r.hint) { const k = document.createElement('kbd'); k.textContent = r.hint; b.appendChild(k); }
+    if (r.note) { const n = document.createElement('small'); n.className = 'ctx-note'; n.textContent = r.note; b.appendChild(n); b.classList.add('has-note'); }
+    if (r.id) b.dataset.act = r.id;
     b.onclick = () => r.fn();
     dom.ctxmenu.appendChild(b);
   });
@@ -317,6 +327,34 @@ function openConnectFrom(it) {
   const w = 220;
   const worldPos = { x: (it.x || 0) + (it.w || 240) + 20 + w / 2, y: (it.y || 0) + 30 };
   openConnectPicker(worldPos, state.view.canvas.id, it.id, previewText(it));
+}
+
+// "Stage" row: Thought / Design / Code / none, as one segmented control.
+// Applies to every card in a multi-selection at once.
+function stageRow(items) {
+  const wrap = document.createElement('div');
+  wrap.className = 'ctx-stages';
+  const lab = document.createElement('span'); lab.className = 'ctx-stages-label'; lab.textContent = 'Stage';
+  wrap.appendChild(lab);
+  const current = items.every(x => x.stage === items[0].stage) ? items[0].stage : undefined;
+  for (const [val, text] of [...Object.entries(STAGE_LABELS), [null, 'None']]) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'ctx-stage' + (current === val ? ' on' : '') + (val ? ' stage-' + val : '');
+    b.dataset.stage = val || 'none';
+    b.textContent = text;
+    b.onclick = () => { closeCtx(); setStage(items, val); };
+    wrap.appendChild(b);
+  }
+  return wrap;
+}
+
+function promoteRow(it) {
+  if (it.data.promoted) return { label: 'Promoted to Orb', id: 'promote', disabled: true, note: it.data.promoted.name ? 'as "' + it.data.promoted.name + '"' : '' };
+  if (!state.orb || !state.orb.configured) {
+    return { label: 'Promote to a project', id: 'promote', disabled: true, note: 'Set ORB_URL (and ORB_TOKEN) on the Miladash server to enable this.' };
+  }
+  return { label: 'Promote to a project', id: 'promote', fn: () => { closeCtx(); promoteItem(it); } };
 }
 
 export function closeCtx() { dom.ctxmenu.classList.remove('open'); dom.ctxmenu.innerHTML = ''; }

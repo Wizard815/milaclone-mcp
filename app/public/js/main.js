@@ -19,8 +19,10 @@ import { performUndo, performRedo } from './undo.js';
 import { initMindMap, isMindMapOpen } from './mindmap.js';
 import { initConfirmDialog, isConfirmOpen } from './confirm.js';
 import { initSettings } from './settings.js';
+import { initPipeline, isPipelineOpen } from './pipeline.js';
+import { initCanvasIO } from './canvasio.js';
+import { loadOrbStatus } from './stages.js';
 import { initConnectPicker, isConnectPickerOpen } from './connect.js';
-import { initCalendar, isCalendarOpen } from './calendar.js';
 
 // Entry point: canvas loading/navigation, global keyboard + pointer handling,
 // and boot. Wiring for the viewport and toolbar lives in their own modules and
@@ -55,7 +57,7 @@ document.addEventListener('keydown', (e) => {
   if (isMindMapOpen()) return;      // Mind map owns the keyboard while it's up (handles its own Escape)
   if (isConfirmOpen()) return;      // Confirm dialog owns the keyboard while it's up (handles its own Escape/Enter)
   if (isConnectPickerOpen()) return; // Connect picker owns the keyboard while it's up (handles its own Escape)
-  if (isCalendarOpen()) return;      // Calendar owns the keyboard while it's up (handles its own Escape)
+  if (isPipelineOpen()) return;      // Pipeline owns the keyboard while it's up (handles its own Escape)
   const ae = document.activeElement;
   const typing = ae && (ae.isContentEditable || (/^(INPUT|TEXTAREA)$/.test(ae.tagName) && !ae.readOnly));
   if (e.key === 'Escape') { disarm(); deselect(); closePalette(); closeCtx(); }
@@ -80,7 +82,7 @@ document.addEventListener('pointerdown', (e) => {
   if (isQuickNotesOpen()) return;
   if (isConfirmOpen()) return;
   if (!e.target.closest('#palette') && !e.target.closest('.swatch')) closePalette();
-  if (!e.target.closest('#ctxmenu') && !e.target.closest('.item')) closeCtx();
+  if (!e.target.closest('#ctxmenu') && !e.target.closest('.item') && !e.target.closest('#exportBtn')) closeCtx();
   if (state.editingId && !e.target.closest('.item')) exitEdit();
 }, true);
 
@@ -107,10 +109,12 @@ initMindMap();
 initConfirmDialog();
 initSettings();
 initConnectPicker();
-initCalendar();
+initPipeline();
+initCanvasIO();
 
 (async function boot() {
   refreshIcons();
+  loadOrbStatus();
   const r = await api.root();
   state.rootCanvasId = r.rootCanvasId;
   const startId = location.hash.slice(1) || state.rootCanvasId;

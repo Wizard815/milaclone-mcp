@@ -81,6 +81,7 @@ async function recreate(items) {
       type: snap.type,
       x: snap.x, y: snap.y, w: snap.w,
       color: snap.color,
+      stage: snap.stage || null,
       data: remapData(snap.type, snap.data, idMap),
       parentItemId
     };

@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<title>Canvas Board</title>
+<title>Miladash</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Figtree:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Figtree:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&family=Cinzel:wght@500;600;700&family=Alegreya+Sans:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/style.css">
 <script>
 (function () {
@@ -17,6 +17,13 @@
       t = def ? def.content : (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
     }
     if (t === 'dark') document.documentElement.classList.add('dark');
+    // Miladash look: night / parchment (Pondering Orb's tokens) or classic.
+    var l = localStorage.getItem('look');
+    if (!l) { var dl = document.querySelector('meta[name="milaclone-default-look"]'); l = dl ? dl.content : 'classic'; }
+    if (l === 'night' || l === 'parchment') {
+      document.documentElement.dataset.look = l;
+      document.documentElement.classList.toggle('dark', l === 'night');
+    }
   } catch (e) {}
 })();
 </script>
@@ -31,20 +38,20 @@
       <i data-lucide="sun-medium" class="theme-icon-light"></i>
       <i data-lucide="moon" class="theme-icon-dark"></i>
     </button>
+    <button class="theme-toggle" id="pipelineBtn" title="Pipeline: ideas by stage" aria-label="Open pipeline">
+      <i data-lucide="kanban"></i>
+    </button>
     <button class="theme-toggle" id="mindMapBtn" title="Mind map" aria-label="Open mind map">
       <i data-lucide="git-fork"></i>
     </button>
     <button class="theme-toggle" id="quickNotesBtn" title="Quick notes" aria-label="Open quick notes">
       <i data-lucide="list-checks"></i>
     </button>
-    <button class="theme-toggle" id="calendarBtn" title="Calendar" aria-label="Open calendar">
-      <i data-lucide="calendar-days"></i>
-    </button>
     <button class="theme-toggle" id="settingsBtn" title="Settings" aria-label="Open settings">
       <i data-lucide="settings"></i>
     </button>
     <span class="ghost" id="lastPageBtn" title="Go to the board you were on before this one">Last Page</span>
-    <span class="ghost" id="exportBtn">Export</span>
+    <span class="ghost" id="exportBtn" title="Export or import a JSON Canvas (.canvas) file">Export</span>
     <div class="zoomwrap">
       <button id="zoomOut" title="Zoom out">−</button>
       <span class="lvl" id="zoomLvl">100%</span>
@@ -246,7 +253,6 @@
       <div class="qn-taskhead">
         <button class="qn-box qn-box-lg" id="qnTaskBox" aria-label="Toggle done"><i data-lucide="check"></i></button>
         <h2 class="qn-tasktitle" id="qnTaskTitle" contenteditable="true" role="textbox" aria-label="Task"></h2>
-        <button class="qn-star qn-star-lg" id="qnTaskStar" aria-label="Star task"><i data-lucide="star"></i></button>
       </div>
       <div class="qn-card qn-details" id="qnDetails"></div>
     </div>
@@ -363,30 +369,13 @@
   </div>
 </div>
 
-<div id="calendarView" hidden>
-  <div class="cal-top">
-    <button class="mm-close" id="calClose"><i data-lucide="x"></i> Close</button>
-    <h3>Calendar</h3>
-    <div class="cal-view-toggle" id="calViewToggle">
-      <button type="button" data-view="day">Day</button>
-      <button type="button" data-view="week">Week</button>
-      <button type="button" data-view="month" class="on">Month</button>
-      <button type="button" data-view="year">Year</button>
-    </div>
-    <div class="cal-nav">
-      <button id="calPrev" aria-label="Previous"><i data-lucide="chevron-left"></i></button>
-      <span id="calPeriodLabel"></span>
-      <button id="calNext" aria-label="Next"><i data-lucide="chevron-right"></i></button>
-      <button id="calToday">Today</button>
-    </div>
+<div id="pipelineView" hidden>
+  <div class="mm-top">
+    <button class="mm-close" id="plClose"><i data-lucide="x"></i> Close</button>
+    <h3>Pipeline</h3>
+    <span class="pl-hint">Every staged idea, newest change first. Drag a card to another column to change its stage; click it to open it on its board.</span>
   </div>
-  <div class="cal-scroll">
-    <div class="cal-body" id="calBody"></div>
-    <div class="cal-upcoming">
-      <h4>Upcoming</h4>
-      <div id="calUpcomingList"></div>
-    </div>
-  </div>
+  <div class="pl-cols" id="plCols"></div>
 </div>
 
 <div id="connectPicker" hidden>
@@ -451,12 +440,13 @@
     </div>
 
     <div class="set-group">
-      <label class="set-label" for="setStarColorHex">Starred color</label>
-      <div class="set-accent-row">
-        <input type="color" id="setStarColor" value="#E8B94A">
-        <input type="text" id="setStarColorHex" placeholder="#E8B94A" maxlength="9">
-        <button type="button" id="setStarColorReset">Reset</button>
+      <label class="set-label">Look</label>
+      <div class="set-seg" id="setLookSeg">
+        <button type="button" data-val="classic">Classic</button>
+        <button type="button" data-val="night">Night</button>
+        <button type="button" data-val="parchment">Parchment</button>
       </div>
+      <p class="set-hint">Night and Parchment use Pondering Orb's colours. In those looks the sun/moon button swaps between them.</p>
     </div>
 
     <div class="set-group">
@@ -476,6 +466,7 @@
 </div>
 <input type="file" id="fileInput" accept="image/*">
 <input type="file" id="uploadInput" accept=".pdf,.txt,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.json,text/*,application/pdf">
+<input type="file" id="canvasInput" accept=".canvas,.json,application/json">
 <div class="toast" id="toast"></div>
 
 <script src="https://unpkg.com/lucide@0.469.0"></script>

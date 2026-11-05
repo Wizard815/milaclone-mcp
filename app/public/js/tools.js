@@ -134,7 +134,9 @@ export function initTools() {
     if (state.pinching) return;
     cancelCamAnimation();
     if (state.armed === 'line') { cancelLine(); return; }
-    if (state.armed === 'select') { startMarquee(e); return; }
+    // Box-select: the Select tool, or Shift+drag on empty canvas with any
+    // tool disarmed. The selected cards then drag as one group.
+    if (state.armed === 'select' || (!state.armed && e.shiftKey && e.button === 0)) { startMarquee(e); return; }
     if (state.armed) {
       const t = state.armed; disarm();
       placeAt(t, e.clientX, e.clientY);

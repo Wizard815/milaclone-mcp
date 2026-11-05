@@ -14,9 +14,9 @@ import { openCanvas } from './main.js';
    all living inside #quicknotes. Every `todo` card on the board is a list
    here and its `data.tasks` entries are the tasks, so edits made here land
    on the same card the canvas renders. Tasks carry a few extra fields the
-   canvas ignores (starred, due, tags); they are only written when the user
+   canvas ignores (due, tags); they are only written when the user
    actually edits something, so existing cards stay untouched. This is a
-   separate mechanism from the item-level tags/star/due-date on whole cards
+   separate mechanism from the item-level tags/due-date on whole cards
    (cards.js/menus.js) -- per-task fields here live inside one todo card's
    task list, item-level fields apply to any card on the board as a unit.
 
@@ -35,11 +35,10 @@ const h = (tag, cls, text) => {
 
 const SMART = {
   today:     { label: 'Today',     color: '#4C7CBE', icon: 'calendar', f: t => t.due && daysUntil(t.due) === 0 && !t.done },
-  starred:   { label: 'Starred',   color: '#E8B94A', icon: 'star',     f: t => t.starred && !t.done },
   all:       { label: 'All',       color: '#3D4A5C', icon: 'inbox',    f: t => !t.done },
   completed: { label: 'Completed', color: '#6E8B74', icon: 'check',    f: t => t.done }
 };
-const SMART_KEYS = ['today', 'starred', 'all', 'completed'];
+const SMART_KEYS = ['today', 'all', 'completed'];
 
 // Lists without a card colour of their own cycle through these, and pick up a
 // matching line icon, so the overview reads as a set rather than a grey wall.
@@ -88,7 +87,6 @@ function normTask(t) {
     id: t.id || rid(),
     text: typeof t.text === 'string' ? t.text : '',
     done: !!t.done,
-    starred: !!t.starred,
     due: t.due || null,
     tags: Array.isArray(t.tags) ? t.tags.slice() : [],
     createdAt: t.createdAt || null
@@ -447,12 +445,7 @@ function taskRow(list, task, sub) {
     mid.appendChild(line);
   }
 
-  const star = h('button', 'qn-star' + (task.starred ? ' on' : ''));
-  star.setAttribute('aria-label', task.starred ? 'Remove star' : 'Star task');
-  star.appendChild(lucideEl('star'));
-  star.onclick = e => { e.stopPropagation(); task.starred = !task.starred; saveTasks(list); render(); };
-
-  row.append(box, mid, star);
+  row.append(box, mid);
   row.onclick = () => openTask(list, task);
   return row;
 }
@@ -465,7 +458,6 @@ function renderTaskScreen() {
 
   el('qnTaskBackLabel').textContent = activeTitle() || list.title;
   el('qnTaskBox').classList.toggle('on', task.done);
-  el('qnTaskStar').classList.toggle('on', task.starred);
 
   const title = el('qnTaskTitle');
   title.classList.toggle('done', task.done);
@@ -821,10 +813,6 @@ export function initQuickNotes() {
   el('qnTaskBox').onclick = () => {
     const f = findTask(qn.taskRef); if (!f) return;
     f.task.done = !f.task.done; saveTasks(f.list); render();
-  };
-  el('qnTaskStar').onclick = () => {
-    const f = findTask(qn.taskRef); if (!f) return;
-    f.task.starred = !f.task.starred; saveTasks(f.list); render();
   };
   const taskTitle = el('qnTaskTitle');
   taskTitle.addEventListener('input', () => {

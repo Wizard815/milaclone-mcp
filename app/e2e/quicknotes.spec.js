@@ -43,7 +43,7 @@ test('the Quick notes tab opens the overview with every todo list', async ({ pag
 
   await expect(listRow(page, title)).toBeVisible();
   await expect(listRow(page, title).locator('.qn-row-count')).toHaveText('1');   // open tasks only
-  await expect(page.locator('.qn-tile')).toHaveCount(4);
+  await expect(page.locator('.qn-tile')).toHaveCount(3); // Today, All, Completed (Miladash dropped Starred)
 });
 
 test('drilling into a list shows open tasks and a collapsible completed group', async ({ page }) => {
@@ -81,22 +81,6 @@ test('checking a task persists and moves it into Completed', async ({ page }) =>
     return r.lists.find(l => l.id === id).tasks;
   }, id);
   expect(tasks[0].done).toBe(true);
-});
-
-test('starring a task feeds the Starred smart view', async ({ page }) => {
-  const title = uniq('Starry');
-  await seedList(page, title, [{ id: 'a', text: 'Call the plumber', done: false }]);
-  await openQuickNotes(page);
-  await listRow(page, title).click();
-  await taskRow(page, 'Call the plumber').locator('.qn-star').click();
-  await expect(taskRow(page, 'Call the plumber').locator('.qn-star')).toHaveClass(/on/);
-
-  await page.click('#qnListBack');
-  await page.locator('.qn-tile[data-smart="starred"]').click();
-  await expect(page.locator('#qnListTitle')).toHaveText('Starred');
-  // smart views name the source list on a sub-line and hide the add button
-  await expect(taskRow(page, 'Call the plumber').locator('.qn-task-sub')).toHaveText(title);
-  await expect(page.locator('#qnAddBar')).toBeHidden();
 });
 
 test('the add bar appends tasks and stays open for the next one', async ({ page }) => {

@@ -41,6 +41,7 @@ export const state = {
   pinching: false,
   suppressNextClick: false,
   lineFrom: null,
+  orb: null,          // { configured } from GET /api/orb, for the Promote menu item
   undoStack: [],
   redoStack: []
 };
