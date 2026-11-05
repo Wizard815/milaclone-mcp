@@ -7,9 +7,15 @@ const path = require('path');
 const crypto = require('crypto');
 
 const {
-  db, stmt, id, rootCanvasId, getSettings, setSettings,
+  db, stmt, id, rootCanvasId, getSettings, setSettings, STAGES, LINE_KINDS,
   rowToItem, rowToCanvas, breadcrumb, itemsForCanvas, deleteItemDeep, likeEscape
 } = require('./db');
+const canvasFile = require('./canvasfile');
+
+// stage: one of STAGES, or null for "not in the pipeline".
+const badStage = (v) => v !== undefined && v !== null && !STAGES.includes(v);
+// A connector line's kind lives in data.kind (relates | depends | became).
+const badLineKind = (type, data) => type === 'line' && data && data.kind !== undefined && !LINE_KINDS.includes(data.kind);
 
 const UPLOAD_DIR = path.join(__dirname, 'public', 'uploads');
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -118,11 +124,11 @@ router.get('/api/settings', (req, res) => {
 });
 
 router.patch('/api/settings', (req, res) => {
-  const { theme, accent, starColor, caldav } = req.body || {};
+  const { theme, look, accent, caldav } = req.body || {};
   const patch = {};
   if (theme !== undefined) patch.theme = theme;
+  if (look !== undefined) patch.look = ['classic', 'night', 'parchment'].includes(look) ? look : 'classic';
   if (accent !== undefined) patch.accent = accent;
-  if (starColor !== undefined) patch.starColor = starColor;
   if (caldav !== undefined) {
     const prev = getSettings().caldav || {};
     patch.caldav = caldav === null ? null : {
@@ -178,6 +184,8 @@ router.patch('/api/canvas/:id', (req, res) => {
 router.post('/api/item', (req, res) => {
   const b = req.body || {};
   if (!stmt.getCanvas.get(b.canvasId)) return res.status(400).json({ error: 'bad canvasId' });
+  if (badStage(b.stage)) return res.status(400).json({ error: 'stage must be one of ' + STAGES.join(', ') + ' or null' });
+  if (badLineKind(b.type, b.data)) return res.status(400).json({ error: 'line kind must be one of ' + LINE_KINDS.join(', ') });
 
   const item = {
     id: id('i_'),
@@ -191,8 +199,10 @@ router.post('/api/item', (req, res) => {
     z: Math.max(0, stmt.maxZ.get().m || 0) + 1,
     color: b.color || null,
     data: b.data || {},
+    stage: b.stage || null,
     createdAt: Date.now()
   };
+  item.updatedAt = item.createdAt;
 
   db.transaction(() => {
     // A board item owns a freshly created child canvas.
@@ -247,9 +257,13 @@ router.patch('/api/item/:id', (req, res) => {
   if (!row) return res.status(404).json({ error: 'not found' });
   const it = rowToItem(row);
   const b = req.body || {};
+  if (badStage(b.stage)) return res.status(400).json({ error: 'stage must be one of ' + STAGES.join(', ') + ' or null' });
+  if (badLineKind(it.type, b.data)) return res.status(400).json({ error: 'line kind must be one of ' + LINE_KINDS.join(', ') });
   for (const k of ['x', 'y', 'w', 'h', 'z']) {
     if (b[k] != null) it[k] = Math.round(b[k]);
   }
+  if (b.stage !== undefined) it.stage = b.stage || null;
+  if (b.data !== undefined || b.stage !== undefined || b.color !== undefined) it.updatedAt = Date.now();
   if (b.color !== undefined) it.color = b.color;
   if (b.parentItemId !== undefined) it.parentItemId = b.parentItemId;
   if (b.canvasId && stmt.getCanvas.get(b.canvasId)) it.canvasId = b.canvasId;
@@ -273,13 +287,15 @@ router.patch('/api/item/:id', (req, res) => {
       delete it.data.title;
       delete it.data.icon;
     }
-    stmt.updateItem.run({
+    stmt.updateItemContent.run({
       id: it.id,
       canvasId: it.canvasId,
       parentItemId: it.parentItemId ?? null,
       x: it.x, y: it.y, w: it.w, h: it.h ?? null, z: it.z,
       color: it.color ?? null,
-      data: JSON.stringify(it.data)
+      data: JSON.stringify(it.data),
+      stage: it.stage,
+      updatedAt: it.updatedAt ?? it.createdAt
     });
   })();
 
@@ -437,37 +453,116 @@ router.get('/api/tags', (req, res) => {
   res.json({ tags: [...seen].sort() });
 });
 
-// ---- Calendar ----------------------------------------------------------
-// Every due date in the workspace, from both sources that carry one: a
-// whole item's own data.due (any card type) and a to-do card's per-task
-// due dates. One flat, date-sorted list -- the client groups it by day
-// itself for whichever of the four views (day/week/month/year) is active.
-router.get('/api/calendar', (req, res) => {
+// ---- Pipeline ----------------------------------------------------------
+// Every card with a stage, anywhere in the tree, newest change first. The
+// Pipeline view groups them into Thought / Design / Code columns.
+function boardInfo(it) {
+  if (it.type !== 'board' || !it.data || !it.data.childCanvasId) return it;
+  const child = stmt.getCanvas.get(it.data.childCanvasId);
+  if (!child) return it;
+  return Object.assign(it, {
+    _childTitle: child.title,
+    _childCount: stmt.childCount.get(child.id).c,
+    _childColor: child.color,
+    _childIcon: child.icon || 'layout-grid'
+  });
+}
+
+function titleOf(it) {
+  if (it.type === 'board') return it._childTitle || 'Board';
+  return previewTextFor(it);
+}
+
+router.get('/api/pipeline', (req, res) => {
   const canvasTitles = new Map(stmt.allCanvases.all().map(c => [c.id, c.title]));
-  const rows = db.prepare('SELECT id, canvasId, type, data FROM items WHERE deletedAt IS NULL').all();
-  const entries = [];
-  for (const r of rows) {
-    let data;
-    try { data = JSON.parse(r.data); } catch (e) { continue; }
-    const canvasTitle = canvasTitles.get(r.canvasId) || '';
-    if (data.due) {
-      entries.push({
-        date: data.due, kind: 'item', id: r.id, canvasId: r.canvasId, canvasTitle,
-        title: previewTextFor({ type: r.type, data }), itemType: r.type, done: false, starred: !!data.starred
-      });
-    }
-    if (r.type === 'todo' && Array.isArray(data.tasks)) {
-      for (const t of data.tasks) {
-        if (!t.due) continue;
-        entries.push({
-          date: t.due, kind: 'task', id: t.id, canvasId: r.canvasId, canvasTitle,
-          listId: r.id, title: t.text || 'Task', done: !!t.done, starred: !!t.starred
-        });
-      }
-    }
+  const items = stmt.stagedItems.all().map(rowToItem)
+    .filter(it => canvasTitles.has(it.canvasId))
+    .map(boardInfo)
+    .map(it => Object.assign(it, { _title: titleOf(it), _canvasTitle: canvasTitles.get(it.canvasId) }));
+  res.json({ stages: STAGES, items });
+});
+
+// ---- Promote to Orb ------------------------------------------------------
+// A Code-stage idea becomes a project in Pondering Orb. The browser only
+// talks to this route; ORB_TOKEN stays on the server.
+function orbConfig() {
+  const url = (process.env.ORB_URL || '').trim().replace(/\/+$/, '');
+  const token = (process.env.ORB_TOKEN || '').trim();
+  return { url, token };
+}
+
+router.get('/api/orb', (req, res) => {
+  const { url, token } = orbConfig();
+  res.json({ configured: !!url, url: url || null, tokenSet: !!token });
+});
+
+router.post('/api/item/:id/promote', async (req, res) => {
+  const row = stmt.getItem.get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'not found' });
+  const it = boardInfo(rowToItem(row));
+  const { url, token } = orbConfig();
+  if (!url) return res.status(409).json({ error: 'ORB_URL is not set on the Miladash server, so there is no Orb to promote to.' });
+  if (it.stage !== 'code') return res.status(409).json({ error: 'Only ideas at the Code stage can be promoted.' });
+  if (it.data.promoted) return res.status(409).json({ error: 'Already promoted.', promoted: it.data.promoted });
+
+  const name = String(titleOf(it) || 'Untitled idea').slice(0, 200);
+  const body = it.type === 'note' ? (it.data.body || '') : (it.data.pitch || '');
+  const next = String((req.body && req.body.next) || body.split('\n').find(l => l.trim()) || '').trim().slice(0, 300);
+
+  let resp, doc;
+  try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers.Authorization = 'Bearer ' + token;
+    resp = await fetch(url + '/api/c/projects', {
+      method: 'POST', headers, body: JSON.stringify({ name, next, status: 'next' }),
+      signal: AbortSignal.timeout(10000)
+    });
+    doc = await resp.json().catch(() => ({}));
+  } catch (e) {
+    return res.status(502).json({ error: 'Could not reach Orb: ' + (e.message || e) });
   }
-  entries.sort((a, b) => a.date.localeCompare(b.date));
-  res.json({ entries });
+  if (!resp.ok) {
+    return res.status(502).json({ error: `Orb answered ${resp.status}: ${(doc && doc.error) || 'error'}` });
+  }
+
+  // Re-read in case the card changed while Orb was answering.
+  const fresh = rowToItem(stmt.getItem.get(it.id) || row);
+  fresh.data = Object.assign({}, fresh.data, {
+    promoted: { at: Date.now(), projectId: doc && doc.id ? String(doc.id) : null, name }
+  });
+  fresh.updatedAt = Date.now();
+  stmt.updateItemContent.run({
+    id: fresh.id, canvasId: fresh.canvasId, parentItemId: fresh.parentItemId ?? null,
+    x: fresh.x, y: fresh.y, w: fresh.w, h: fresh.h ?? null, z: fresh.z,
+    color: fresh.color ?? null, data: JSON.stringify(fresh.data), stage: fresh.stage, updatedAt: fresh.updatedAt
+  });
+  res.json({ item: boardInfo(fresh), project: doc });
+});
+
+// ---- JSON Canvas ---------------------------------------------------------
+router.get('/api/canvas/:id/export', (req, res) => {
+  const nested = req.query.nested === '1' || req.query.nested === 'true';
+  const out = canvasFile.exportCanvas(req.params.id, { nested });
+  if (!out) return res.status(404).json({ error: 'not found' });
+  const canvas = stmt.getCanvas.get(req.params.id);
+  const file = (canvas.title || 'board').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-') || 'board';
+  res.set('Content-Disposition', `attachment; filename="${file}.canvas"`);
+  res.json(out);
+});
+
+router.post('/api/canvas/:id/import', (req, res) => {
+  if (!stmt.getCanvas.get(req.params.id)) return res.status(404).json({ error: 'not found' });
+  const b = req.body || {};
+  const doc = b.canvas || b;
+  const problem = canvasFile.validate(doc);
+  if (problem) return res.status(400).json({ error: 'Not a JSON Canvas file: ' + problem });
+  const item = canvasFile.importCanvas(doc, {
+    parentCanvasId: req.params.id,
+    title: typeof b.title === 'string' && b.title.trim() ? b.title.trim().slice(0, 200) : 'Imported board',
+    x: Number.isFinite(b.x) ? b.x : 60,
+    y: Number.isFinite(b.y) ? b.y : 60
+  });
+  res.json(boardInfo(rowToItem(stmt.getItem.get(item.id))));
 });
 
 router.get('/api/health', (req, res) => res.json({ ok: true }));

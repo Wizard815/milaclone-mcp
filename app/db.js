@@ -38,6 +38,17 @@ if (!cols.includes('icon')) db.exec('ALTER TABLE canvases ADD COLUMN icon TEXT')
 if (!cols.includes('deletedAt')) db.exec('ALTER TABLE canvases ADD COLUMN deletedAt TEXT');
 const itemCols = db.prepare("PRAGMA table_info(items)").all().map(c => c.name);
 if (!itemCols.includes('deletedAt')) db.exec('ALTER TABLE items ADD COLUMN deletedAt TEXT');
+// Miladash: an idea's pipeline stage (thought | design | code, or NULL for
+// "not in the pipeline") and when the card last changed, which the Pipeline
+// view sorts by. Existing rows keep their data; updatedAt starts at createdAt.
+if (!itemCols.includes('stage')) db.exec('ALTER TABLE items ADD COLUMN stage TEXT');
+if (!itemCols.includes('updatedAt')) {
+  db.exec('ALTER TABLE items ADD COLUMN updatedAt INTEGER');
+  db.exec('UPDATE items SET updatedAt = createdAt WHERE updatedAt IS NULL');
+}
+
+const STAGES = ['thought', 'design', 'code'];
+const LINE_KINDS = ['relates', 'depends', 'became'];
 
 // Prepared statements (created once, reused per request).
 const stmt = {
@@ -61,10 +72,15 @@ const stmt = {
   itemsByCanvas: db.prepare(`SELECT * FROM items WHERE canvasId = ? AND deletedAt IS NULL`),
   maxZ: db.prepare(`SELECT MAX(z) AS m FROM items`),
   childCount: db.prepare(`SELECT COUNT(*) AS c FROM items WHERE canvasId = ? AND parentItemId IS NULL AND deletedAt IS NULL`),
-  insertItem: db.prepare(`INSERT INTO items (id, canvasId, parentItemId, type, x, y, w, h, z, color, data, createdAt)
-                          VALUES (@id, @canvasId, @parentItemId, @type, @x, @y, @w, @h, @z, @color, @data, @createdAt)`),
+  insertItem: db.prepare(`INSERT INTO items (id, canvasId, parentItemId, type, x, y, w, h, z, color, data, stage, createdAt, updatedAt)
+                          VALUES (@id, @canvasId, @parentItemId, @type, @x, @y, @w, @h, @z, @color, @data, @stage, @createdAt, @createdAt)`),
   updateItem: db.prepare(`UPDATE items SET canvasId=@canvasId, parentItemId=@parentItemId, x=@x, y=@y, w=@w, h=@h,
                           z=@z, color=@color, data=@data WHERE id=@id`),
+  // Content edits (data/stage/color) bump updatedAt; plain moves don't, so
+  // tidying the board never reshuffles the Pipeline's "last change" order.
+  updateItemContent: db.prepare(`UPDATE items SET canvasId=@canvasId, parentItemId=@parentItemId, x=@x, y=@y, w=@w, h=@h,
+                          z=@z, color=@color, data=@data, stage=@stage, updatedAt=@updatedAt WHERE id=@id`),
+  stagedItems: db.prepare(`SELECT * FROM items WHERE stage IS NOT NULL AND deletedAt IS NULL ORDER BY updatedAt DESC, id`),
   deleteItem: db.prepare(`DELETE FROM items WHERE id = ?`),
   softDeleteItem: db.prepare(`UPDATE items SET deletedAt = ? WHERE id = ?`),
   restoreItemsByBatch: db.prepare(`UPDATE items SET deletedAt = NULL WHERE deletedAt = ?`),
@@ -89,7 +105,7 @@ function rootCanvasId() {
 // App-wide settings (theme default, accent color, CalDAV credentials) live as
 // one JSON blob under a single meta key -- there's only ever one settings
 // object for the whole (personal, single-user) app.
-const DEFAULT_SETTINGS = { theme: 'system', accent: null, starColor: null, caldav: null };
+const DEFAULT_SETTINGS = { theme: 'system', look: 'classic', accent: null, caldav: null };
 function getSettings() {
   const row = stmt.getMeta.get('settings');
   if (!row) return { ...DEFAULT_SETTINGS };
@@ -114,7 +130,7 @@ process.on('SIGTERM', () => { db.close(); process.exit(0); });
 // it'd only ever show up as a stray always-null field in API responses.
 function rowToItem(row) {
   const { deletedAt, ...rest } = row;
-  return Object.assign(rest, { data: row.data ? JSON.parse(row.data) : {} });
+  return Object.assign(rest, { stage: row.stage || null, data: row.data ? JSON.parse(row.data) : {} });
 }
 
 function rowToCanvas(row) {
@@ -191,6 +207,6 @@ function likeEscape(s) {
 }
 
 module.exports = {
-  DB_FILE, db, stmt, id, rootCanvasId, getSettings, setSettings,
+  DB_FILE, db, stmt, id, rootCanvasId, STAGES, LINE_KINDS, getSettings, setSettings,
   rowToItem, rowToCanvas, breadcrumb, itemsForCanvas, deleteItemDeep, likeEscape
 };

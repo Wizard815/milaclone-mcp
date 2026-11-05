@@ -48,8 +48,10 @@ app.get('/', (req, res) => {
     // otherwise win in dark mode regardless of source order.
     inject.push(`  <style>:root{--user-accent:${settings.accent} !important;}</style>`);
   }
-  if (settings.starColor && HEX_COLOR.test(settings.starColor)) {
-    inject.push(`  <style>:root{--star-color:${settings.starColor} !important;}</style>`);
+  // Miladash look (classic | night | parchment): applied as data-look on
+  // <html> by the inline head script, before first paint.
+  if (settings.look === 'night' || settings.look === 'parchment') {
+    inject.push(`  <meta name="milaclone-default-look" content="${settings.look}">`);
   }
   if (inject.length) out = out.replace('<head>', '<head>\n' + inject.join('\n'));
 
@@ -66,6 +68,6 @@ app.use(express.static(path.join(__dirname, 'public'), {
 app.use(require('./routes'));
 
 app.listen(PORT, HOST, () => {
-  console.log(`\n  Canvas board running at http://${HOST}:${PORT}`);
+  console.log(`\n  Miladash running at http://${HOST}:${PORT}`);
   console.log(`  Data stored in ${DB_FILE}\n`);
 });
