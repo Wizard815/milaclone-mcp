@@ -491,6 +491,18 @@ function orbConfig() {
   return { url, token };
 }
 
+// Orb's project name is also its wiki note's file name and [[link]], so it
+// refuses / \ [ ] | # ^ : * ? " < > and line breaks. Turn them into
+// something readable instead of failing: "Argos: scheduler" -> "Argos - scheduler".
+function orbName(title) {
+  const n = String(title || '')
+    .replace(/\s*:\s*/g, ' - ')
+    .replace(/[\\/|]/g, '-')
+    .replace(/[\[\]#^*?"<>\x00-\x1f]/g, ' ')
+    .replace(/\s+/g, ' ').replace(/^[.\s-]+/, '').trim().slice(0, 200);
+  return n || 'Untitled idea';
+}
+
 router.get('/api/orb', (req, res) => {
   const { url, token } = orbConfig();
   res.json({ configured: !!url, url: url || null, tokenSet: !!token });
@@ -505,7 +517,7 @@ router.post('/api/item/:id/promote', async (req, res) => {
   if (it.stage !== 'code') return res.status(409).json({ error: 'Only ideas at the Code stage can be promoted.' });
   if (it.data.promoted) return res.status(409).json({ error: 'Already promoted.', promoted: it.data.promoted });
 
-  const name = String(titleOf(it) || 'Untitled idea').slice(0, 200);
+  const name = orbName(titleOf(it));
   const body = it.type === 'note' ? (it.data.body || '') : (it.data.pitch || '');
   const next = String((req.body && req.body.next) || body.split('\n').find(l => l.trim()) || '').trim().slice(0, 300);
 
@@ -568,3 +580,4 @@ router.post('/api/canvas/:id/import', (req, res) => {
 router.get('/api/health', (req, res) => res.json({ ok: true }));
 
 module.exports = router;
+module.exports.orbName = orbName;

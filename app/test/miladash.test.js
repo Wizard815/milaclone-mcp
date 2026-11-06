@@ -232,3 +232,11 @@ test('TestJsonCanvas_imports a plain Obsidian canvas', async () => {
   assert.equal(items.find(i => i.type === 'note' && i.data.title === 'Outside').data.body, 'body');
   assert.equal(items.filter(i => i.type === 'line').length, 1);
 });
+
+test('promote cleans a card title into a name Orb accepts', () => {
+  const { orbName } = require('../routes.js');
+  assert.equal(orbName('Argos: scheduler'), 'Argos - scheduler');
+  assert.equal(orbName('a/b [x] #tag'), 'a-b x tag');
+  assert.equal(orbName('Line\nbreak'), 'Line break');
+  assert.equal(orbName('  ..'), 'Untitled idea');
+});
