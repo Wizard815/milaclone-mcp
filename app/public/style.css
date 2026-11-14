@@ -1066,8 +1066,8 @@ input, textarea { font-family: var(--sans); }
    (and their padding/background) still win */
 :where(#quicknotes) button { border: none; background: none; padding: 0; color: inherit; font-family: inherit; }
 :where(#quicknotes) input, :where(#quicknotes) textarea { font-family: inherit; }
-/* icons are <i data-lucide> until the CDN swaps in an <svg>; size both so the
-   layout and the tap targets survive a CDN that never answers */
+/* icons are <i data-lucide> until lucide swaps in an <svg>; size both so the
+   layout and the tap targets survive the icon script failing to load */
 #quicknotes i[data-lucide] { display: block; }
 
 .qn-screen {

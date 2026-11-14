@@ -61,6 +61,13 @@ app.get('/', (req, res) => {
 // requests, so unchanged assets get a cheap 304 instead of a full refetch —
 // this just stops the browser from skipping that check entirely and running
 // on a stale copy after a deploy.
+// Lucide icons ship as an npm runtime dependency and are served from the app
+// itself, so icons render on self-hosted boxes with no route to a CDN.
+const LUCIDE_UMD = path.join(path.dirname(require.resolve('lucide/package.json')), 'dist', 'umd');
+app.use('/vendor/lucide', express.static(LUCIDE_UMD, {
+  index: false,
+  setHeaders: (res) => res.set('Cache-Control', 'no-cache')
+}));
 app.use(express.static(path.join(__dirname, 'public'), {
   index: false,
   setHeaders: (res) => res.set('Cache-Control', 'no-cache')

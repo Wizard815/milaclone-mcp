@@ -15,6 +15,7 @@
   "dependencies": {
     "better-sqlite3": "^13.0.1",
     "express": "^4.21.2",
+    "lucide": "0.469.0",
     "multer": "^2.1.1"
   },
   "devDependencies": {

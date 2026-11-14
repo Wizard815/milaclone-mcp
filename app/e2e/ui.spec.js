@@ -135,6 +135,22 @@ test('board tile has a lucide icon', async ({ page }) => {
   await expect(tile.locator('svg')).toHaveCount(1);
 });
 
+test('lucide is served by the app and every rail tool renders an icon', async ({ page }) => {
+  // No script may come from a third-party CDN: icons must work on a
+  // self-hosted box with no outside network. (Web fonts are optional and
+  // fall back to system fonts, so they're not checked here.)
+  const external = [];
+  page.on('request', r => {
+    if (r.resourceType() === 'script' && !new URL(r.url()).host.startsWith('127.0.0.1')) external.push(r.url());
+  });
+  await freshCanvas(page);
+  const tools = page.locator('#rail .tool');
+  const n = await tools.count();
+  expect(n).toBeGreaterThan(10);
+  for (let i = 0; i < n; i++) await expect(tools.nth(i).locator('svg')).toHaveCount(1);
+  expect(external).toEqual([]);
+});
+
 test('context menu duplicates a note', async ({ page }) => {
   await freshCanvas(page);
   await place(page, 'note');

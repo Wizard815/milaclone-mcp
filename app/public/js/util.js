@@ -10,7 +10,8 @@ export function lucideEl(name) {
   return i;
 }
 
-// `lucide` is a global provided by the CDN <script>. If it failed to load we
+// `lucide` is a global provided by /vendor/lucide/lucide.min.js (served from
+// node_modules by server.js). If it failed to load we
 // silently skip icon rendering rather than throwing.
 export function refreshIcons(root) {
   if (typeof lucide !== 'undefined' && lucide.createIcons) {
