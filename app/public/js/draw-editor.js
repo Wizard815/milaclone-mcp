@@ -3,6 +3,7 @@
 import { api } from './api.js';
 import { toast, refreshIcons } from './util.js';
 import { refreshItem } from './cards.js';
+import { confirmDialog, isConfirmOpen } from './confirm.js';
 
 // Full-page drawing editor. Mirrors docs.js: a card on the board is just a
 // tile; opening it swaps in this overlay. Edits are local to a draft copy of
@@ -205,8 +206,11 @@ function hasUnsavedChanges() {
   return refs().title.value.trim() !== savedTitle || JSON.stringify(draft.strokes) !== savedStrokes;
 }
 
-function cancel() {
-  if (hasUnsavedChanges() && !confirm('Discard your changes to this drawing?')) return;
+// In-app dialog rather than native confirm(): inside a sandboxed iframe
+// (e.g. embedded in another app) without allow-modals, confirm() returns
+// false without showing anything, so a deliberate discard was impossible.
+async function cancel() {
+  if (hasUnsavedChanges() && !(await confirmDialog('Discard your changes to this drawing?', { okLabel: 'Discard' }))) return;
   closeEditor();
 }
 
@@ -243,7 +247,7 @@ export function initDrawEditor() {
   r.color.addEventListener('input', () => { color = r.color.value; });
   r.width.addEventListener('input', () => { width = parseInt(r.width.value, 10); });
   document.addEventListener('keydown', (e) => {
-    if (!doc) return;
+    if (!doc || isConfirmOpen()) return; // the discard dialog handles its own keys
     // Escape saves rather than discards — losing drawn work to an instinctive
     // "close this" keypress is a much worse failure mode than a stray save.
     // The Cancel button is still there for an explicit, deliberate discard.

@@ -33,6 +33,7 @@ export function openDocument(it) {
   r.root.hidden = false;
   r.title.value = it.data.title || '';
   r.content.innerHTML = it.data.bodyHtml || '';
+  externalLinks(r.content);
   refreshIcons(r.root);
   requestAnimationFrame(() => r.content.focus());
 }
@@ -66,10 +67,17 @@ function exec(cmd) {
   }
   if (cmd === 'link') {
     const url = window.prompt('Link URL');
-    if (url) document.execCommand('createLink', false, url);
+    if (url) { document.execCommand('createLink', false, url); externalLinks(r.content); save({ bodyHtml: r.content.innerHTML }); }
     return;
   }
   document.execCommand(cmd, false, null);
+}
+
+// Links in a document always open in a new tab, never in place: when
+// Milaclone is embedded in an <iframe> an in-place navigation would replace
+// the app inside the frame.
+function externalLinks(root) {
+  root.querySelectorAll('a[href]').forEach(a => { a.target = '_blank'; a.rel = 'noopener noreferrer'; });
 }
 
 function stripHtml(html) {
@@ -145,6 +153,12 @@ export function initDocs() {
   r.back.addEventListener('click', closeDocument);
   r.title.addEventListener('input', () => save({ title: r.title.value }));
   r.content.addEventListener('input', () => save({ bodyHtml: r.content.innerHTML }));
+  // A link inside contenteditable doesn't follow on a plain click (that just
+  // places the caret); Ctrl/Cmd-click opens it in a new tab.
+  r.content.addEventListener('click', (e) => {
+    const a = e.target.closest && e.target.closest('a[href]');
+    if (a && (e.metaKey || e.ctrlKey)) { e.preventDefault(); window.open(a.href, '_blank', 'noopener'); }
+  });
   // mousedown (not click) + preventDefault so the button never steals focus
   // from the content area — otherwise the text selection collapses before
   // execCommand runs and formatting silently applies to nothing.
