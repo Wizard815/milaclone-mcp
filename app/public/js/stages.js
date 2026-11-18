@@ -28,7 +28,10 @@ export async function setStage(items, stage) {
 export async function promoteItem(it) {
   toast('Promoting to Orb…');
   const { ok, body } = await api.promote(it.id);
-  if (!ok) { toast(body.error || 'Promote failed'); return; }
+  if (!ok) {
+    toast(body.error || 'Promote failed');
+    return;
+  }
   it.data = body.item.data;
   it.updatedAt = body.item.updatedAt;
   refreshItem(it);
@@ -36,5 +39,9 @@ export async function promoteItem(it) {
 }
 
 export async function loadOrbStatus() {
-  try { state.orb = await api.orb(); } catch (e) { state.orb = { configured: false }; }
+  try {
+    state.orb = await api.orb();
+  } catch {
+    state.orb = { configured: false };
+  }
 }

@@ -1,6 +1,6 @@
 'use strict';
 
-import { state, dom } from './state.js';
+import { state, dom, elMap } from './state.js';
 import { toast } from './util.js';
 
 // Camera / pan / zoom for the infinite canvas, plus screen<->world mapping.
@@ -42,7 +42,10 @@ export function cancelCamAnimation() {
 
 export function screenToWorld(clientX, clientY) {
   const r = dom.stage.getBoundingClientRect();
-  return { x: (clientX - r.left - state.cam.x) / state.cam.scale, y: (clientY - r.top - state.cam.y) / state.cam.scale };
+  return {
+    x: (clientX - r.left - state.cam.x) / state.cam.scale,
+    y: (clientY - r.top - state.cam.y) / state.cam.scale,
+  };
 }
 
 export function saveCam() {
@@ -50,7 +53,10 @@ export function saveCam() {
 }
 
 export function loadCam(id) {
-  try { const c = JSON.parse(localStorage.getItem('cam:' + id)); if (c && c.scale) return c; } catch (e) {}
+  try {
+    const c = JSON.parse(localStorage.getItem('cam:' + id));
+    if (c && c.scale) return c;
+  } catch {}
   return { x: 80, y: 60, scale: 1 };
 }
 
@@ -62,7 +68,10 @@ const DEFAULT_CAM = { x: 80, y: 60, scale: 1 };
 // this one only changes when explicitly set, so it's a stable "reset to
 // here" point rather than wherever you last happened to leave the camera.
 function loadHomeCam(id) {
-  try { const c = JSON.parse(localStorage.getItem('homeCam:' + id)); if (c && c.scale) return c; } catch (e) {}
+  try {
+    const c = JSON.parse(localStorage.getItem('homeCam:' + id));
+    if (c && c.scale) return c;
+  } catch {}
   return null;
 }
 
@@ -88,8 +97,10 @@ function openResetCtx(e) {
   };
   dom.ctxmenu.appendChild(b);
   dom.ctxmenu.classList.add('open');
-  const mw = 220, mh = dom.ctxmenu.offsetHeight || 50;
-  let left = e.clientX, top = e.clientY;
+  const mw = 220,
+    mh = dom.ctxmenu.offsetHeight || 50;
+  let left = e.clientX,
+    top = e.clientY;
   if (left + mw > window.innerWidth) left = window.innerWidth - mw - 8;
   if (top + mh > window.innerHeight) top = window.innerHeight - mh - 8;
   dom.ctxmenu.style.left = left + 'px';
@@ -98,10 +109,41 @@ function openResetCtx(e) {
 
 export function zoomBy(factor) {
   const r = dom.stage.getBoundingClientRect();
-  const px = r.width / 2, py = r.height / 2;
-  const wx = (px - state.cam.x) / state.cam.scale, wy = (py - state.cam.y) / state.cam.scale;
+  const px = r.width / 2,
+    py = r.height / 2;
+  const wx = (px - state.cam.x) / state.cam.scale,
+    wy = (py - state.cam.y) / state.cam.scale;
   state.cam.scale = Math.max(0.2, Math.min(2.5, state.cam.scale * factor));
-  state.cam.x = px - wx * state.cam.scale; state.cam.y = py - wy * state.cam.scale; applyCam();
+  state.cam.x = px - wx * state.cam.scale;
+  state.cam.y = py - wy * state.cam.scale;
+  applyCam();
+}
+
+// Back to this board's Home View if one is set, else the default camera.
+export function resetZoom() {
+  const home = state.view.canvas ? loadHomeCam(state.view.canvas.id) : null;
+  state.cam = home || { ...DEFAULT_CAM };
+  applyCam();
+}
+
+// Frames every free card on the board (never magnifying past 100%).
+export function zoomToFit() {
+  const boxes = state.view.items
+    .filter(i => !i.parentItemId && i.type !== 'line' && elMap.get(i.id))
+    .map(i => {
+      const el = elMap.get(i.id);
+      return [i.x, i.y, i.x + el.offsetWidth, i.y + el.offsetHeight];
+    });
+  if (!boxes.length) return resetZoom();
+  const l = Math.min(...boxes.map(b => b[0])),
+    t = Math.min(...boxes.map(b => b[1])),
+    w = Math.max(...boxes.map(b => b[2])) - l,
+    h = Math.max(...boxes.map(b => b[3])) - t;
+  const r = dom.stage.getBoundingClientRect();
+  const pad = 60;
+  const scale = Math.max(0.2, Math.min(1, (r.width - 2 * pad) / w, (r.height - 2 * pad) / h));
+  state.cam = { scale, x: (r.width - w * scale) / 2 - l * scale, y: (r.height - h * scale) / 2 - t * scale };
+  applyCam();
 }
 
 // Two-finger pinch zoom for touch screens. Keeps the world point under the
@@ -109,17 +151,23 @@ export function zoomBy(factor) {
 function initPinch() {
   const pts = new Map();
   let start = null;
-  dom.stage.addEventListener('pointerdown', (e) => {
+  dom.stage.addEventListener('pointerdown', e => {
     if (e.pointerType !== 'touch') return;
     pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pts.size === 2) {
       state.pinching = true;
-      state.pan = null; dom.stage.classList.remove('panning');
+      state.pan = null;
+      dom.stage.classList.remove('panning');
       const [a, b] = [...pts.values()];
-      start = { dist: Math.hypot(a.x - b.x, a.y - b.y), cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, cam: { ...state.cam } };
+      start = {
+        dist: Math.hypot(a.x - b.x, a.y - b.y),
+        cx: (a.x + b.x) / 2,
+        cy: (a.y + b.y) / 2,
+        cam: { ...state.cam },
+      };
     }
   });
-  document.addEventListener('pointermove', (e) => {
+  document.addEventListener('pointermove', e => {
     if (!pts.has(e.pointerId)) return;
     pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (!state.pinching || pts.size !== 2 || !start) return;
@@ -133,9 +181,12 @@ function initPinch() {
     state.cam.y = (a.y + b.y) / 2 - r.top - wy * scale;
     applyCam();
   });
-  const drop = (e) => {
+  const drop = e => {
     pts.delete(e.pointerId);
-    if (pts.size < 2) { state.pinching = false; start = null; }
+    if (pts.size < 2) {
+      state.pinching = false;
+      start = null;
+    }
   };
   document.addEventListener('pointerup', drop);
   document.addEventListener('pointercancel', drop);
@@ -145,27 +196,31 @@ function initPinch() {
 export function initViewport() {
   document.getElementById('zoomIn').onclick = () => zoomBy(1.2);
   document.getElementById('zoomOut').onclick = () => zoomBy(1 / 1.2);
-  document.getElementById('zoomReset').onclick = () => {
-    const home = state.view.canvas ? loadHomeCam(state.view.canvas.id) : null;
-    state.cam = home || { ...DEFAULT_CAM };
-    applyCam();
-  };
+  document.getElementById('zoomReset').onclick = resetZoom;
   document.getElementById('zoomReset').addEventListener('contextmenu', openResetCtx);
 
-  dom.stage.addEventListener('wheel', (e) => {
-    e.preventDefault();
-    if (e.ctrlKey || e.metaKey) {
-      const r = dom.stage.getBoundingClientRect();
-      const px = e.clientX - r.left, py = e.clientY - r.top;
-      const wx = (px - state.cam.x) / state.cam.scale, wy = (py - state.cam.y) / state.cam.scale;
-      const factor = Math.exp(-e.deltaY * 0.0015);
-      state.cam.scale = Math.max(0.2, Math.min(2.5, state.cam.scale * factor));
-      state.cam.x = px - wx * state.cam.scale; state.cam.y = py - wy * state.cam.scale;
-    } else {
-      state.cam.x -= e.deltaX; state.cam.y -= e.deltaY;
-    }
-    applyCam();
-  }, { passive: false });
+  dom.stage.addEventListener(
+    'wheel',
+    e => {
+      e.preventDefault();
+      if (e.ctrlKey || e.metaKey) {
+        const r = dom.stage.getBoundingClientRect();
+        const px = e.clientX - r.left,
+          py = e.clientY - r.top;
+        const wx = (px - state.cam.x) / state.cam.scale,
+          wy = (py - state.cam.y) / state.cam.scale;
+        const factor = Math.exp(-e.deltaY * 0.0015);
+        state.cam.scale = Math.max(0.2, Math.min(2.5, state.cam.scale * factor));
+        state.cam.x = px - wx * state.cam.scale;
+        state.cam.y = py - wy * state.cam.scale;
+      } else {
+        state.cam.x -= e.deltaX;
+        state.cam.y -= e.deltaY;
+      }
+      applyCam();
+    },
+    { passive: false }
+  );
 
   initPinch();
 }

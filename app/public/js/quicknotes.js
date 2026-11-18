@@ -34,9 +34,9 @@ const h = (tag, cls, text) => {
 };
 
 const SMART = {
-  today:     { label: 'Today',     color: '#4C7CBE', icon: 'calendar', f: t => t.due && daysUntil(t.due) === 0 && !t.done },
-  all:       { label: 'All',       color: '#3D4A5C', icon: 'inbox',    f: t => !t.done },
-  completed: { label: 'Completed', color: '#6E8B74', icon: 'check',    f: t => t.done }
+  today: { label: 'Today', color: '#4C7CBE', icon: 'calendar', f: t => t.due && daysUntil(t.due) === 0 && !t.done },
+  all: { label: 'All', color: '#3D4A5C', icon: 'inbox', f: t => !t.done },
+  completed: { label: 'Completed', color: '#6E8B74', icon: 'check', f: t => t.done },
 };
 const SMART_KEYS = ['today', 'all', 'completed'];
 
@@ -50,30 +50,37 @@ const SETTINGS_KEY = 'quicknotes.settings';
 const qn = {
   open: false,
   loaded: false,
-  screen: 'home',          // 'home' | 'list' | 'task'
-  listId: null,            // a todo item id, or 'smart:<key>'
-  taskRef: null,           // { listId, taskId }
+  screen: 'home', // 'home' | 'list' | 'task'
+  listId: null, // a todo item id, or 'smart:<key>'
+  taskRef: null, // { listId, taskId }
   lists: [],
   rootCanvasId: null,
-  canvases: new Map(),     // canvasId -> {id, title, parentCanvasId, color, icon}, from api.graph()
-  collapsed: new Set(),    // canvasId -> group collapsed in the home tree (session-only)
+  canvases: new Map(), // canvasId -> {id, title, parentCanvasId, color, icon}, from api.graph()
+  collapsed: new Set(), // canvasId -> group collapsed in the home tree (session-only)
   homeTag: null,
   searchOpen: false,
   query: '',
   searchTag: null,
   compOpen: true,
   adding: false,
-  dirty: false,            // something changed → refresh the canvas on close
-  settings: loadSettings()
+  dirty: false, // something changed → refresh the canvas on close
+  settings: loadSettings(),
 };
 
 function loadSettings() {
   const def = { tiles: true, chips: false };
-  try { return Object.assign(def, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); }
-  catch (e) { return def; }
+  try {
+    return Object.assign(def, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'));
+  } catch {
+    return def;
+  }
 }
 function saveSettings() {
-  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(qn.settings)); } catch (e) { /* private mode */ }
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(qn.settings));
+  } catch {
+    /* private mode */
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -84,12 +91,13 @@ function saveSettings() {
 // "type here" placeholders) are never surfaced as tasks.
 function normTask(t) {
   return {
+    ...t, // keep fields Quick notes doesn't use (the canvas's `indent`)
     id: t.id || rid(),
     text: typeof t.text === 'string' ? t.text : '',
     done: !!t.done,
     due: t.due || null,
     tags: Array.isArray(t.tags) ? t.tags.slice() : [],
-    createdAt: t.createdAt || null
+    createdAt: t.createdAt || null,
   };
 }
 
@@ -97,7 +105,7 @@ async function load() {
   const [r, g] = await Promise.all([api.todos(), api.graph().catch(() => ({ canvases: [] }))]);
   qn.rootCanvasId = r.rootCanvasId;
   qn.canvases = new Map((g.canvases || []).map(c => [c.id, c]));
-  if (savePending.size) return;   // a local edit is still in flight — keep ours
+  if (savePending.size) return; // a local edit is still in flight — keep ours
   qn.lists = (r.lists || []).map(l => ({
     id: l.id,
     canvasId: l.canvasId,
@@ -106,7 +114,8 @@ async function load() {
     color: l.color || null,
     tags: Array.isArray(l.tags) ? l.tags : [],
     tasks: (l.tasks || []).map(normTask),
-    createdAt: l.createdAt
+    baseTasks: l.tasks || [], // as the server has it; sent with edits so they merge
+    createdAt: l.createdAt,
   }));
   qn.loaded = true;
   render();
@@ -118,28 +127,56 @@ function save(list, body) {
   qn.dirty = true;
   clearTimeout(saveTimers.get(list.id));
   savePending.set(list.id, Object.assign(savePending.get(list.id) || {}, body));
-  saveTimers.set(list.id, setTimeout(() => flushSaves(list.id), 200));
+  saveTimers.set(
+    list.id,
+    setTimeout(() => flushSaves(list.id), 200)
+  );
 }
 
 // Writes are debounced while typing; anything still queued goes out as soon as
 // the user closes a sheet or leaves Quick notes, so nothing is lost.
-function flushSaves(only) {
+function flushSaves(only, keepalive = false) {
   const sent = [];
   for (const [id, body] of savePending) {
     if (only && id !== only) continue;
     clearTimeout(saveTimers.get(id));
     saveTimers.delete(id);
     savePending.delete(id);
-    sent.push(api.patch(id, { data: body }).catch(() => toast('Could not save')));
+    const list = listById(id);
+    const req = { data: body };
+    if (body.tasks && list) req.baseTasks = list.baseTasks || [];
+    sent.push(api.patch(id, req, keepalive).then(saved => adoptMerged(list, saved)));
   }
   return sent;
 }
+
+// The server merges task edits with changes made elsewhere (the canvas card,
+// another device); take its result as the new base and show it if it differs.
+function adoptMerged(list, saved) {
+  if (!saved || !list || !Array.isArray(saved.data.tasks)) return;
+  list.baseTasks = saved.data.tasks;
+  const merged = saved.data.tasks.map(normTask);
+  if (savePending.has(list.id) || JSON.stringify(merged) === JSON.stringify(list.tasks)) return;
+  list.tasks = merged;
+  render();
+}
+// Queued edits go out before the tab closes or the phone backgrounds the app.
+// …and coming back, pick up edits made elsewhere once ours have landed.
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState === 'hidden') flushSaves(null, true);
+  else if (qn.loaded) {
+    await Promise.all(flushSaves(null));
+    load().catch(() => {});
+  }
+});
+window.addEventListener('pagehide', () => flushSaves(null, true));
 const saveTasks = list => save(list, { tasks: list.tasks });
 const saveMeta = list => save(list, { title: list.title, tags: list.tags });
 
 const listById = id => qn.lists.find(l => l.id === id) || null;
 const tasksOf = list => list.tasks.filter(t => t.text.trim());
 const openCount = list => tasksOf(list).filter(t => !t.done).length;
+const listHasTag = (list, tag) => list.tags.includes(tag) || tasksOf(list).some(t => t.tags.includes(tag));
 
 // Smart views are computed filters over every list, so their rows carry the
 // list they came from for the sub-line and for writes.
@@ -185,15 +222,22 @@ function agoLabel(ms) {
 // ---------------------------------------------------------------------------
 // Navigation
 // ---------------------------------------------------------------------------
-export function isQuickNotesOpen() { return qn.open; }
+export function isQuickNotesOpen() {
+  return qn.open;
+}
 
+// Full screen on every viewport (opened from the topbar's Quick notes button on
+// desktop, the footer tab on a phone).
 export function openQuickNotes() {
   qn.open = true;
   qn.screen = 'home';
   el('quicknotes').hidden = false;
   document.body.classList.add('qn-open');
-  render();                                        // paint the cached lists…
-  load().catch(() => { if (!qn.loaded) toast('Could not load your lists'); });   // …then refresh
+  document.documentElement.classList.add('qn-open'); // lifts the page-wide touch lock, see style.css
+  render(); // paint the cached lists…
+  load().catch(() => {
+    if (!qn.loaded) toast('Could not load your lists');
+  }); // …then refresh
 }
 
 export function closeQuickNotes() {
@@ -203,6 +247,7 @@ export function closeQuickNotes() {
   hideSheet();
   el('quicknotes').hidden = true;
   document.body.classList.remove('qn-open');
+  document.documentElement.classList.remove('qn-open');
   // edits here change cards on the board, so pull the open canvas back in sync
   // once the last write has actually landed
   if (qn.dirty && state.view.canvas) {
@@ -212,7 +257,11 @@ export function closeQuickNotes() {
   }
 }
 
-function goHome() { qn.screen = 'home'; qn.adding = false; render(); }
+function goHome() {
+  qn.screen = 'home';
+  qn.adding = false;
+  render();
+}
 function openList(id, opts) {
   qn.listId = id;
   qn.screen = 'list';
@@ -279,16 +328,21 @@ function renderHome() {
   chips.hidden = !qn.settings.chips;
   chips.innerHTML = '';
   if (qn.settings.chips) {
-    buildChips(chips, qn.homeTag, tag => { qn.homeTag = tag; renderHome(); refreshIcons(); });
+    buildChips(chips, qn.homeTag, tag => {
+      qn.homeTag = tag;
+      renderHome();
+      refreshIcons();
+    });
   }
 
   const rows = el('qnLists');
   rows.innerHTML = '';
-  const shown = qn.lists.filter(l => !qn.homeTag || l.tags.includes(qn.homeTag));
+  // the chips offer task tags too, so a list matches when it or any of its tasks carries the tag
+  const shown = qn.lists.filter(l => !qn.homeTag || listHasTag(l, qn.homeTag));
   if (!shown.length) {
-    rows.appendChild(h('div', 'qn-empty', qn.lists.length
-      ? 'No lists carry that tag.'
-      : 'No todo lists yet. Tap + to make one.'));
+    rows.appendChild(
+      h('div', 'qn-empty', qn.lists.length ? 'No lists carry that tag.' : 'No todo lists yet. Tap + to make one.')
+    );
     return;
   }
   renderListTree(rows, shown);
@@ -336,14 +390,16 @@ function renderListTree(container, shown) {
     for (const child of childrenOfCanvas(canvasId)) {
       if (!hasListsBelow(child.id)) continue;
       const group = h('div', 'qn-group');
-      group.style.marginLeft = (depth * 14) + 'px';
+      group.style.marginLeft = depth * 14 + 'px';
       const header = h('button', 'qn-group-header');
       const collapsed = qn.collapsed.has(child.id);
       header.appendChild(lucideEl(collapsed ? 'chevron-right' : 'chevron-down'));
       header.appendChild(h('span', 'qn-group-title', child.title || 'Untitled board'));
       header.onclick = () => {
-        if (collapsed) qn.collapsed.delete(child.id); else qn.collapsed.add(child.id);
-        renderHome(); refreshIcons();
+        if (collapsed) qn.collapsed.delete(child.id);
+        else qn.collapsed.add(child.id);
+        renderHome();
+        refreshIcons();
       };
       group.appendChild(header);
       if (!collapsed) {
@@ -399,7 +455,10 @@ function renderListScreen() {
     return;
   }
 
-  if (!list) { el('qnAddBar').hidden = true; return; }
+  if (!list) {
+    el('qnAddBar').hidden = true;
+    return;
+  }
 
   const all = tasksOf(list);
   const open = all.filter(t => !t.done);
@@ -414,7 +473,11 @@ function renderListScreen() {
     const head = h('button', 'qn-comphead' + (qn.compOpen ? '' : ' closed'));
     head.appendChild(h('span', null, 'Completed · ' + done.length));
     head.appendChild(lucideEl('chevron-down'));
-    head.onclick = () => { qn.compOpen = !qn.compOpen; renderListScreen(); refreshIcons(); };
+    head.onclick = () => {
+      qn.compOpen = !qn.compOpen;
+      renderListScreen();
+      refreshIcons();
+    };
     tasksEl.appendChild(head);
     if (qn.compOpen) for (const task of done) tasksEl.appendChild(taskRow(list, task));
   }
@@ -432,7 +495,12 @@ function taskRow(list, task, sub) {
   const box = h('button', 'qn-box' + (task.done ? ' on' : ''));
   box.setAttribute('aria-label', task.done ? 'Mark not done' : 'Mark done');
   box.appendChild(lucideEl('check'));
-  box.onclick = e => { e.stopPropagation(); task.done = !task.done; saveTasks(list); render(); };
+  box.onclick = e => {
+    e.stopPropagation();
+    task.done = !task.done;
+    saveTasks(list);
+    render();
+  };
 
   const mid = h('div', 'qn-task-mid');
   mid.appendChild(h('span', 'qn-task-text', task.text));
@@ -482,7 +550,11 @@ function renderTaskScreen() {
   picker.className = 'qn-dateinput';
   picker.value = task.due || '';
   picker.setAttribute('aria-label', 'Due date');
-  picker.onchange = () => { task.due = picker.value || null; saveTasks(list); render(); };
+  picker.onchange = () => {
+    task.due = picker.value || null;
+    saveTasks(list);
+    render();
+  };
   dueRow.appendChild(picker);
   if (due) {
     const clear = h('button', 'qn-x');
@@ -490,7 +562,10 @@ function renderTaskScreen() {
     clear.appendChild(lucideEl('x'));
     clear.onclick = e => {
       e.stopPropagation();
-      task.due = null; saveTasks(list); render(); toast('Due date removed');
+      task.due = null;
+      saveTasks(list);
+      render();
+      toast('Due date removed');
     };
     dueRow.appendChild(clear);
   }
@@ -506,9 +581,8 @@ function renderTaskScreen() {
   tagRow.appendChild(tagList);
   details.appendChild(tagRow);
 
-  el('qnCreated').textContent = task.createdAt || list.createdAt
-    ? 'Created ' + agoLabel(task.createdAt || list.createdAt)
-    : '';
+  el('qnCreated').textContent =
+    task.createdAt || list.createdAt ? 'Created ' + agoLabel(task.createdAt || list.createdAt) : '';
 }
 
 // ---- search ----------------------------------------------------------------
@@ -529,7 +603,11 @@ function searchResults() {
 function renderSearch() {
   const chips = el('qnSearchChips');
   chips.innerHTML = '';
-  buildChips(chips, qn.searchTag, tag => { qn.searchTag = tag; renderSearch(); refreshIcons(); });
+  buildChips(chips, qn.searchTag, tag => {
+    qn.searchTag = tag;
+    renderSearch();
+    refreshIcons();
+  });
 
   const results = el('qnResults');
   results.innerHTML = '';
@@ -554,7 +632,11 @@ function renderSearch() {
   results.appendChild(h('span', 'qn-count', found.length + (found.length === 1 ? ' result' : ' results')));
   for (const p of found) {
     const row = taskRow(p.list, p.task, p.list.title);
-    row.onclick = () => { closeSearch(); qn.listId = p.list.id; openTask(p.list, p.task); };
+    row.onclick = () => {
+      closeSearch();
+      qn.listId = p.list.id;
+      openTask(p.list, p.task);
+    };
     results.appendChild(row);
   }
 }
@@ -610,12 +692,20 @@ function sheetRow(parent, opt) {
 function showAddSheet() {
   showSheet(body => {
     sheetRow(body, {
-      icon: 'file-text', label: 'Note',
-      onClick: () => { hideSheet(); addNoteToBoard(); }
+      icon: 'file-text',
+      label: 'Note',
+      onClick: () => {
+        hideSheet();
+        addNoteToBoard();
+      },
     });
     sheetRow(body, {
-      icon: 'square-check-big', label: 'Todo list',
-      onClick: () => { hideSheet(); createList(); }
+      icon: 'square-check-big',
+      label: 'Todo list',
+      onClick: () => {
+        hideSheet();
+        createList();
+      },
     });
   });
 }
@@ -623,72 +713,130 @@ function showAddSheet() {
 function showSettingsSheet() {
   showSheet(body => {
     sheetRow(body, {
-      icon: 'layout-grid', label: 'Smart views', state: qn.settings.tiles ? 'On' : 'Off',
+      icon: 'layout-grid',
+      label: 'Smart views',
+      state: qn.settings.tiles ? 'On' : 'Off',
       cls: qn.settings.tiles ? 'on' : '',
-      onClick: () => { qn.settings.tiles = !qn.settings.tiles; saveSettings(); renderHome(); drawSheet(); refreshIcons(); }
+      onClick: () => {
+        qn.settings.tiles = !qn.settings.tiles;
+        saveSettings();
+        renderHome();
+        drawSheet();
+        refreshIcons();
+      },
     });
     sheetRow(body, {
-      icon: 'tag', label: 'Tag filters', state: qn.settings.chips ? 'On' : 'Off',
+      icon: 'tag',
+      label: 'Tag filters',
+      state: qn.settings.chips ? 'On' : 'Off',
       cls: qn.settings.chips ? 'on' : '',
       onClick: () => {
         qn.settings.chips = !qn.settings.chips;
         if (!qn.settings.chips) qn.homeTag = null;
-        saveSettings(); renderHome(); drawSheet(); refreshIcons();
-      }
+        saveSettings();
+        renderHome();
+        drawSheet();
+        refreshIcons();
+      },
     });
   });
 }
 
 function showListSheet() {
   const list = activeList();
-  if (!list) { showSettingsSheet(); return; }
+  if (!list) {
+    showSettingsSheet();
+    return;
+  }
   showSheet(body => {
     sheetRow(body, {
-      icon: 'pencil', label: 'Rename list',
+      icon: 'pencil',
+      label: 'Rename list',
       onClick: () => {
         hideSheet();
         const title = el('qnListTitle');
         title.focus();
         document.getSelection().selectAllChildren(title);
-      }
+      },
     });
     sheetRow(body, {
-      icon: 'layout-grid', label: 'Show on board',
-      onClick: () => { hideSheet(); closeQuickNotes(); openCanvas(list.canvasId); }
+      icon: 'layout-grid',
+      label: 'Show on board',
+      onClick: () => {
+        hideSheet();
+        closeQuickNotes();
+        openCanvas(list.canvasId);
+      },
     });
     sheetRow(body, {
-      icon: 'trash-2', label: 'Delete list', cls: 'danger',
-      onClick: () => { hideSheet(); deleteList(list); }
+      icon: 'trash-2',
+      label: 'Delete list',
+      cls: 'danger',
+      onClick: () => {
+        hideSheet();
+        deleteList(list);
+      },
     });
   });
 }
 
-// Tag picker: every tag already in use, plus a field for a new one.
+// Tag picker: every tag already in use, plus a field for a new one. The rows
+// are toggles, so the ones on this task read as selected (filled check, tinted
+// row), not just a different icon.
 function showTagSheet(list, task) {
   showSheet(body => {
     const known = allTags();
+    if (known.length) {
+      const head = h('div', 'qn-sheet-head');
+      head.appendChild(h('span', 'qn-sheet-title', 'Tags'));
+      const n = task.tags.length;
+      head.appendChild(h('span', 'qn-sheet-sub', (n ? n + ' on this task · ' : '') + 'tap to add or remove'));
+      body.appendChild(head);
+    }
     for (const tag of known) {
       const on = task.tags.includes(tag);
-      sheetRow(body, {
-        icon: on ? 'check' : 'tag', label: '#' + tag, cls: on ? 'on' : '',
-        onClick: () => { toggleTag(list, task, tag); drawSheet(); }
+      const row = sheetRow(body, {
+        label: '#' + tag,
+        cls: 'qn-tagrow' + (on ? ' on' : ''),
+        onClick: () => {
+          toggleTag(list, task, tag);
+          drawSheet();
+        },
       });
+      row.setAttribute('aria-pressed', on ? 'true' : 'false');
+      const mark = h('span', 'qn-tagmark');
+      mark.appendChild(lucideEl('check'));
+      row.prepend(mark);
     }
     const field = h('div', 'qn-sheet-field');
     const input = document.createElement('input');
     input.placeholder = known.length ? 'New tag' : 'First tag';
     input.setAttribute('aria-label', 'New tag');
-    input.onkeydown = e => {
-      if (e.key !== 'Enter') return;
+    // Enter or the Add button; focus moves to the redrawn field so the
+    // keyboard stays up for the next tag.
+    const submit = () => {
       const tag = input.value.trim().replace(/^#/, '').toLowerCase();
       if (!tag) return;
       if (!task.tags.includes(tag)) toggleTag(list, task, tag);
-      input.value = '';
       drawSheet();
+      const next = el('qnSheetBody').querySelector('.qn-sheet-field input');
+      if (next) next.focus();
     };
+    const add = h('button', 'qn-sheet-add', 'Add');
+    add.type = 'button';
+    add.disabled = true;
+    input.oninput = () => (add.disabled = !input.value.trim().replace(/^#/, ''));
+    input.onkeydown = e => {
+      if (e.key === 'Enter') submit();
+    };
+    add.onpointerdown = e => e.preventDefault(); // keep the field focused (and the keyboard up) on tap
+    add.onclick = submit;
     field.appendChild(input);
+    field.appendChild(add);
     body.appendChild(field);
-    setTimeout(() => { if (!known.length) input.focus(); }, 60);
+    setTimeout(() => {
+      if (!known.length) input.focus();
+    }, 60);
   });
 }
 function toggleTag(list, task, tag) {
@@ -712,7 +860,10 @@ function addNoteToBoard() {
 // already there so they don't land on top of an existing card.
 async function createList() {
   const rootId = qn.rootCanvasId || state.rootCanvasId;
-  if (!rootId) { toast('Could not reach your board'); return; }
+  if (!rootId) {
+    toast('Could not reach your board');
+    return;
+  }
   let y = 60;
   try {
     const root = await api.canvas(rootId);
@@ -720,17 +871,28 @@ async function createList() {
       if (it.parentItemId) continue;
       y = Math.max(y, (it.y || 0) + (it.h || 200) + 24);
     }
-  } catch (e) { /* fall back to the default slot */ }
+  } catch {
+    /* fall back to the default slot */
+  }
 
   const created = await api.create({
-    canvasId: rootId, type: 'todo', x: 60, y,
+    canvasId: rootId,
+    type: 'todo',
+    x: 60,
+    y,
     w: defaultsFor('todo').w,
-    data: { title: 'New list', tasks: [] }
+    data: { title: 'New list', tasks: [] },
   });
   qn.dirty = true;
   qn.lists.push({
-    id: created.id, canvasId: rootId, canvasTitle: '',
-    title: 'New list', color: created.color || null, tags: [], tasks: [], createdAt: created.createdAt
+    id: created.id,
+    canvasId: rootId,
+    canvasTitle: '',
+    title: 'New list',
+    color: created.color || null,
+    tags: [],
+    tasks: [],
+    createdAt: created.createdAt,
   });
   openList(created.id, { rename: true });
 }
@@ -739,8 +901,22 @@ async function deleteList(list) {
   qn.lists = qn.lists.filter(l => l.id !== list.id);
   qn.dirty = true;
   goHome();
-  toast('List deleted');
-  try { await api.remove(list.id); } catch (e) { toast('Could not delete the list'); }
+  flushSaves(list.id);
+  try {
+    await api.remove(list.id);
+  } catch {
+    toast('Could not delete the list');
+    return;
+  }
+  toast('List deleted', {
+    label: 'Undo',
+    fn: async () => {
+      if (await api.restore(list.id)) {
+        qn.dirty = true;
+        await load();
+      }
+    },
+  });
 }
 
 function addTask(list, text) {
@@ -786,7 +962,10 @@ export function initQuickNotes() {
     refreshIcons();
   });
   title.addEventListener('keydown', e => {
-    if (e.key === 'Enter') { e.preventDefault(); title.blur(); }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      title.blur();
+    }
   });
 
   el('qnAddTask').onclick = () => {
@@ -796,47 +975,94 @@ export function initQuickNotes() {
     el('qnNewTask').value = '';
     el('qnNewTask').focus();
   };
-  el('qnAddCancel').onclick = () => { qn.adding = false; el('qnNewTask').value = ''; renderListScreen(); refreshIcons(); };
+  el('qnAddCancel').onclick = () => {
+    qn.adding = false;
+    el('qnNewTask').value = '';
+    renderListScreen();
+    refreshIcons();
+  };
   el('qnNewTask').addEventListener('keydown', e => {
     const input = el('qnNewTask');
-    if (e.key === 'Escape') { qn.adding = false; input.value = ''; renderListScreen(); refreshIcons(); return; }
+    if (e.key === 'Escape') {
+      qn.adding = false;
+      input.value = '';
+      renderListScreen();
+      refreshIcons();
+      return;
+    }
     if (e.key !== 'Enter') return;
     const list = activeList();
     const text = input.value.trim();
     if (!list || !text) return;
     addTask(list, text);
     input.value = '';
-    input.focus();                       // stays open for the next one
+    input.focus(); // stays open for the next one
   });
 
-  el('qnTaskBack').onclick = () => { qn.screen = 'list'; render(); };
+  el('qnTaskBack').onclick = () => {
+    qn.screen = 'list';
+    render();
+  };
   el('qnTaskBox').onclick = () => {
-    const f = findTask(qn.taskRef); if (!f) return;
-    f.task.done = !f.task.done; saveTasks(f.list); render();
+    const f = findTask(qn.taskRef);
+    if (!f) return;
+    f.task.done = !f.task.done;
+    saveTasks(f.list);
+    render();
   };
   const taskTitle = el('qnTaskTitle');
   taskTitle.addEventListener('input', () => {
-    const f = findTask(qn.taskRef); if (!f) return;
+    const f = findTask(qn.taskRef);
+    if (!f) return;
     f.task.text = taskTitle.textContent.trim();
     saveTasks(f.list);
   });
-  taskTitle.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); taskTitle.blur(); } });
+  taskTitle.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      taskTitle.blur();
+    }
+  });
   el('qnDelTask').onclick = () => {
-    const f = findTask(qn.taskRef); if (!f) return;
+    const f = findTask(qn.taskRef);
+    if (!f) return;
     deleteTask(f.list, f.task);
   };
 
   el('qnSearchCancel').onclick = closeSearch;
-  el('qnQueryClear').onclick = () => { qn.query = ''; el('qnQuery').value = ''; renderSearch(); refreshIcons(); el('qnQuery').focus(); };
-  el('qnQuery').addEventListener('input', () => { qn.query = el('qnQuery').value; renderSearch(); refreshIcons(); });
+  el('qnQueryClear').onclick = () => {
+    qn.query = '';
+    el('qnQuery').value = '';
+    renderSearch();
+    refreshIcons();
+    el('qnQuery').focus();
+  };
+  el('qnQuery').addEventListener('input', () => {
+    qn.query = el('qnQuery').value;
+    renderSearch();
+    refreshIcons();
+  });
 
   // Escape backs out one layer at a time: sheet → search → task → list → board.
   document.addEventListener('keydown', e => {
     if (!qn.open || e.key !== 'Escape') return;
-    if (sheetBuilder) { hideSheet(); return; }
-    if (qn.searchOpen) { closeSearch(); return; }
-    if (qn.screen === 'task') { qn.screen = 'list'; render(); return; }
-    if (qn.screen === 'list') { goHome(); return; }
+    if (sheetBuilder) {
+      hideSheet();
+      return;
+    }
+    if (qn.searchOpen) {
+      closeSearch();
+      return;
+    }
+    if (qn.screen === 'task') {
+      qn.screen = 'list';
+      render();
+      return;
+    }
+    if (qn.screen === 'list') {
+      goHome();
+      return;
+    }
     closeQuickNotes();
   });
 }

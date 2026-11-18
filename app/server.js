@@ -9,9 +9,18 @@ const PORT = process.env.PORT || 4321;
 const HOST = process.env.HOST || '0.0.0.0';
 const API_KEY = (process.env.API_KEY || '').trim();
 
-const app = express();
-app.use(express.json({ limit: '5mb' }));
+// Bundle the TipTap editor (public/js/editor.js + its npm deps) into
+// public/vendor/editor.js. Cards import() it the first time a note is edited.
+require('esbuild').buildSync({
+  entryPoints: [path.join(__dirname, 'public/js/editor.js')],
+  outfile: path.join(__dirname, 'public/vendor/editor.js'),
+  bundle: true,
+  format: 'esm',
+  minify: true,
+  logLevel: 'warning',
+});
 
+const app = express();
 // Serve index.html ourselves (with the API key injected as a meta tag) so the
 // browser UI can keep authenticating against /api/* once API_KEY is set.
 // Everything else (js/, style.css, uploads/) is still served statically.
@@ -64,15 +73,33 @@ app.get('/', (req, res) => {
 // Lucide icons ship as an npm runtime dependency and are served from the app
 // itself, so icons render on self-hosted boxes with no route to a CDN.
 const LUCIDE_UMD = path.join(path.dirname(require.resolve('lucide/package.json')), 'dist', 'umd');
-app.use('/vendor/lucide', express.static(LUCIDE_UMD, {
-  index: false,
-  setHeaders: (res) => res.set('Cache-Control', 'no-cache')
-}));
-app.use(express.static(path.join(__dirname, 'public'), {
-  index: false,
-  setHeaders: (res) => res.set('Cache-Control', 'no-cache')
-}));
-app.use(require('./routes'));
+app.use(
+  '/vendor/lucide',
+  express.static(LUCIDE_UMD, {
+    index: false,
+    setHeaders: res => res.set('Cache-Control', 'no-cache'),
+  })
+);
+// The service worker is re-checked on every launch so an update lands right away.
+app.get('/sw.js', (req, res) => {
+  res.set('Cache-Control', 'no-cache');
+  res.sendFile(path.join(__dirname, 'public', 'sw.js'));
+});
+// The generic handler can also reach public/uploads (e.g. via an encoded URL), so
+// it applies the same upload safety headers to anything it resolves in there.
+// Mounted before the API router: the router's API-key check would otherwise
+// turn away the page's own scripts and styles.
+const routes = require('./routes');
+app.use(
+  express.static(path.join(__dirname, 'public'), {
+    index: false,
+    setHeaders: (res, filePath) => {
+      res.set('Cache-Control', 'no-cache');
+      routes.setUploadHeaders(res, filePath);
+    },
+  })
+);
+app.use(routes);
 
 app.listen(PORT, HOST, () => {
   console.log(`\n  Miladash running at http://${HOST}:${PORT}`);

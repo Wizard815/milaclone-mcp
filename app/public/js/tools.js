@@ -1,93 +1,117 @@
 'use strict';
 
 import { state, dom } from './state.js';
-import { api } from './api.js';
-import { toast, imageSize } from './util.js';
+import { toast } from './util.js';
+import { addFiles } from './capture.js';
 import { screenToWorld, applyCam, cancelCamAnimation } from './viewport.js';
 import { createAt, defaultsFor } from './create.js';
-import { select, deselect, selectMany } from './editing.js';
-import { render } from './cards.js';
+import { deselect, selectIds } from './editing.js';
+import { elMap } from './state.js';
 import { cancelLine } from './lines.js';
 import { openConnectPicker } from './connect.js';
+import { pickTemplate } from './templates.js';
 
 // Toolbar arming, canvas panning + placing new cards, and file/image uploads.
 
 export function arm(tool, btn) {
   disarm();
-  state.armed = tool; dom.stage.classList.add('armed');
+  state.armed = tool;
+  dom.stage.classList.add('armed');
   btn.classList.add('armed');
   let msg = 'Tap the canvas to place your ' + tool;
   if (tool === 'line') msg = 'Click a card, then another to connect them';
   else if (tool === 'connect') msg = 'Tap the canvas to link somewhere else';
+  else if (tool === 'template') msg = 'Tap where the copy should go';
   toast(msg);
 }
 
 export function disarm() {
-  state.armed = null; state.lineFrom = null; dom.stage.classList.remove('armed');
+  state.armed = null;
+  state.lineFrom = null;
+  dom.stage.classList.remove('armed');
   document.querySelectorAll('.tool.armed, .mtool.armed').forEach(b => b.classList.remove('armed'));
 }
 
 function placeAt(type, clientX, clientY) {
   const w = screenToWorld(clientX, clientY);
-  if (type === 'image') { state.pendingImageWorld = w; dom.fileInput.click(); }
-  else if (type === 'upload') { state.pendingUploadWorld = w; dom.uploadInput.click(); }
-  else if (type === 'connect') { openConnectPicker(w); }
-  else createAt(type, w.x - defaultsFor(type).w / 2, w.y - 20);
+  if (type === 'image') {
+    state.pendingImageWorld = w;
+    dom.fileInput.click();
+  } else if (type === 'upload') {
+    state.pendingUploadWorld = w;
+    dom.uploadInput.click();
+  } else if (type === 'connect') {
+    openConnectPicker(w);
+  } else if (type === 'template') {
+    pickTemplate(w);
+  } else createAt(type, w.x - defaultsFor(type).w / 2, w.y - 20);
 }
 
-// Marquee (rubber-band) select: drag on empty canvas while the Select tool
-// is armed to select every free-floating card whose box intersects the
-// dragged rectangle. Shift/Ctrl held on release adds to the existing
-// selection instead of replacing it. Stays armed after use (unlike the
-// creation tools) so you can marquee-select repeatedly without re-arming.
+// Selection box: every free card it touches is selected (shift, ctrl or cmd adds
+// to the current selection). The selection updates live while dragging. Card rects are
+// measured once (nothing moves mid-box), and the stage captures the pointer so a
+// release outside the window still ends the box.
 function startMarquee(e) {
-  const stageRect = dom.stage.getBoundingClientRect();
-  const startX = e.clientX, startY = e.clientY;
-  const box = document.getElementById('marquee');
-  box.hidden = false;
+  const additive = e.shiftKey || e.ctrlKey || e.metaKey;
+  const base = additive ? [...state.selection] : [];
+  if (!additive) deselect();
+  const box = document.createElement('div');
+  box.className = 'marquee';
+  dom.stage.appendChild(box);
+  const sr = dom.stage.getBoundingClientRect();
+  const cards = state.view.items
+    .filter(i => !i.parentItemId && elMap.get(i.id))
+    .map(i => ({ id: i.id, r: elMap.get(i.id).getBoundingClientRect() }));
+  const sx = e.clientX,
+    sy = e.clientY;
   let moved = false;
-
-  const move = (ev) => {
-    const x1 = Math.min(startX, ev.clientX), x2 = Math.max(startX, ev.clientX);
-    const y1 = Math.min(startY, ev.clientY), y2 = Math.max(startY, ev.clientY);
-    if (!moved && (x2 - x1 > 3 || y2 - y1 > 3)) moved = true;
-    box.style.left = (x1 - stageRect.left) + 'px';
-    box.style.top = (y1 - stageRect.top) + 'px';
-    box.style.width = (x2 - x1) + 'px';
-    box.style.height = (y2 - y1) + 'px';
-  };
-
-  const up = (ev) => {
-    document.removeEventListener('pointermove', move);
-    document.removeEventListener('pointerup', up);
-    box.hidden = true;
-    if (!moved) { deselect(); return; }
-    const x1 = Math.min(startX, ev.clientX), x2 = Math.max(startX, ev.clientX);
-    const y1 = Math.min(startY, ev.clientY), y2 = Math.max(startY, ev.clientY);
-    const ids = [];
-    dom.world.querySelectorAll(':scope > .item').forEach(el => {
-      const r = el.getBoundingClientRect();
-      if (r.left < x2 && r.right > x1 && r.top < y2 && r.bottom > y1) ids.push(el.dataset.id);
+  let lastHit = '';
+  dom.stage.setPointerCapture(e.pointerId);
+  const move = ev => {
+    const l = Math.min(sx, ev.clientX),
+      t = Math.min(sy, ev.clientY),
+      r = Math.max(sx, ev.clientX),
+      b = Math.max(sy, ev.clientY);
+    if (!moved && r - l < 3 && b - t < 3) return;
+    moved = true;
+    Object.assign(box.style, {
+      left: l - sr.left + 'px',
+      top: t - sr.top + 'px',
+      width: r - l + 'px',
+      height: b - t + 'px',
     });
-    selectMany(ids, ev.shiftKey || ev.ctrlKey || ev.metaKey);
+    const hit = cards.filter(c => c.r.left < r && c.r.right > l && c.r.top < b && c.r.bottom > t).map(c => c.id);
+    const key = hit.join(',');
+    if (key !== lastHit) {
+      lastHit = key;
+      selectIds([...new Set([...base, ...hit])]);
+    }
   };
-
-  document.addEventListener('pointermove', move);
-  document.addEventListener('pointerup', up);
+  const end = () => {
+    box.remove();
+    dom.stage.removeEventListener('pointermove', move);
+    dom.stage.removeEventListener('pointerup', end);
+    dom.stage.removeEventListener('pointercancel', end);
+  };
+  dom.stage.addEventListener('pointermove', move);
+  dom.stage.addEventListener('pointerup', end);
+  dom.stage.addEventListener('pointercancel', end);
 }
 
 // Press-and-hold-then-drag placement: mirrors the tap-to-arm flow below, but
 // lets a tool button be dragged straight onto the canvas in one gesture.
 // Delegated on document so it also covers the mobile tray's cloned buttons.
 function initDragPlace() {
-  document.addEventListener('pointerdown', (e) => {
+  document.addEventListener('pointerdown', e => {
     if (e.button !== 0) return;
     const btn = e.target.closest('.tool[data-tool], .mtool[data-tool]');
     if (!btn || btn.dataset.tool === 'line' || btn.dataset.tool === 'select') return;
-    const startX = e.clientX, startY = e.clientY;
-    let dragging = false, ghost = null;
+    const startX = e.clientX,
+      startY = e.clientY;
+    let dragging = false,
+      ghost = null;
 
-    const move = (ev) => {
+    const move = ev => {
       if (!dragging) {
         if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < 6) return;
         dragging = true;
@@ -98,10 +122,11 @@ function initDragPlace() {
         document.body.appendChild(ghost);
         dom.stage.classList.add('armed');
       }
-      ghost.style.left = ev.clientX + 'px'; ghost.style.top = ev.clientY + 'px';
+      ghost.style.left = ev.clientX + 'px';
+      ghost.style.top = ev.clientY + 'px';
     };
 
-    const up = (ev) => {
+    const up = ev => {
       document.removeEventListener('pointermove', move);
       document.removeEventListener('pointerup', up);
       dom.stage.classList.remove('armed');
@@ -121,66 +146,70 @@ function initDragPlace() {
 export function initTools() {
   document.querySelectorAll('#railCreate .tool').forEach(btn => {
     btn.addEventListener('click', () => {
-      if (state.suppressNextClick) { state.suppressNextClick = false; return; }
+      if (state.suppressNextClick) {
+        state.suppressNextClick = false;
+        return;
+      }
       const t = btn.dataset.tool;
-      if (state.armed === t) { disarm(); return; }
+      if (state.armed === t) {
+        disarm();
+        return;
+      }
       arm(t, btn);
     });
   });
   initDragPlace();
 
-  dom.stage.addEventListener('pointerdown', (e) => {
+  dom.stage.addEventListener('pointerdown', e => {
     if (e.button !== 0 && e.button !== 1) return;
     if (state.pinching) return;
     cancelCamAnimation();
-    if (state.armed === 'line') { cancelLine(); return; }
+    if (state.armed === 'line') {
+      cancelLine();
+      return;
+    }
     // Box-select: the Select tool, or Shift+drag on empty canvas with any
     // tool disarmed. The selected cards then drag as one group.
-    if (state.armed === 'select' || (!state.armed && e.shiftKey && e.button === 0)) { startMarquee(e); return; }
+    if (state.armed === 'select' || (!state.armed && e.shiftKey && e.button === 0 && !state.spaceDown)) {
+      startMarquee(e);
+      return;
+    }
     if (state.armed) {
-      const t = state.armed; disarm();
+      const t = state.armed;
+      disarm();
       placeAt(t, e.clientX, e.clientY);
       return;
     }
+    // Anything else on empty canvas pans: left-drag, middle-drag, space-drag, touch.
+    e.preventDefault(); // middle-click autoscroll
     deselect();
     state.pan = { sx: e.clientX, sy: e.clientY, cx: state.cam.x, cy: state.cam.y };
     dom.stage.classList.add('panning');
-    const move = (ev) => { if (state.pinching || !state.pan) return; state.cam.x = state.pan.cx + (ev.clientX - state.pan.sx); state.cam.y = state.pan.cy + (ev.clientY - state.pan.sy); applyCam(); };
-    const up = () => { state.pan = null; dom.stage.classList.remove('panning'); document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); };
+    const move = ev => {
+      if (state.pinching || !state.pan) return;
+      state.cam.x = state.pan.cx + (ev.clientX - state.pan.sx);
+      state.cam.y = state.pan.cy + (ev.clientY - state.pan.sy);
+      applyCam();
+    };
+    const up = () => {
+      state.pan = null;
+      dom.stage.classList.remove('panning');
+      document.removeEventListener('pointermove', move);
+      document.removeEventListener('pointerup', up);
+    };
     document.addEventListener('pointermove', move);
     document.addEventListener('pointerup', up);
   });
 
-  dom.fileInput.addEventListener('change', async () => {
-    const file = dom.fileInput.files[0]; dom.fileInput.value = '';
-    if (!file) return;
-    toast('Uploading image…');
-    const res = await api.upload(file);
-    if (res.error) { toast('Upload failed'); return; }
-    const dim = await imageSize(res.src);
-    const w = state.pendingImageWorld || screenToWorld(window.innerWidth / 2, window.innerHeight / 2);
-    const it = await api.create({
-      canvasId: state.view.canvas.id, type: 'image',
-      x: Math.round(w.x - 130), y: Math.round(w.y - 90), w: 260,
-      data: { src: res.src, name: res.name, naturalW: dim.w, naturalH: dim.h }
+  // Picked files land where the tool was clicked (several at once lay out in a grid).
+  const onPicked = (input, key) =>
+    input.addEventListener('change', () => {
+      const files = [...input.files];
+      input.value = '';
+      const at = state[key] || undefined;
+      state[key] = null;
+      if (files.length) addFiles(files, at);
     });
-    state.view.items.push(it); render(); select(it.id); toast('Image added');
-    state.pendingImageWorld = null;
-  });
-
-  dom.uploadInput.addEventListener('change', async () => {
-    const file = dom.uploadInput.files[0]; dom.uploadInput.value = '';
-    if (!file) return;
-    toast('Uploading file…');
-    const res = await api.upload(file);
-    if (res.error) { toast('Upload failed'); return; }
-    const w = state.pendingUploadWorld || screenToWorld(window.innerWidth / 2, window.innerHeight / 2);
-    const it = await api.create({
-      canvasId: state.view.canvas.id, type: 'file',
-      x: Math.round(w.x - 110), y: Math.round(w.y - 40), w: 220,
-      data: { src: res.src, name: res.name, mime: res.mime || file.type }
-    });
-    state.view.items.push(it); render(); select(it.id); toast('File added');
-    state.pendingUploadWorld = null;
-  });
+  onPicked(dom.fileInput, 'pendingImageWorld');
+  onPicked(dom.uploadInput, 'pendingUploadWorld');
 }

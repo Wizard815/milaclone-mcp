@@ -8,19 +8,25 @@ const { test, expect } = require('@playwright/test');
 test.use({ viewport: { width: 390, height: 844 } });
 
 let seq = 0;
-const uniq = (p) => `${p}-${Date.now()}-${seq++}`;
+const uniq = p => `${p}-${Date.now()}-${seq++}`;
 
 // Seed a todo card straight through the API, then open Quick notes on it.
 async function seedList(page, title, tasks) {
   await page.goto('/');
-  const id = await page.evaluate(async ([title, tasks]) => {
-    const root = (await (await fetch('/api/root')).json()).rootCanvasId;
-    const it = await (await fetch('/api/item', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ canvasId: root, type: 'todo', data: { title, tasks } })
-    })).json();
-    return it.id;
-  }, [title, tasks || []]);
+  const id = await page.evaluate(
+    async ([title, tasks]) => {
+      const root = (await (await fetch('/api/root')).json()).rootCanvasId;
+      const it = await (
+        await fetch('/api/item', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ canvasId: root, type: 'todo', data: { title, tasks } }),
+        })
+      ).json();
+      return it.id;
+    },
+    [title, tasks || []]
+  );
   return id;
 }
 
@@ -37,12 +43,12 @@ test('the Quick notes tab opens the overview with every todo list', async ({ pag
   const title = uniq('Nightly');
   await seedList(page, title, [
     { id: 'a', text: 'Floss', done: false },
-    { id: 'b', text: 'Shower', done: true }
+    { id: 'b', text: 'Shower', done: true },
   ]);
   await openQuickNotes(page);
 
   await expect(listRow(page, title)).toBeVisible();
-  await expect(listRow(page, title).locator('.qn-row-count')).toHaveText('1');   // open tasks only
+  await expect(listRow(page, title).locator('.qn-row-count')).toHaveText('1'); // open tasks only
   await expect(page.locator('.qn-tile')).toHaveCount(3); // Today, All, Completed (Miladash dropped Starred)
 });
 
@@ -50,7 +56,7 @@ test('drilling into a list shows open tasks and a collapsible completed group', 
   const title = uniq('Routine');
   await seedList(page, title, [
     { id: 'a', text: 'Wash face', done: false },
-    { id: 'b', text: 'Shower', done: true }
+    { id: 'b', text: 'Shower', done: true },
   ]);
   await openQuickNotes(page);
   await listRow(page, title).click();
@@ -76,7 +82,7 @@ test('checking a task persists and moves it into Completed', async ({ page }) =>
   await expect(page.locator('.qn-comphead')).toContainText('Completed · 1');
 
   // the write lands on the same todo card the canvas renders
-  const tasks = await page.evaluate(async (id) => {
+  const tasks = await page.evaluate(async id => {
     const r = await (await fetch('/api/todos')).json();
     return r.lists.find(l => l.id === id).tasks;
   }, id);
@@ -127,7 +133,7 @@ test('task detail edits the note, due date and tags', async ({ page }) => {
   await flushed;
   await expect(page.locator('.qn-taglist .qn-tag')).toHaveText('#faith');
 
-  const saved = await page.evaluate(async (id) => {
+  const saved = await page.evaluate(async id => {
     const r = await (await fetch('/api/todos')).json();
     return r.lists.find(l => l.id === id).tasks[0];
   }, id);
@@ -138,6 +144,41 @@ test('task detail edits the note, due date and tags', async ({ page }) => {
   // the due date shows up on the row too, and clears from the detail screen
   await page.click('#qnDetails .qn-x');
   await expect(page.locator('.qn-due-add')).toBeVisible();
+});
+
+test('the tag sheet marks the tags already on the task and toggles them', async ({ page }) => {
+  const title = uniq('Tagged');
+  await seedList(page, title, [
+    { id: 'a', text: 'Pay rent', done: false, tags: ['money'] },
+    { id: 'b', text: 'Try a recipe', done: false, tags: ['taste'] },
+  ]);
+  await openQuickNotes(page);
+  await listRow(page, title).click();
+  await taskRow(page, 'Pay rent').locator('.qn-task-text').click();
+  await page.click('.qn-addtag');
+
+  const row = tag => page.locator('.qn-tagrow', { hasText: '#' + tag });
+  await expect(page.locator('.qn-sheet-sub')).toContainText('1 on this task');
+  await expect(row('money')).toHaveClass(/\bon\b/);
+  await expect(row('money')).toHaveAttribute('aria-pressed', 'true');
+  await expect(row('taste')).not.toHaveClass(/\bon\b/);
+  await expect(row('taste')).toHaveAttribute('aria-pressed', 'false');
+
+  await row('taste').click();
+  await expect(row('taste')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.qn-sheet-sub')).toContainText('2 on this task');
+  await expect(page.locator('.qn-taglist .qn-tag')).toHaveText(['#money', '#taste']);
+
+  // the Add button submits a new tag, same as Enter, and is off while the field is empty
+  const add = page.locator('.qn-sheet-add');
+  await expect(add).toBeDisabled();
+  await page.fill('.qn-sheet-field input', '#Errands');
+  await expect(add).toBeEnabled();
+  await add.click();
+  await expect(row('errands')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.qn-sheet-field input')).toHaveValue('');
+  await expect(page.locator('.qn-sheet-field input')).toBeFocused();
+  await expect(page.locator('.qn-taglist .qn-tag')).toHaveText(['#money', '#taste', '#errands']);
 });
 
 test('the note bullet button rewrites the note lines', async ({ page }) => {
@@ -167,7 +208,7 @@ test('search matches task text and opens the task', async ({ page }) => {
 
   await page.locator('#qnResults .qn-task').click();
   await expect(page.locator('#qnTaskTitle')).toHaveText(needle);
-  await expect(page.locator('#qnTaskBackLabel')).toHaveText(title);   // back goes to its own list
+  await expect(page.locator('#qnTaskBackLabel')).toHaveText(title); // back goes to its own list
 });
 
 test('search reports when nothing matches', async ({ page }) => {
@@ -178,6 +219,24 @@ test('search reports when nothing matches', async ({ page }) => {
   await expect(page.locator('.qn-blank')).toContainText('No matching tasks');
   await page.click('#qnSearchCancel');
   await expect(page.locator('.qn-title')).toBeVisible();
+});
+
+test('an overview tag chip keeps the lists whose tasks carry that tag', async ({ page }) => {
+  const tag = uniq('tag').toLowerCase();
+  const tagged = uniq('Tagged');
+  const plain = uniq('Plain');
+  await seedList(page, tagged, [{ id: 'a', text: 'Call the bank', done: false, tags: [tag] }]);
+  await seedList(page, plain, [{ id: 'a', text: 'Buy stamps', done: false }]);
+  await openQuickNotes(page);
+
+  await page.click('#qnHomeMenu');
+  await page.locator('#qnSheetBody').getByText('Tag filters').click();
+  await page.click('#qnDim');
+  await page.locator('#qnHomeChips .qn-chip', { hasText: '#' + tag }).click();
+
+  await expect(listRow(page, tagged)).toBeVisible();
+  await expect(listRow(page, plain)).toHaveCount(0);
+  await expect(page.locator('#qnLists .qn-empty')).toHaveCount(0);
 });
 
 test('the add sheet creates a todo list and drops you into it', async ({ page }) => {
@@ -202,10 +261,4 @@ test('Your boards returns to the canvas', async ({ page }) => {
   await page.click('#qnBoards');
   await expect(page.locator('#quicknotes')).toBeHidden();
   await expect(page.locator('#stage')).toBeVisible();
-});
-
-test('Quick notes stays out of the way on desktop', async ({ page }) => {
-  await page.setViewportSize({ width: 1200, height: 800 });
-  await page.goto('/');
-  await expect(page.locator('#quicknotes')).toBeHidden();
 });

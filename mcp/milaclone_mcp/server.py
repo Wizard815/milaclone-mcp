@@ -217,11 +217,14 @@ def create_item(
             (Images and uploaded files aren't supported here — they require a
             file upload through the web UI.)
         data: shape depends on item_type:
-            note:     {"title": str, "body": str}
+            note:     {"title": str, "body": str} — stored as rich text: the
+                server turns it into `doc` (TipTap JSON, title as a heading)
+                plus `text` (the plain text, "title\nbody"). Read notes and
+                comments back through `data.text`.
             todo:     {"title": str, "tasks": [{"id": str, "text": str, "done": bool}]}
             link:     {"title": str, "url": str}
             column:   {"title": str}
-            comment:  {"body": str}
+            comment:  {"body": str} — rich text, like a note.
             board:    {"title": str, "icon": str (optional Lucide icon name)}
             heading:  {"text": str, "bold": bool (optional), "underline": bool
                 (optional)} — text color comes from the card's `color`, not
@@ -313,8 +316,10 @@ def update_item(
     """
     Partially update a card. Only pass the fields you want to change.
 
-    `data` is shallow-merged into the existing data server-side — for a
-    `note`, passing {"body": "new text"} leaves `title` untouched. For a
+    `data` is shallow-merged into the existing data server-side. Notes and
+    comments are rich text (`data.doc` + `data.text`): sending `title` and/or
+    `body` for one rebuilds its whole body from just those fields, so pass
+    both to keep a title. For a
     `todo`'s `tasks` array specifically, a partial merge won't work (the
     whole array is replaced) — use `add_todo_task`/`set_todo_task_done`, or
     pass the full tasks list yourself.
@@ -372,12 +377,12 @@ def promote_item(item_id: str) -> dict[str, Any]:
 @mcp.tool()
 def delete_item(item_id: str) -> dict[str, Any]:
     """
-    Delete a card. If it's a `board` card, its entire nested board (and
-    everything on it, recursively) is deleted too.
+    Move a card to the Trash. Everything inside it goes with it: a column's
+    cards, a `board` card's entire nested board (recursively), and the
+    connector lines attached to it.
 
-    Deleting a `board` card can be undone with `restore_item` (pass this
-    same item_id) — the whole nested subtree comes back exactly as it was.
-    Deleting any other card type is permanent; there's no restore for those.
+    Any deletion can be undone with `restore_item` (pass this same item_id)
+    until the Trash is emptied in the web UI.
     """
     return _get_client().delete_item(item_id)
 
@@ -385,16 +390,15 @@ def delete_item(item_id: str) -> dict[str, Any]:
 @mcp.tool()
 def restore_item(item_id: str) -> dict[str, Any]:
     """
-    Undo the deletion of a `board` card — brings back the board and
-    everything nested inside it (however deep), exactly as it was.
+    Restore a card from the Trash — it comes back with everything that was
+    deleted with it (column cards, a board's nested board, attached lines).
 
     Args:
-        item_id: the id of the deleted board card (the id you passed to
-            `delete_item`, not its child board's id).
+        item_id: the id you passed to `delete_item` (for a board, the board
+            card's id, not its child board's id).
 
-    Only works for boards, and only until something else deletes that same
-    board again. Other card types can't be restored this way — deleting
-    them is permanent, so there's nothing to call this with.
+    Fails with a conflict if the board the card sat on is itself in the
+    Trash (restore that first), or not-found once the Trash was emptied.
     """
     return _get_client().restore_item(item_id)
 

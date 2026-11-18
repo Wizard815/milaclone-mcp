@@ -16,7 +16,7 @@ function refs() {
     backdrop: document.querySelector('#confirmModal .cm-backdrop'),
     message: document.getElementById('cmMessage'),
     cancel: document.getElementById('cmCancel'),
-    ok: document.getElementById('cmOk')
+    ok: document.getElementById('cmOk'),
   };
   return els;
 }
@@ -24,15 +24,22 @@ function refs() {
 function close(result) {
   const r = refs();
   r.root.hidden = true;
-  if (resolvePending) { resolvePending(result); resolvePending = null; }
+  if (resolvePending) {
+    resolvePending(result);
+    resolvePending = null;
+  }
 }
 
 export function confirmDialog(message, { okLabel = 'Delete' } = {}) {
   const r = refs();
+  // A modal <dialog> (e.g. the Trash sheet) makes the rest of the page inert
+  // and sits in the top layer, so the prompt has to open inside it.
+  const host = document.querySelector('dialog[open]') || document.body;
+  if (r.root.parentElement !== host) host.appendChild(r.root);
   r.message.textContent = message;
   r.ok.textContent = okLabel;
   r.root.hidden = false;
-  return new Promise((resolve) => {
+  return new Promise(resolve => {
     resolvePending = resolve;
   });
 }
@@ -46,9 +53,15 @@ export function initConfirmDialog() {
   r.ok.addEventListener('click', () => close(true));
   r.cancel.addEventListener('click', () => close(false));
   r.backdrop.addEventListener('click', () => close(false));
-  document.addEventListener('keydown', (e) => {
+  document.addEventListener('keydown', e => {
     if (r.root.hidden) return;
-    if (e.key === 'Escape') { e.preventDefault(); close(false); }
-    if (e.key === 'Enter') { e.preventDefault(); close(true); }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      close(false);
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      close(true);
+    }
   });
 }

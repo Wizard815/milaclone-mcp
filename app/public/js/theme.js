@@ -32,7 +32,9 @@ export function applyLook(look) {
 }
 
 export function saveLook(look) {
-  try { localStorage.setItem('look', LOOKS.includes(look) ? look : 'classic'); } catch (e) {}
+  try {
+    localStorage.setItem('look', LOOKS.includes(look) ? look : 'classic');
+  } catch {}
 }
 
 export function initTheme() {
@@ -41,7 +43,8 @@ export function initTheme() {
     const look = currentLook();
     if (look !== 'classic') {
       const next = look === 'night' ? 'parchment' : 'night';
-      applyLook(next); saveLook(next);
+      applyLook(next);
+      saveLook(next);
       return;
     }
     const dark = document.documentElement.classList.toggle('dark');

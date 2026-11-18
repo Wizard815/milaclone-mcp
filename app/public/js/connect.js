@@ -24,9 +24,18 @@ let browseCanvasId = null;
 // icon-name entries is cheaper than a circular import between the two
 // modules (mindmap.js already imports from this file).
 const ICONS = {
-  note: 'file-text', todo: 'list-checks', link: 'link-2', heading: 'heading-1',
-  document: 'file-text', table: 'table', color: 'palette', draw: 'pencil',
-  comment: 'message-circle', column: 'columns-3', file: 'file', image: 'image'
+  note: 'file-text',
+  todo: 'list-checks',
+  link: 'link-2',
+  heading: 'heading-1',
+  document: 'file-text',
+  table: 'table',
+  color: 'palette',
+  draw: 'pencil',
+  comment: 'message-circle',
+  column: 'columns-3',
+  file: 'file',
+  image: 'image',
 };
 
 function refs() {
@@ -35,16 +44,27 @@ function refs() {
     close: document.getElementById('cpClose'),
     crumbs: document.getElementById('cpCrumbs'),
     linkHere: document.getElementById('cpLinkHere'),
-    list: document.getElementById('cpList')
+    list: document.getElementById('cpList'),
   };
 }
 
 export function previewText(it) {
   const d = it.data || {};
-  return d.title || d.text || (d.body && d.body.slice(0, 40)) || d.url || it.type;
+  // a rich-text note/comment: the first line of its text stands in for a title
+  return (
+    d.title ||
+    String(d.text || '')
+      .split('\n')
+      .find(l => l.trim()) ||
+    (d.body && d.body.slice(0, 40)) ||
+    d.url ||
+    it.type
+  );
 }
 
-export function isConnectPickerOpen() { return !!pendingWorld; }
+export function isConnectPickerOpen() {
+  return !!pendingWorld;
+}
 
 // sourceCanvasId: which board the new connect badge is created on. Defaults
 // to whatever board is currently open (the normal arm-tool-and-click flow);
@@ -61,7 +81,7 @@ export function openConnectPicker(worldPos, sourceCanvasId, sourceItemId, source
   pendingWorld = worldPos;
   pendingSourceCanvasId = sourceCanvasId || state.view.canvas.id;
   pendingSourceItemId = sourceItemId || null;
-  pendingSourcePreview = sourceItemId ? (sourcePreview || null) : null;
+  pendingSourcePreview = sourceItemId ? sourcePreview || null : null;
   browseCanvasId = pendingSourceCanvasId;
   refs().root.hidden = false;
   renderPicker();
@@ -84,10 +104,15 @@ async function renderPicker() {
     const b = document.createElement('button');
     b.textContent = c.title;
     b.className = 'cp-crumb' + (i === crumbs.length - 1 ? ' current' : '');
-    b.onclick = () => { browseCanvasId = c.id; renderPicker(); };
+    b.onclick = () => {
+      browseCanvasId = c.id;
+      renderPicker();
+    };
     r.crumbs.appendChild(b);
     if (i < crumbs.length - 1) {
-      const sep = document.createElement('span'); sep.className = 'cp-sep'; sep.textContent = '/';
+      const sep = document.createElement('span');
+      sep.className = 'cp-sep';
+      sep.textContent = '/';
       r.crumbs.appendChild(sep);
     }
   });
@@ -99,17 +124,26 @@ async function renderPicker() {
   const boards = data.items.filter(it => it.type === 'board' && it.data.childCanvasId);
   const others = data.items.filter(it => !['board', 'line', 'connect'].includes(it.type) && !it.parentItemId);
   for (const b of boards) {
-    const row = document.createElement('button'); row.className = 'cp-row cp-row-board';
+    const row = document.createElement('button');
+    row.className = 'cp-row cp-row-board';
     row.appendChild(lucideEl(b._childIcon || 'layout-grid'));
-    const span = document.createElement('span'); span.textContent = b._childTitle || 'Board'; row.appendChild(span);
+    const span = document.createElement('span');
+    span.textContent = b._childTitle || 'Board';
+    row.appendChild(span);
     row.appendChild(lucideEl('chevron-right'));
-    row.onclick = () => { browseCanvasId = b.data.childCanvasId; renderPicker(); };
+    row.onclick = () => {
+      browseCanvasId = b.data.childCanvasId;
+      renderPicker();
+    };
     r.list.appendChild(row);
   }
   for (const it of others) {
-    const row = document.createElement('button'); row.className = 'cp-row';
+    const row = document.createElement('button');
+    row.className = 'cp-row';
     row.appendChild(lucideEl(ICONS[it.type] || 'square'));
-    const span = document.createElement('span'); span.textContent = previewText(it); row.appendChild(span);
+    const span = document.createElement('span');
+    span.textContent = previewText(it);
+    row.appendChild(span);
     row.onclick = () => confirmTarget(browseCanvasId, it.id, previewText(it), data.canvas.title);
     r.list.appendChild(row);
   }
@@ -126,11 +160,16 @@ async function confirmTarget(targetCanvasId, targetItemId, targetPreview, target
   const sourceCanvasId = pendingSourceCanvasId;
   const label = pendingSourcePreview
     ? `${pendingSourcePreview} → ${targetPreview}`
-    : (targetItemId ? `${targetBoardTitle} → ${targetPreview}` : targetPreview);
+    : targetItemId
+      ? `${targetBoardTitle} → ${targetPreview}`
+      : targetPreview;
   const body = {
-    canvasId: sourceCanvasId, type: 'connect',
-    x: Math.round(pendingWorld.x - 110), y: Math.round(pendingWorld.y - 30), w: 220,
-    data: { sourceItemId: pendingSourceItemId, targetCanvasId, targetItemId, targetLabel: label, note: '' }
+    canvasId: sourceCanvasId,
+    type: 'connect',
+    x: Math.round(pendingWorld.x - 110),
+    y: Math.round(pendingWorld.y - 30),
+    w: 220,
+    data: { sourceItemId: pendingSourceItemId, targetCanvasId, targetItemId, targetLabel: label, note: '' },
   };
   const it = await api.create(body);
   // Only touch the live board state (and select the new card) if we created
@@ -149,14 +188,18 @@ async function confirmTarget(targetCanvasId, targetItemId, targetPreview, target
 // scrollIntoView() since items live inside #world's pan/zoom transform,
 // which the DOM's own scroll machinery knows nothing about.
 function centerCameraOn(x, y) {
-  const vw = dom.stage.clientWidth, vh = dom.stage.clientHeight;
+  const vw = dom.stage.clientWidth,
+    vh = dom.stage.clientHeight;
   state.cam.x = vw / 2 - x * state.cam.scale;
   state.cam.y = vh / 2 - y * state.cam.scale;
   applyCam();
 }
 
 export async function navigateToTarget(targetCanvasId, targetItemId) {
-  if (!targetCanvasId) { toast('This link has no target'); return; }
+  if (!targetCanvasId) {
+    toast('This link has no target');
+    return;
+  }
   await openCanvas(targetCanvasId);
   if (targetItemId) {
     const target = state.view.items.find(x => x.id === targetItemId);
@@ -176,8 +219,11 @@ export function navigateToConnect(it) {
 export function initConnectPicker() {
   const r = refs();
   r.close.addEventListener('click', closePicker);
-  document.addEventListener('keydown', (e) => {
+  document.addEventListener('keydown', e => {
     if (!pendingWorld) return;
-    if (e.key === 'Escape') { e.preventDefault(); closePicker(); }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      closePicker();
+    }
   });
 }

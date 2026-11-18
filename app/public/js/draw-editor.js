@@ -12,13 +12,13 @@ import { confirmDialog, isConfirmOpen } from './confirm.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
-let doc = null;         // the item currently open, or null
-let draft = null;       // { title, strokes } — working copy
-let el = null;          // cached DOM refs
+let doc = null; // the item currently open, or null
+let draft = null; // { title, strokes } — working copy
+let el = null; // cached DOM refs
 let tool = 'pen';
 let color = '#565d6b';
 let width = 3;
-let selected = null;    // the selected stroke object (select tool), or null
+let selected = null; // the selected stroke object (select tool), or null
 let history = [];
 let hIndex = -1;
 
@@ -34,12 +34,14 @@ function refs() {
     redo: document.getElementById('dwRedo'),
     color: document.getElementById('dwColor'),
     width: document.getElementById('dwWidth'),
-    svg: document.getElementById('dwSvg')
+    svg: document.getElementById('dwSvg'),
   };
   return el;
 }
 
-export function isDrawEditorOpen() { return !!doc; }
+export function isDrawEditorOpen() {
+  return !!doc;
+}
 
 function pointsToPath(points) {
   return points.length ? 'M' + points.map(p => p[0] + ',' + p[1]).join(' L') : '';
@@ -62,15 +64,18 @@ function setTool(next) {
   r.svg.classList.remove('tool-pen', 'tool-select', 'tool-eraser');
   r.svg.classList.add('tool-' + tool);
   r.toolbar.querySelectorAll('.dw-tool').forEach(b => b.classList.toggle('active', b.dataset.tool === tool));
-  if (tool !== 'select') { selected = null; }
+  if (tool !== 'select') {
+    selected = null;
+  }
   renderStrokes();
 }
 
 function renderStrokes() {
   const r = refs();
   r.svg.innerHTML = '';
-  draft.strokes.forEach((s) => {
-    const dx = s._dx || 0, dy = s._dy || 0;
+  draft.strokes.forEach(s => {
+    const dx = s._dx || 0,
+      dy = s._dy || 0;
     const pts = dx || dy ? s.points.map(p => [p[0] + dx, p[1] + dy]) : s.points;
     const d = pointsToPath(pts);
     const hit = document.createElementNS(SVG_NS, 'path');
@@ -84,9 +89,15 @@ function renderStrokes() {
     vis.setAttribute('stroke-width', s.width || 3);
     r.svg.appendChild(hit);
     r.svg.appendChild(vis);
-    hit.addEventListener('pointerdown', (e) => {
-      if (tool === 'select') { e.stopPropagation(); startMove(e, s); }
-      else if (tool === 'eraser') { e.stopPropagation(); eraseStroke(s); erasedInDrag = true; }
+    hit.addEventListener('pointerdown', e => {
+      if (tool === 'select') {
+        e.stopPropagation();
+        startMove(e, s);
+      } else if (tool === 'eraser') {
+        e.stopPropagation();
+        eraseStroke(s);
+        erasedInDrag = true;
+      }
     });
   });
 }
@@ -96,23 +107,28 @@ function startMove(e, stroke) {
   renderStrokes();
   const start = toLocal(e);
   let moved = false;
-  const move = (ev) => {
+  const move = ev => {
     const now = toLocal(ev);
-    const dx = now[0] - start[0], dy = now[1] - start[1];
+    const dx = now[0] - start[0],
+      dy = now[1] - start[1];
     if (Math.hypot(dx, dy) > 1) moved = true;
-    stroke._dx = dx; stroke._dy = dy;
+    stroke._dx = dx;
+    stroke._dy = dy;
     renderStrokes();
   };
   const up = () => {
     document.removeEventListener('pointermove', move);
     document.removeEventListener('pointerup', up);
     if (moved) {
-      const dx = stroke._dx || 0, dy = stroke._dy || 0;
+      const dx = stroke._dx || 0,
+        dy = stroke._dy || 0;
       stroke.points = stroke.points.map(p => [p[0] + dx, p[1] + dy]);
-      delete stroke._dx; delete stroke._dy;
+      delete stroke._dx;
+      delete stroke._dy;
       pushHistory();
     } else {
-      delete stroke._dx; delete stroke._dy;
+      delete stroke._dx;
+      delete stroke._dy;
     }
     renderStrokes();
   };
@@ -128,12 +144,13 @@ function eraseStroke(stroke) {
   renderStrokes();
 }
 
-let current = null, currentPath = null;
+let current = null,
+  currentPath = null;
 let erasedInDrag = false;
 
 function wireSurface() {
   const r = refs();
-  r.svg.addEventListener('pointerdown', (e) => {
+  r.svg.addEventListener('pointerdown', e => {
     if (e.button !== 0) return;
     e.preventDefault(); // otherwise dragging across the page drag-selects text
     if (tool === 'pen') {
@@ -152,7 +169,7 @@ function wireSurface() {
       r.svg.setPointerCapture(e.pointerId);
     }
   });
-  r.svg.addEventListener('pointermove', (e) => {
+  r.svg.addEventListener('pointermove', e => {
     if (tool === 'pen' && current) {
       current.points.push(toLocal(e));
       currentPath.setAttribute('d', pointsToPath(current.points));
@@ -162,19 +179,30 @@ function wireSurface() {
       // fresh path elements on every erase — find the stroke under the point.
       if (hitEl && hitEl.classList.contains('dw-hit')) {
         const idx = [...r.svg.querySelectorAll('.dw-hit')].indexOf(hitEl);
-        if (idx !== -1 && draft.strokes[idx]) { eraseStroke(draft.strokes[idx]); erasedInDrag = true; }
+        if (idx !== -1 && draft.strokes[idx]) {
+          eraseStroke(draft.strokes[idx]);
+          erasedInDrag = true;
+        }
       }
     }
   });
   const finishPen = () => {
     if (!current) return;
-    if (current.points.length > 1) { draft.strokes.push(current); pushHistory(); }
-    else if (currentPath) { currentPath.remove(); }
-    current = null; currentPath = null;
+    if (current.points.length > 1) {
+      draft.strokes.push(current);
+      pushHistory();
+    } else if (currentPath) {
+      currentPath.remove();
+    }
+    current = null;
+    currentPath = null;
   };
   r.svg.addEventListener('pointerup', () => {
     finishPen();
-    if (tool === 'eraser' && erasedInDrag) { pushHistory(); erasedInDrag = false; }
+    if (tool === 'eraser' && erasedInDrag) {
+      pushHistory();
+      erasedInDrag = false;
+    }
   });
   r.svg.addEventListener('pointercancel', finishPen);
 }
@@ -196,8 +224,11 @@ export function openDrawEditor(it) {
 
 function closeEditor() {
   refs().root.hidden = true;
-  doc = null; draft = null; selected = null;
-  history = []; hIndex = -1;
+  doc = null;
+  draft = null;
+  selected = null;
+  history = [];
+  hIndex = -1;
 }
 
 function hasUnsavedChanges() {
@@ -210,7 +241,8 @@ function hasUnsavedChanges() {
 // (e.g. embedded in another app) without allow-modals, confirm() returns
 // false without showing anything, so a deliberate discard was impossible.
 async function cancel() {
-  if (hasUnsavedChanges() && !(await confirmDialog('Discard your changes to this drawing?', { okLabel: 'Discard' }))) return;
+  if (hasUnsavedChanges() && !(await confirmDialog('Discard your changes to this drawing?', { okLabel: 'Discard' })))
+    return;
   closeEditor();
 }
 
@@ -232,29 +264,51 @@ export function initDrawEditor() {
   wireSurface();
   r.cancel.addEventListener('click', cancel);
   r.save.addEventListener('click', save);
-  r.toolbar.addEventListener('click', (e) => {
+  r.toolbar.addEventListener('click', e => {
     const btn = e.target.closest('.dw-tool');
     if (btn) setTool(btn.dataset.tool);
   });
   r.undo.addEventListener('click', () => {
     if (hIndex <= 0) return;
-    hIndex--; draft.strokes = JSON.parse(JSON.stringify(history[hIndex])); selected = null; renderStrokes();
+    hIndex--;
+    draft.strokes = JSON.parse(JSON.stringify(history[hIndex]));
+    selected = null;
+    renderStrokes();
   });
   r.redo.addEventListener('click', () => {
     if (hIndex >= history.length - 1) return;
-    hIndex++; draft.strokes = JSON.parse(JSON.stringify(history[hIndex])); selected = null; renderStrokes();
+    hIndex++;
+    draft.strokes = JSON.parse(JSON.stringify(history[hIndex]));
+    selected = null;
+    renderStrokes();
   });
-  r.color.addEventListener('input', () => { color = r.color.value; });
-  r.width.addEventListener('input', () => { width = parseInt(r.width.value, 10); });
-  document.addEventListener('keydown', (e) => {
+  r.color.addEventListener('input', () => {
+    color = r.color.value;
+  });
+  r.width.addEventListener('input', () => {
+    width = parseInt(r.width.value, 10);
+  });
+  document.addEventListener('keydown', e => {
     if (!doc || isConfirmOpen()) return; // the discard dialog handles its own keys
     // Escape saves rather than discards — losing drawn work to an instinctive
     // "close this" keypress is a much worse failure mode than a stray save.
     // The Cancel button is still there for an explicit, deliberate discard.
-    if (e.key === 'Escape') { e.preventDefault(); save(); return; }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      save();
+      return;
+    }
     const mod = e.metaKey || e.ctrlKey;
-    if (mod && !e.shiftKey && e.key.toLowerCase() === 'z') { e.preventDefault(); r.undo.click(); return; }
-    if (mod && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) { e.preventDefault(); r.redo.click(); return; }
+    if (mod && !e.shiftKey && e.key.toLowerCase() === 'z') {
+      e.preventDefault();
+      r.undo.click();
+      return;
+    }
+    if (mod && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) {
+      e.preventDefault();
+      r.redo.click();
+      return;
+    }
     if ((e.key === 'Delete' || e.key === 'Backspace') && selected && document.activeElement !== r.title) {
       e.preventDefault();
       eraseStroke(selected);

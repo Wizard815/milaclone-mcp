@@ -6,8 +6,13 @@ const { freshCanvas } = require('./helpers');
 // Miladash: stage chips, the Pipeline view, arrow kinds and box-select.
 
 async function seedNotes(page, canvasId) {
-  return page.evaluate(async (cid) => {
-    const mk = (b) => fetch('/api/item', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ canvasId: cid, type: 'note', w: 220 }, b)) }).then(r => r.json());
+  return page.evaluate(async cid => {
+    const mk = b =>
+      fetch('/api/item', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(Object.assign({ canvasId: cid, type: 'note', w: 220 }, b)),
+      }).then(r => r.json());
     const a = await mk({ x: 100, y: 100, data: { title: 'Alpha idea', body: 'pitch' } });
     const b = await mk({ x: 500, y: 120, data: { title: 'Beta idea', body: '' } });
     return [a.id, b.id];
@@ -19,7 +24,7 @@ async function reloadSettled(page) {
   await page.waitForSelector('#world .item');
   await page.waitForFunction(() => !document.getElementById('world').classList.contains('cam-animate'));
 }
-const item = (page, id) => page.evaluate((i) => fetch('/api/item/' + i).then(r => r.json()), id);
+const item = (page, id) => page.evaluate(i => fetch('/api/item/' + i).then(r => r.json()), id);
 
 test('right-click sets a stage and the chip shows it', async ({ page }) => {
   const cid = await freshCanvas(page);
@@ -35,7 +40,15 @@ test('right-click sets a stage and the chip shows it', async ({ page }) => {
 test('pipeline view: dragging a card to another column changes its stage', async ({ page }) => {
   const cid = await freshCanvas(page);
   const [a] = await seedNotes(page, cid);
-  await page.evaluate((i) => fetch('/api/item/' + i, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: '{"stage":"thought"}' }), a);
+  await page.evaluate(
+    i =>
+      fetch('/api/item/' + i, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{"stage":"thought"}',
+      }),
+    a
+  );
   await page.click('#pipelineBtn');
   const pc = page.locator(`.pl-col[data-stage="thought"] .pl-card[data-id="${a}"]`);
   await expect(pc).toBeVisible();
@@ -52,13 +65,23 @@ test('pipeline view: dragging a card to another column changes its stage', async
 test('a line can be made a dashed "depends on" arrow from its menu', async ({ page }) => {
   const cid = await freshCanvas(page);
   const [a, b] = await seedNotes(page, cid);
-  const line = await page.evaluate(([cid, a, b]) => fetch('/api/item', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ canvasId: cid, type: 'line', data: { fromId: a, toId: b } }) }).then(r => r.json()), [cid, a, b]);
+  const line = await page.evaluate(
+    ([cid, a, b]) =>
+      fetch('/api/item', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ canvasId: cid, type: 'line', data: { fromId: a, toId: b } }),
+      }).then(r => r.json()),
+    [cid, a, b]
+  );
   await reloadSettled(page);
   const vis = page.locator(`.cline[data-id="${line.id}"] .cvis`);
   await expect(vis).toHaveCount(1);
   const ra = await page.locator(`.item[data-id="${a}"]`).boundingBox();
   const rb = await page.locator(`.item[data-id="${b}"]`).boundingBox();
-  await page.mouse.click((ra.x + ra.width + rb.x) / 2, (ra.y + ra.height / 2 + rb.y + rb.height / 2) / 2, { button: 'right' });
+  await page.mouse.click((ra.x + ra.width + rb.x) / 2, (ra.y + ra.height / 2 + rb.y + rb.height / 2) / 2, {
+    button: 'right',
+  });
   await page.click('#ctxmenu [data-act="kind-depends"]');
   await expect(vis).toHaveAttribute('stroke-dasharray', '7 5');
   await expect.poll(async () => (await item(page, line.id)).data.kind).toBe('depends');

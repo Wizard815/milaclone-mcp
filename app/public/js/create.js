@@ -13,20 +13,42 @@ import { openPalette } from './menus.js';
 
 export function defaultsFor(type) {
   switch (type) {
-    case 'note':    return { w: 240, data: { title: '', body: '' } };
-    case 'todo':    return { w: 240, data: { title: 'To-do', tasks: [{ id: rid(), text: '', done: false }] } };
-    case 'link':    return { w: 240, color: 'blue', data: { url: '', title: '' } };
-    case 'column':  return { w: 252, data: { title: 'Column' } };
-    case 'board':   return { w: 152, data: { title: 'Untitled board' } };
-    case 'comment': return { w: 220, data: { body: '' } };
-    case 'file':    return { w: 220, data: {} };
-    case 'heading': return { w: 320, data: { text: '' } };
-    case 'document':return { w: 152, data: { title: 'Untitled document', bodyHtml: '' } };
-    case 'table':   return { w: 360, data: { rows: [['', ''], ['', '']] } };
-    case 'color':   return { w: 160, data: { hex: '#2f6df0' } };
-    case 'draw':    return { w: 320, color: 'slate', data: { title: 'Untitled drawing', strokes: [] } };
-    case 'shape':   return { w: 200, color: 'slate', data: { shape: 'circle', filled: false, thickness: 4 } };
-    default:        return { w: 240, data: {} };
+    case 'note':
+      return { w: 240, data: {} };
+    case 'todo':
+      return { w: 240, data: { title: 'To-do', tasks: [{ id: rid(), text: '', done: false }] } };
+    case 'link':
+      return { w: 240, color: 'blue', data: { url: '', title: '' } };
+    case 'column':
+      return { w: 252, data: { title: 'Column' } };
+    case 'board':
+      return { w: 152, data: { title: 'Untitled board' } };
+    case 'comment':
+      return { w: 220, data: {} };
+    case 'file':
+      return { w: 220, data: {} };
+    case 'heading':
+      return { w: 320, data: { text: '' } };
+    case 'document':
+      return { w: 152, data: { title: 'Untitled document', bodyHtml: '' } };
+    case 'table':
+      return {
+        w: 360,
+        data: {
+          rows: [
+            ['', ''],
+            ['', ''],
+          ],
+        },
+      };
+    case 'color':
+      return { w: 160, data: { hex: '#2f6df0' } };
+    case 'draw':
+      return { w: 320, color: 'slate', data: { title: 'Untitled drawing', strokes: [] } };
+    case 'shape':
+      return { w: 200, color: 'slate', data: { shape: 'circle', filled: false, thickness: 4 } };
+    default:
+      return { w: 240, data: {} };
   }
 }
 
@@ -49,7 +71,9 @@ export async function createAt(type, wx, wy) {
     const handle = el.querySelector('.shape-handle');
     if (handle) openPalette(it, handle, 'shape');
   } else if (type !== 'board' && type !== 'image' && type !== 'file') {
-    const el = elMap.get(it.id); enterEdit(el); el.querySelector('[data-edit]')?.focus();
+    const el = elMap.get(it.id);
+    enterEdit(el);
+    el.querySelector('[data-edit]')?.focus();
   }
   dom.hint.style.display = 'none';
 }

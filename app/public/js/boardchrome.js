@@ -1,9 +1,9 @@
 'use strict';
 
 import { state } from './state.js';
-import { colorVar, lucideEl, refreshIcons } from './util.js';
+import { refreshIcons } from './util.js';
 import { deselect, renameSelected, deleteItem } from './editing.js';
-import { openPalette, closePalette } from './menus.js';
+import { closePalette } from './menus.js';
 import { disarm } from './tools.js';
 
 // When a board card is selected, the create rail / mobile nav swap out for
@@ -13,7 +13,7 @@ import { disarm } from './tools.js';
 const el = id => document.getElementById(id);
 
 function selectedBoard() {
-  if (!state.selectedId) return null;
+  if (!state.selectedId || state.selection.size > 1) return null;
   const it = state.view.items.find(i => i.id === state.selectedId);
   return it && it.type === 'board' ? it : null;
 }
@@ -50,7 +50,8 @@ export function initBoardChrome() {
   el('railBoardBack').onclick = () => deselect();
   el('railBoardRename').onclick = () => renameSelected();
   el('railBoardDelete').onclick = () => {
-    const it = selectedBoard(); if (!it) return;
+    const it = selectedBoard();
+    if (!it) return;
     deleteItem(it.id);
   };
 
@@ -58,8 +59,10 @@ export function initBoardChrome() {
   el('mfBoardDone').onclick = () => deselect();
 
   const sheet = el('mBoardSheet');
-  el('mfBoardMore').onclick = () => { sheet.hidden = !sheet.hidden; };
-  sheet.addEventListener('click', (e) => {
+  el('mfBoardMore').onclick = () => {
+    sheet.hidden = !sheet.hidden;
+  };
+  sheet.addEventListener('click', e => {
     const act = e.target.closest('[data-act]');
     if (!act) return;
     if (act.dataset.act === 'delete') {
@@ -68,11 +71,15 @@ export function initBoardChrome() {
     }
     sheet.hidden = true;
   });
-  document.addEventListener('pointerdown', (e) => {
-    if (!sheet.hidden && !e.target.closest('#mBoardSheet') && !e.target.closest('#mfBoardMore')) {
-      sheet.hidden = true;
-    }
-  }, true);
+  document.addEventListener(
+    'pointerdown',
+    e => {
+      if (!sheet.hidden && !e.target.closest('#mBoardSheet') && !e.target.closest('#mfBoardMore')) {
+        sheet.hidden = true;
+      }
+    },
+    true
+  );
 
   updateSelectionChrome();
 }

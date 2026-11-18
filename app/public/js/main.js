@@ -1,13 +1,14 @@
 'use strict';
 
-import { state } from './state.js';
+import { state, dom } from './state.js';
 import { api } from './api.js';
-import { refreshIcons, toast } from './util.js';
-import { loadCam, applyCamAnimated, initViewport } from './viewport.js';
+import { refreshIcons, toast, GRID, isTyping } from './util.js';
+import { loadCam, applyCam, applyCamAnimated, initViewport, zoomBy, zoomToFit, resetZoom } from './viewport.js';
 import { render, renderCrumbs } from './cards.js';
-import { deselect, renameSelected, deleteItem, exitEdit } from './editing.js';
+import { deselect, renameSelected, deleteSelection, exitEdit, flushAllSaves, selectIds } from './editing.js';
 import { closePalette, closeCtx } from './menus.js';
-import { copySelected, pasteClipboard, duplicateSelected } from './clipboard.js';
+import { duplicateSelected } from './clipboard.js';
+import { nudgeSelection } from './drag.js';
 import { arm, disarm, initTools } from './tools.js';
 import { initMobile, updateMobileChrome } from './mobile.js';
 import { initBoardChrome, updateSelectionChrome } from './boardchrome.js';
@@ -23,77 +24,246 @@ import { initPipeline, isPipelineOpen } from './pipeline.js';
 import { initCanvasIO } from './canvasio.js';
 import { loadOrbStatus } from './stages.js';
 import { initConnectPicker, isConnectPickerOpen } from './connect.js';
+import { initTrash } from './trash.js';
+import { initCapture } from './capture.js';
+import { initLightbox } from './lightbox.js';
+import { initSearch, openSearch } from './search.js';
+import { initExport } from './export.js';
 
 // Entry point: canvas loading/navigation, global keyboard + pointer handling,
 // and boot. Wiring for the viewport and toolbar lives in their own modules and
 // is activated here.
 
+// Each board visit is a history entry, so browser Back/Forward walk between
+// boards. `replace` is for the initial load and fallbacks that shouldn't add one.
+// A later call wins: fast Back presses can overlap, and a stale fetch finishing
+// last must not push its board back over the newer one.
+//
 // "Last Page" (topbar button) always jumps to wherever you were immediately
 // before the board you're on now -- one level of back, not a full history
 // stack. Recorded here, before state.view is overwritten, so it's always
 // the board being *left*, not the one being entered; skips same-board
-// navigation (e.g. a hash update that doesn't actually change boards) so it
-// never points at itself.
-export async function openCanvas(id) {
-  const prevId = state.view.canvas ? state.view.canvas.id : null;
-  if (prevId && prevId !== id) localStorage.setItem('lastCanvasId', prevId);
-  state.view = await api.canvas(id);
-  if (state.view.error) { if (id !== state.rootCanvasId) return openCanvas(state.rootCanvasId); toast('Board not found'); return; }
+// navigation so it never points at itself.
+let navSeq = 0;
+let navTarget = null; // the board being opened, which may not be state.view yet
+export async function openCanvas(id, { replace = false } = {}) {
+  const seq = ++navSeq;
+  navTarget = id;
+  const hashAtStart = location.hash;
+  const view = await api.canvas(id);
+  if (seq !== navSeq) return;
+  // The URL moved to another board meanwhile (its hashchange event is still
+  // queued): that navigation wins, so don't overwrite its hash with ours.
+  if (location.hash !== hashAtStart && location.hash.slice(1) !== id) return;
+  const prevId = state.view.canvas?.id;
+  if (prevId && prevId !== id) {
+    try {
+      localStorage.setItem('lastCanvasId', prevId);
+    } catch {
+      /* storage blocked (e.g. a sandboxed frame): Last Page just has nothing */
+    }
+  }
+  state.view = view;
+  if (state.view.error) {
+    if (id !== state.rootCanvasId) return openCanvas(state.rootCanvasId, { replace: true });
+    toast('Board not found');
+    return;
+  }
   state.cam = loadCam(id);
-  state.selectedId = null; state.selectedIds = new Set(); state.editingId = null;
+  selectIds([]);
+  state.editingId = null;
   closeCtx();
   renderCrumbs();
   updateMobileChrome();
   updateSelectionChrome();
   render();
-  applyCamAnimated();
-  if (location.hash.slice(1) !== id) { history.replaceState(null, '', '#' + id); }
+  // The bouncy transition is for moving between boards; a fresh page load lands directly.
+  if (prevId) applyCamAnimated();
+  else applyCam();
+  const i = (history.state?.i ?? 0) + (replace ? 0 : 1);
+  if (location.hash.slice(1) !== id) history[replace ? 'replaceState' : 'pushState']({ i }, '', '#' + id);
 }
 
-document.addEventListener('keydown', (e) => {
-  if (isQuickNotesOpen()) return;   // Quick notes owns the keyboard while it's up
-  if (isDocumentOpen()) return;     // Document editor owns the keyboard while it's up (handles its own Escape)
-  if (isDrawEditorOpen()) return;   // Draw editor owns the keyboard while it's up (handles its own Escape/undo)
-  if (isMindMapOpen()) return;      // Mind map owns the keyboard while it's up (handles its own Escape)
-  if (isConfirmOpen()) return;      // Confirm dialog owns the keyboard while it's up (handles its own Escape/Enter)
+// Re-fetch the current board after a server-side change (paste, restore) without
+// moving the camera.
+export async function reloadView() {
+  const v = await api.canvas(state.view.canvas.id);
+  if (v.error) return;
+  state.view = v;
+  render();
+  updateSelectionChrome();
+}
+
+document.addEventListener('keydown', e => {
+  if (isQuickNotesOpen()) return; // Quick notes owns the keyboard while it's up
+  if (isDocumentOpen()) return; // Document editor owns the keyboard while it's up (handles its own Escape)
+  if (isDrawEditorOpen()) return; // Draw editor owns the keyboard while it's up (handles its own Escape/undo)
+  if (isMindMapOpen()) return; // Mind map owns the keyboard while it's up (handles its own Escape)
+  if (isConfirmOpen()) return; // Confirm dialog owns the keyboard while it's up (handles its own Escape/Enter)
   if (isConnectPickerOpen()) return; // Connect picker owns the keyboard while it's up (handles its own Escape)
-  if (isPipelineOpen()) return;      // Pipeline owns the keyboard while it's up (handles its own Escape)
+  if (isPipelineOpen()) return; // Pipeline owns the keyboard while it's up (handles its own Escape)
+  if (document.querySelector('dialog[open]')) return; // so does a modal sheet
   const ae = document.activeElement;
-  const typing = ae && (ae.isContentEditable || (/^(INPUT|TEXTAREA)$/.test(ae.tagName) && !ae.readOnly));
-  if (e.key === 'Escape') { disarm(); deselect(); closePalette(); closeCtx(); }
-  if (typing) return;
+  const typing = isTyping();
+  if (e.key === 'Escape') {
+    disarm();
+    deselect();
+    closePalette();
+    closeCtx();
+  }
   const mod = e.metaKey || e.ctrlKey;
-  if (mod && e.key.toLowerCase() === 'c') { e.preventDefault(); copySelected(false); return; }
-  if (mod && e.key.toLowerCase() === 'x') { e.preventDefault(); copySelected(true); return; }
-  if (mod && e.key.toLowerCase() === 'v') { e.preventDefault(); pasteClipboard(); return; }
-  if (mod && e.key.toLowerCase() === 'd') { e.preventDefault(); duplicateSelected(); return; }
-  if (mod && !e.shiftKey && e.key.toLowerCase() === 'z') { e.preventDefault(); performUndo(); return; }
-  if (mod && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) { e.preventDefault(); performRedo(); return; }
-  if (e.key === 'Enter' && state.selectedId && !mod) { e.preventDefault(); renameSelected(); return; }
-  if ((e.key === 'Delete' || e.key === 'Backspace') && state.selectedId) { e.preventDefault(); deleteItem(state.selectedId); }
-  const map = { v: 'select', n: 'note', l: 'link', t: 'todo', b: 'board', c: 'column', m: 'comment', h: 'heading', d: 'draw' };
+  // Canvas zoom, even mid-typing, so the browser never zooms the page instead.
+  if (mod && ['=', '+', '-', '0'].includes(e.key)) {
+    e.preventDefault();
+    if (e.key === '0') resetZoom();
+    else zoomBy(e.key === '-' ? 1 / 1.2 : 1.2);
+    return;
+  }
+  if (mod && e.key.toLowerCase() === 'k') {
+    e.preventDefault(); // also from inside a text field
+    openSearch();
+    return;
+  }
+  if (typing) return;
+  // Space held = pan mode, unless a focused control should get the keypress.
+  const control = ae && ae.closest('button, a, select, summary, [role="button"], [tabindex]:not([tabindex="-1"])');
+  if (e.key === ' ' && !control) {
+    e.preventDefault(); // no page scroll
+    if (!state.spaceDown) {
+      state.spaceDown = true;
+      dom.stage.classList.add('space-pan');
+    }
+    return;
+  }
+  // cmd+C / X / V arrive as copy/cut/paste events, handled in capture.js.
+  if (mod && e.key.toLowerCase() === 'd') {
+    e.preventDefault();
+    duplicateSelected();
+    return;
+  }
+  if (mod && !e.shiftKey && e.key.toLowerCase() === 'z') {
+    e.preventDefault();
+    performUndo();
+    return;
+  }
+  if (mod && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) {
+    e.preventDefault();
+    performRedo();
+    return;
+  }
+  // Back / forward through visited boards, and up to the parent board.
+  if (mod && (e.key === '[' || e.key === ']')) {
+    e.preventDefault();
+    // Back never leaves the app: history.state.i counts this tab's board visits.
+    if (e.key === ']') history.forward();
+    else if (history.state?.i > 0) history.back();
+    return;
+  }
+  if (mod && e.key.toLowerCase() === 'u') {
+    e.preventDefault();
+    const bc = state.view.breadcrumb;
+    if (bc.length > 1) openCanvas(bc[bc.length - 2].id);
+    return;
+  }
+  const arrow = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+  if (arrow && state.selection.size && !mod && !control) {
+    e.preventDefault();
+    const step = GRID * (e.shiftKey ? 10 : 1);
+    nudgeSelection(arrow[0] * step, arrow[1] * step);
+    return;
+  }
+  if (e.key === '/' && !mod) {
+    e.preventDefault();
+    document.getElementById('shortcutsDialog').showModal();
+    return;
+  }
+  if (e.key.toLowerCase() === 'z' && !mod) {
+    zoomToFit();
+    return;
+  }
+  if (e.key === 'Enter' && state.selectedId && !mod) {
+    e.preventDefault();
+    renameSelected();
+    return;
+  }
+  if ((e.key === 'Delete' || e.key === 'Backspace') && state.selection.size) {
+    e.preventDefault();
+    deleteSelection();
+  }
+  if (mod && e.key.toLowerCase() === 'a') {
+    e.preventDefault();
+    selectIds(state.view.items.filter(i => !i.parentItemId && i.type !== 'line').map(i => i.id));
+    return;
+  }
+  const map = {
+    v: 'select',
+    n: 'note',
+    l: 'link',
+    t: 'todo',
+    b: 'board',
+    c: 'column',
+    m: 'comment',
+    h: 'heading',
+    d: 'draw',
+  };
   if (map[e.key.toLowerCase()] && !mod) {
     const btn = document.querySelector(`.tool[data-tool="${map[e.key.toLowerCase()]}"]`);
     if (btn) arm(map[e.key.toLowerCase()], btn);
   }
 });
 
-document.addEventListener('pointerdown', (e) => {
-  if (isQuickNotesOpen()) return;
-  if (isConfirmOpen()) return;
-  if (!e.target.closest('#palette') && !e.target.closest('.swatch')) closePalette();
-  if (!e.target.closest('#ctxmenu') && !e.target.closest('.item') && !e.target.closest('#exportBtn')) closeCtx();
-  if (state.editingId && !e.target.closest('.item')) exitEdit();
-}, true);
+document.addEventListener(
+  'pointerdown',
+  e => {
+    if (isQuickNotesOpen()) return;
+    if (isConfirmOpen()) return;
+    if (!e.target.closest('#palette') && !e.target.closest('.swatch')) closePalette();
+    if (!e.target.closest('#ctxmenu') && !e.target.closest('.item') && !e.target.closest('#exportBtn')) closeCtx();
+    if (state.editingId && !e.target.closest('.item')) exitEdit();
+  },
+  true
+);
+
+// Another device may have changed this board while the tab was in the
+// background: once our own queued edits have landed, show the server's copy.
+// Skipped mid-edit so a caret or half-typed field isn't replaced.
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState !== 'visible' || !state.view.canvas) return;
+  try {
+    await flushAllSaves(false);
+    if (!state.editingId && !state.drag && !isQuickNotesOpen() && !document.querySelector('dialog[open]')) {
+      await reloadView();
+    }
+  } catch {
+    /* offline: the next focus or navigation tries again */
+  }
+});
+
+const endSpacePan = () => {
+  state.spaceDown = false;
+  dom.stage.classList.remove('space-pan');
+};
+document.addEventListener('keyup', e => e.key === ' ' && endSpacePan());
+window.addEventListener('blur', endSpacePan);
 
 window.addEventListener('hashchange', () => {
   const id = location.hash.slice(1);
-  if (id && (!state.view.canvas || id !== state.view.canvas.id)) openCanvas(id);
+  // Compare with the pending target, not state.view: a fast second Back can land on
+  // the board still shown while the first Back's fetch is in flight.
+  if (id && id !== navTarget) openCanvas(id);
 });
 
 document.getElementById('lastPageBtn').onclick = () => {
-  const id = localStorage.getItem('lastCanvasId');
-  if (!id) { toast('No previous board yet'); return; }
+  let id = null;
+  try {
+    id = localStorage.getItem('lastCanvasId');
+  } catch {
+    /* storage blocked */
+  }
+  if (!id) {
+    toast('No previous board yet');
+    return;
+  }
   openCanvas(id);
 };
 
@@ -111,6 +281,11 @@ initSettings();
 initConnectPicker();
 initPipeline();
 initCanvasIO();
+initTrash();
+initCapture();
+initLightbox();
+initSearch();
+initExport();
 
 (async function boot() {
   refreshIcons();
@@ -118,5 +293,25 @@ initCanvasIO();
   const r = await api.root();
   state.rootCanvasId = r.rootCanvasId;
   const startId = location.hash.slice(1) || state.rootCanvasId;
-  await openCanvas(startId);
+  await openCanvas(startId, { replace: true });
+  registerServiceWorker();
 })();
+
+// U2.2 offline shell. Needs HTTPS or localhost; elsewhere register() rejects and the
+// app simply runs online-only. After install, hand the worker this page's loads to cache.
+// Not inside an embedding <iframe> (e.g. Pondering Orb): the worker would
+// belong to the embedder's tab, and the embedder owns offline behaviour there.
+function registerServiceWorker() {
+  if (!('serviceWorker' in navigator) || window.top !== window.self) return;
+  navigator.serviceWorker
+    .register('/sw.js')
+    .then(() => navigator.serviceWorker.ready)
+    .then(reg => {
+      const warm = performance
+        .getEntriesByType('resource')
+        .filter(e => !['audio', 'video', 'beacon'].includes(e.initiatorType))
+        .map(e => e.name);
+      reg.active?.postMessage({ warm: [location.origin + '/', ...warm] });
+    })
+    .catch(() => {});
+}

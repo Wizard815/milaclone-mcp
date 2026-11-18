@@ -104,6 +104,13 @@ Both images rebuild from their respective subfolders; `app`'s SQLite data and
 `mcp`'s config survive since they're in named volumes / env vars, not baked
 into the image.
 
+Boot-time migrations run on the existing database and never drop data. The
+one that turns plain title/body notes and comments into rich text first
+writes a full copy of the database next to it
+(`data/board.pre-richtext-<timestamp>.db`); boards deleted before the Trash
+existed are moved into the Trash. `scripts/deploy.sh` does the pull + rebuild
+and saves a `/api/backup` snapshot to `backups/` first.
+
 ## Registering `mcp` with a local Claude Code/Desktop instead
 
 If you'd rather run the MCP server as a local stdio subprocess (no Docker,

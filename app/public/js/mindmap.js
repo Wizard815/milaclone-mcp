@@ -69,15 +69,20 @@ const REPULSE_K = 2600;
 const CENTER_K = 0.004;
 const ROOT_PIN_K = 0.16;
 const DAMPING = 0.82;
-const REST_BOARD = 200, SPRING_BOARD = 0.02;
-const REST_SPOKE = 90, SPRING_SPOKE = 0.05;
-const REST_LINE = 70, SPRING_LINE = 0.08;
+const REST_BOARD = 200,
+  SPRING_BOARD = 0.02;
+const REST_SPOKE = 90,
+  SPRING_SPOKE = 0.05;
+const REST_LINE = 70,
+  SPRING_LINE = 0.08;
 // Column siblings should cluster tighter than a normal same-board Line.
-const REST_GROUP = 50, SPRING_GROUP = 0.06;
+const REST_GROUP = 50,
+  SPRING_GROUP = 0.06;
 // Weak on purpose -- nudges connected boards/items closer without
 // overriding the tree's overall shape, since a connect edge can easily
 // span two otherwise-unrelated branches of the whole graph.
-const REST_CONNECT = 180, SPRING_CONNECT = 0.015;
+const REST_CONNECT = 180,
+  SPRING_CONNECT = 0.015;
 // Extra push once two nodes are closer than their combined collision radius
 // (visual circle + estimated label width) — smooth 1/dist^2 repulsion alone
 // keeps circles from overlapping but doesn't know a label sticks out much
@@ -86,22 +91,31 @@ const REST_CONNECT = 180, SPRING_CONNECT = 0.015;
 const COLLISION_K = 0.7;
 
 const ICONS = {
-  note: 'file-text', todo: 'list-checks', link: 'link-2', heading: 'heading-1',
-  document: 'file-text', table: 'table', color: 'palette', draw: 'pencil',
-  comment: 'message-circle', column: 'columns-3', file: 'file', image: 'image'
+  note: 'file-text',
+  todo: 'list-checks',
+  link: 'link-2',
+  heading: 'heading-1',
+  document: 'file-text',
+  table: 'table',
+  color: 'palette',
+  draw: 'pencil',
+  comment: 'message-circle',
+  column: 'columns-3',
+  file: 'file',
+  image: 'image',
 };
 
 let root = null; // #mindMap
-let expanded = new Set();      // board ids currently expanded
-let itemCache = new Map();     // boardId -> {items, lines} (cleared each time the map re-opens)
-let ctxTarget = null;          // {canvasId, itemId|null} for the open context menu
-let clickTimer = null;         // pending single-click (see node click handler) — cancelled by a dblclick
+let expanded = new Set(); // board ids currently expanded
+let itemCache = new Map(); // boardId -> {items, lines} (cleared each time the map re-opens)
+let ctxTarget = null; // {canvasId, itemId|null} for the open context menu
+let clickTimer = null; // pending single-click (see node click handler) — cancelled by a dblclick
 let mmCam = { x: 0, y: 0, scale: 1 }; // this view's own camera, reset each time the map opens
-let panStart = null;           // {sx, sy, cx, cy} while dragging the background
-let renderToken = 0;           // guards against a slower, now-stale renderGraph() call overwriting a newer one
-let simPositions = new Map();  // id -> {x, y, vx, vy}, persisted across renders
-let adjacency = new Map();     // id -> Set of directly-connected ids, rebuilt every renderGraph() call
-let highlightId = null;        // id "Show connected" was last invoked on, if any (temp, DOM-class-only)
+let panStart = null; // {sx, sy, cx, cy} while dragging the background
+let renderToken = 0; // guards against a slower, now-stale renderGraph() call overwriting a newer one
+let simPositions = new Map(); // id -> {x, y, vx, vy}, persisted across renders
+let adjacency = new Map(); // id -> Set of directly-connected ids, rebuilt every renderGraph() call
+let highlightId = null; // id "Show connected" was last invoked on, if any (temp, DOM-class-only)
 
 function refs() {
   if (root) return root;
@@ -117,7 +131,7 @@ function refs() {
     zoomIn: document.getElementById('mmZoomIn'),
     zoomOut: document.getElementById('mmZoomOut'),
     zoomReset: document.getElementById('mmZoomReset'),
-    zoomLvl: document.getElementById('mmZoomLvl')
+    zoomLvl: document.getElementById('mmZoomLvl'),
   };
   return root;
 }
@@ -144,11 +158,13 @@ function flatten(node, acc) {
 // satellite) so it visibly emerges from that anchor.
 function seedPosition(id, nearX, nearY, exact) {
   if (simPositions.has(id)) return simPositions.get(id);
-  let x = nearX, y = nearY;
+  let x = nearX,
+    y = nearY;
   if (!exact) {
     const angle = Math.random() * Math.PI * 2;
     const dist = 40 + Math.random() * 40;
-    x += Math.cos(angle) * dist; y += Math.sin(angle) * dist;
+    x += Math.cos(angle) * dist;
+    y += Math.sin(angle) * dist;
   }
   const p = { x, y, vx: 0, vy: 0 };
   simPositions.set(id, p);
@@ -156,16 +172,24 @@ function seedPosition(id, nearX, nearY, exact) {
 }
 
 function seedBoards(node, parentPos, rootId) {
-  const pos = node.id === rootId
-    ? seedPosition(node.id, 0, 0, true)
-    : seedPosition(node.id, parentPos.x, parentPos.y, false);
+  const pos =
+    node.id === rootId ? seedPosition(node.id, 0, 0, true) : seedPosition(node.id, parentPos.x, parentPos.y, false);
   node.children.forEach(c => seedBoards(c, pos, rootId));
   return pos;
 }
 
 function previewText(it) {
   const d = it.data || {};
-  const raw = String(d.title || d.text || (d.body && d.body.slice(0, 60)) || d.url || it.type || '');
+  const raw = String(
+    d.title ||
+      String(d.text || '')
+        .split('\n')
+        .find(l => l.trim()) ||
+      (d.body && d.body.slice(0, 60)) ||
+      d.url ||
+      it.type ||
+      ''
+  );
   // Capped at 5 words so a long note/comment body doesn't bloat its own
   // satellite far past what a short label would.
   const words = raw.trim().split(/\s+/).filter(Boolean);
@@ -214,30 +238,45 @@ function simulate(ids, edges, rootId, collisionR) {
       for (let j = i + 1; j < ids.length; j++) {
         const b = simPositions.get(ids[j]);
         const rb = collisionR.get(ids[j]) || 0;
-        let dx = a.x - b.x, dy = a.y - b.y;
+        let dx = a.x - b.x,
+          dy = a.y - b.y;
         let dist2 = dx * dx + dy * dy;
-        if (dist2 < 1) { dx = Math.random() - 0.5; dy = Math.random() - 0.5; dist2 = 1; }
+        if (dist2 < 1) {
+          dx = Math.random() - 0.5;
+          dy = Math.random() - 0.5;
+          dist2 = 1;
+        }
         const dist = Math.sqrt(dist2);
         let f = (REPULSE_K * alpha) / dist2;
         const minDist = ra + rb;
         if (dist < minDist) f += (minDist - dist) * COLLISION_K;
-        const fx = (dx / dist) * f, fy = (dy / dist) * f;
-        const fa = force.get(ids[i]), fb = force.get(ids[j]);
-        fa.x += fx; fa.y += fy;
-        fb.x -= fx; fb.y -= fy;
+        const fx = (dx / dist) * f,
+          fy = (dy / dist) * f;
+        const fa = force.get(ids[i]),
+          fb = force.get(ids[j]);
+        fa.x += fx;
+        fa.y += fy;
+        fb.x -= fx;
+        fb.y -= fy;
       }
     }
 
     for (const e of edges) {
-      const a = simPositions.get(e.a), b = simPositions.get(e.b);
+      const a = simPositions.get(e.a),
+        b = simPositions.get(e.b);
       if (!a || !b) continue;
-      const dx = b.x - a.x, dy = b.y - a.y;
+      const dx = b.x - a.x,
+        dy = b.y - a.y;
       const dist = Math.hypot(dx, dy) || 0.01;
       const diff = (dist - e.rest) * e.k * alpha;
-      const ux = dx / dist, uy = dy / dist;
-      const fa = force.get(e.a), fb = force.get(e.b);
-      fa.x += ux * diff; fa.y += uy * diff;
-      fb.x -= ux * diff; fb.y -= uy * diff;
+      const ux = dx / dist,
+        uy = dy / dist;
+      const fa = force.get(e.a),
+        fb = force.get(e.b);
+      fa.x += ux * diff;
+      fa.y += uy * diff;
+      fb.x -= ux * diff;
+      fb.y -= uy * diff;
     }
 
     for (const id of ids) {
@@ -245,7 +284,10 @@ function simulate(ids, edges, rootId, collisionR) {
       const f = force.get(id);
       f.x += -p.x * CENTER_K;
       f.y += -p.y * CENTER_K;
-      if (id === rootId) { f.x += -p.x * ROOT_PIN_K; f.y += -p.y * ROOT_PIN_K; }
+      if (id === rootId) {
+        f.x += -p.x * ROOT_PIN_K;
+        f.y += -p.y * ROOT_PIN_K;
+      }
       p.vx = (p.vx + f.x) * DAMPING;
       p.vy = (p.vy + f.y) * DAMPING;
       p.x += p.vx;
@@ -263,7 +305,8 @@ function applyMmCam() {
 
 function resetMmCam() {
   const r = refs();
-  const vw = r.wrap.clientWidth || 800, vh = r.wrap.clientHeight || 600;
+  const vw = r.wrap.clientWidth || 800,
+    vh = r.wrap.clientHeight || 600;
   mmCam = { x: vw / 2, y: vh / 2, scale: 1 }; // Home (0,0) centered in the visible wrap
   applyMmCam();
 }
@@ -276,14 +319,21 @@ function fitToBounds(padding = 90) {
   const r = refs();
   const ids = [...simPositions.keys()];
   if (!ids.length) return;
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity;
   for (const id of ids) {
     const p = simPositions.get(id);
-    minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
-    minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+    minX = Math.min(minX, p.x);
+    maxX = Math.max(maxX, p.x);
+    minY = Math.min(minY, p.y);
+    maxY = Math.max(maxY, p.y);
   }
-  const w = Math.max(maxX - minX, 1), h = Math.max(maxY - minY, 1);
-  const vw = r.wrap.clientWidth || 800, vh = r.wrap.clientHeight || 600;
+  const w = Math.max(maxX - minX, 1),
+    h = Math.max(maxY - minY, 1);
+  const vw = r.wrap.clientWidth || 800,
+    vh = r.wrap.clientHeight || 600;
   const scale = Math.max(0.2, Math.min(1, Math.min((vw - padding * 2) / w, (vh - padding * 2) / h)));
   mmCam.scale = scale;
   mmCam.x = vw / 2 - ((minX + maxX) / 2) * scale;
@@ -318,7 +368,10 @@ async function renderGraph() {
   const r = refs();
   const data = await api.graph();
   const tree = buildTree(data.canvases, data.rootCanvasId);
-  if (!tree) { if (myToken === renderToken) r.svg.innerHTML = ''; return; }
+  if (!tree) {
+    if (myToken === renderToken) r.svg.innerHTML = '';
+    return;
+  }
 
   const boardNodes = flatten(tree, []);
   const byId = new Map(boardNodes.map(n => [n.id, n]));
@@ -332,7 +385,10 @@ async function renderGraph() {
   for (const boardId of expanded) {
     if (!byId.has(boardId)) continue;
     const { items, lines } = await getBoardItems(boardId);
-    for (const it of items) { satellites.push({ boardId, it }); visibleSatIds.add(it.id); }
+    for (const it of items) {
+      satellites.push({ boardId, it });
+      visibleSatIds.add(it.id);
+    }
     for (const ln of lines) rawLineEdges.push({ fromId: ln.data.fromId, toId: ln.data.toId });
   }
   if (myToken !== renderToken) return; // a newer render started while we were awaiting — don't clobber it
@@ -349,12 +405,13 @@ async function renderGraph() {
   // one always-present spoke, which isn't informative the way those are.
   const edges = [];
   const degree = new Map();
-  const bump = (id) => degree.set(id, (degree.get(id) || 0) + 1);
+  const bump = id => degree.set(id, (degree.get(id) || 0) + 1);
 
   for (const n of boardNodes) {
     if (n.parentCanvasId && byId.has(n.parentCanvasId)) {
       edges.push({ a: n.parentCanvasId, b: n.id, rest: REST_BOARD, k: SPRING_BOARD });
-      bump(n.parentCanvasId); bump(n.id);
+      bump(n.parentCanvasId);
+      bump(n.id);
     }
   }
   // A column child spokes to its own column (once the column is also a
@@ -372,7 +429,8 @@ async function renderGraph() {
     if (le.fromId === le.toId) continue;
     if (!visibleSatIds.has(le.fromId) || !visibleSatIds.has(le.toId)) continue;
     edges.push({ a: le.fromId, b: le.toId, rest: REST_LINE, k: SPRING_LINE });
-    bump(le.fromId); bump(le.toId);
+    bump(le.fromId);
+    bump(le.toId);
     lineEdges.push(le);
   }
 
@@ -392,9 +450,11 @@ async function renderGraph() {
     if (members.length < 2) continue;
     members.sort((a, b) => (a.y || 0) - (b.y || 0));
     for (let i = 0; i < members.length - 1; i++) {
-      const a = members[i].id, b = members[i + 1].id;
+      const a = members[i].id,
+        b = members[i + 1].id;
       edges.push({ a, b, rest: REST_GROUP, k: SPRING_GROUP });
-      bump(a); bump(b);
+      bump(a);
+      bump(b);
     }
   }
 
@@ -405,16 +465,24 @@ async function renderGraph() {
   // you've drilled into either board.
   const connectEdges = [];
   for (const c of data.connects) {
-    const fromId = (c.sourceItemId && visibleSatIds.has(c.sourceItemId)) ? c.sourceItemId : (byId.has(c.canvasId) ? c.canvasId : null);
-    const toId = (c.targetItemId && visibleSatIds.has(c.targetItemId)) ? c.targetItemId : (byId.has(c.targetCanvasId) ? c.targetCanvasId : null);
+    const fromId =
+      c.sourceItemId && visibleSatIds.has(c.sourceItemId) ? c.sourceItemId : byId.has(c.canvasId) ? c.canvasId : null;
+    const toId =
+      c.targetItemId && visibleSatIds.has(c.targetItemId)
+        ? c.targetItemId
+        : byId.has(c.targetCanvasId)
+          ? c.targetCanvasId
+          : null;
     if (!fromId || !toId || fromId === toId) continue;
     edges.push({ a: fromId, b: toId, rest: REST_CONNECT, k: SPRING_CONNECT });
-    bump(fromId); bump(toId);
+    bump(fromId);
+    bump(toId);
     connectEdges.push({ a: fromId, b: toId, label: c.label, note: c.note });
   }
 
   const allIds = boardNodes.map(n => n.id).concat(satellites.map(s => s.it.id));
   const liveIds = new Set(allIds);
+  // oxlint-disable-next-line no-useless-spread -- a snapshot: entries are deleted while iterating
   for (const id of [...simPositions.keys()]) if (!liveIds.has(id)) simPositions.delete(id);
 
   // Rebuilt from the same edge list every render -- "Show connected" (the
@@ -427,11 +495,11 @@ async function renderGraph() {
     adjacency.get(e.b).add(e.a);
   }
 
-  const boardR = (id) => {
+  const boardR = id => {
     const base = id === data.rootCanvasId ? NODE_R + 6 : NODE_R;
     return Math.min(base + (degree.get(id) || 0) * 2.2, base + 26);
   };
-  const satR = (id) => Math.min(SAT_R + (degree.get(id) || 0) * 2, SAT_R + 14);
+  const satR = id => Math.min(SAT_R + (degree.get(id) || 0) * 2, SAT_R + 14);
 
   const collisionR = new Map();
   for (const n of boardNodes) collisionR.set(n.id, boardR(n.id) + labelHalfWidth(n.title));
@@ -446,22 +514,36 @@ async function renderGraph() {
   world.setAttribute('transform', `translate(${mmCam.x},${mmCam.y}) scale(${mmCam.scale})`);
   r.svg.appendChild(world);
 
-  const edgeLayer = document.createElementNS(SVG_NS, 'g'); edgeLayer.setAttribute('class', 'mm-edges');
-  const satEdgeLayer = document.createElementNS(SVG_NS, 'g'); satEdgeLayer.setAttribute('class', 'mm-sat-edges');
-  const lineEdgeLayer = document.createElementNS(SVG_NS, 'g'); lineEdgeLayer.setAttribute('class', 'mm-line-edges');
-  const connectEdgeLayer = document.createElementNS(SVG_NS, 'g'); connectEdgeLayer.setAttribute('class', 'mm-connect-edges');
-  const nodeLayer = document.createElementNS(SVG_NS, 'g'); nodeLayer.setAttribute('class', 'mm-nodes');
-  const satLayer = document.createElementNS(SVG_NS, 'g'); satLayer.setAttribute('class', 'mm-sats');
+  const edgeLayer = document.createElementNS(SVG_NS, 'g');
+  edgeLayer.setAttribute('class', 'mm-edges');
+  const satEdgeLayer = document.createElementNS(SVG_NS, 'g');
+  satEdgeLayer.setAttribute('class', 'mm-sat-edges');
+  const lineEdgeLayer = document.createElementNS(SVG_NS, 'g');
+  lineEdgeLayer.setAttribute('class', 'mm-line-edges');
+  const connectEdgeLayer = document.createElementNS(SVG_NS, 'g');
+  connectEdgeLayer.setAttribute('class', 'mm-connect-edges');
+  const nodeLayer = document.createElementNS(SVG_NS, 'g');
+  nodeLayer.setAttribute('class', 'mm-nodes');
+  const satLayer = document.createElementNS(SVG_NS, 'g');
+  satLayer.setAttribute('class', 'mm-sats');
   world.append(edgeLayer, satEdgeLayer, lineEdgeLayer, connectEdgeLayer, nodeLayer, satLayer);
 
   const drawLine = (layer, aId, bId, cls, titleText) => {
-    const a = simPositions.get(aId), b = simPositions.get(bId);
+    const a = simPositions.get(aId),
+      b = simPositions.get(bId);
     const line = document.createElementNS(SVG_NS, 'line');
-    line.setAttribute('x1', a.x); line.setAttribute('y1', a.y);
-    line.setAttribute('x2', b.x); line.setAttribute('y2', b.y);
+    line.setAttribute('x1', a.x);
+    line.setAttribute('y1', a.y);
+    line.setAttribute('x2', b.x);
+    line.setAttribute('y2', b.y);
     line.setAttribute('class', cls);
-    line.dataset.a = aId; line.dataset.b = bId;
-    if (titleText) { const t = document.createElementNS(SVG_NS, 'title'); t.textContent = titleText; line.appendChild(t); }
+    line.dataset.a = aId;
+    line.dataset.b = bId;
+    if (titleText) {
+      const t = document.createElementNS(SVG_NS, 'title');
+      t.textContent = titleText;
+      line.appendChild(t);
+    }
     layer.appendChild(line);
   };
 
@@ -474,10 +556,16 @@ async function renderGraph() {
     // the generic gray dotted spoke -- two differently-colored lines to the
     // same column read as two unrelated relationships when they're really
     // the same one (membership).
-    drawLine(satEdgeLayer, parentVisible ? s.it.parentItemId : s.boardId, s.it.id, parentVisible ? 'mm-sat-edge mm-sat-edge-group' : 'mm-sat-edge');
+    drawLine(
+      satEdgeLayer,
+      parentVisible ? s.it.parentItemId : s.boardId,
+      s.it.id,
+      parentVisible ? 'mm-sat-edge mm-sat-edge-group' : 'mm-sat-edge'
+    );
   }
   for (const le of lineEdges) drawLine(lineEdgeLayer, le.fromId, le.toId, 'mm-line-edge');
-  for (const ce of connectEdges) drawLine(connectEdgeLayer, ce.a, ce.b, 'mm-connect-edge', ce.note ? ce.label + ' — ' + ce.note : ce.label);
+  for (const ce of connectEdges)
+    drawLine(connectEdgeLayer, ce.a, ce.b, 'mm-connect-edge', ce.note ? ce.label + ' — ' + ce.note : ce.label);
 
   for (const n of boardNodes) {
     const isRoot = n.id === data.rootCanvasId;
@@ -496,8 +584,10 @@ async function renderGraph() {
     const icon = lucideEl(n.icon || 'layout-grid');
     const iconSize = r2 * 0.85;
     const fo = document.createElementNS(SVG_NS, 'foreignObject');
-    fo.setAttribute('x', -iconSize / 2); fo.setAttribute('y', -iconSize / 2);
-    fo.setAttribute('width', iconSize); fo.setAttribute('height', iconSize);
+    fo.setAttribute('x', -iconSize / 2);
+    fo.setAttribute('y', -iconSize / 2);
+    fo.setAttribute('width', iconSize);
+    fo.setAttribute('height', iconSize);
     fo.appendChild(icon);
     g.appendChild(fo);
     const label = document.createElementNS(SVG_NS, 'text');
@@ -511,17 +601,22 @@ async function renderGraph() {
     // board would first toggle-expand it (twice) and only then navigate,
     // producing a visible flicker right before the jump. Hold each click
     // for a beat in case a second one arrives to cancel it into an open.
-    g.addEventListener('click', (e) => {
+    g.addEventListener('click', e => {
       e.stopPropagation();
       clearTimeout(clickTimer);
       clickTimer = setTimeout(() => toggleExpand(n.id), 220);
     });
-    g.addEventListener('dblclick', (e) => {
+    g.addEventListener('dblclick', e => {
       e.stopPropagation();
       clearTimeout(clickTimer);
-      closeMindMap(); openCanvas(n.id);
+      closeMindMap();
+      openCanvas(n.id);
     });
-    g.addEventListener('contextmenu', (e) => { e.preventDefault(); e.stopPropagation(); openCtx(e, n.id, null); });
+    g.addEventListener('contextmenu', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      openCtx(e, n.id, null);
+    });
     nodeLayer.appendChild(g);
   }
 
@@ -539,8 +634,10 @@ async function renderGraph() {
     const icon = lucideEl(ICONS[s.it.type] || 'square');
     const iconSize = Math.max(14, sR * 1.4);
     const fo = document.createElementNS(SVG_NS, 'foreignObject');
-    fo.setAttribute('x', -iconSize / 2); fo.setAttribute('y', -iconSize / 2);
-    fo.setAttribute('width', iconSize); fo.setAttribute('height', iconSize);
+    fo.setAttribute('x', -iconSize / 2);
+    fo.setAttribute('y', -iconSize / 2);
+    fo.setAttribute('width', iconSize);
+    fo.setAttribute('height', iconSize);
     fo.appendChild(icon);
     g.appendChild(fo);
     const label = document.createElementNS(SVG_NS, 'text');
@@ -549,8 +646,16 @@ async function renderGraph() {
     label.setAttribute('class', 'mm-sat-label');
     label.textContent = previewText(s.it);
     g.appendChild(label);
-    g.addEventListener('dblclick', (e) => { e.stopPropagation(); closeMindMap(); navigateToItem(s.boardId, s.it.id); });
-    g.addEventListener('contextmenu', (e) => { e.preventDefault(); e.stopPropagation(); openCtx(e, s.boardId, s.it.id); });
+    g.addEventListener('dblclick', e => {
+      e.stopPropagation();
+      closeMindMap();
+      navigateToItem(s.boardId, s.it.id);
+    });
+    g.addEventListener('contextmenu', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      openCtx(e, s.boardId, s.it.id);
+    });
     satLayer.appendChild(g);
   }
 
@@ -559,7 +664,8 @@ async function renderGraph() {
 }
 
 function toggleExpand(boardId) {
-  if (expanded.has(boardId)) expanded.delete(boardId); else expanded.add(boardId);
+  if (expanded.has(boardId)) expanded.delete(boardId);
+  else expanded.add(boardId);
   highlightId = null; // renderGraph() below rebuilds the DOM fresh -- any highlight classes are gone with it
   renderGraph();
 }
@@ -568,8 +674,8 @@ function openCtx(e, canvasId, itemId) {
   ctxTarget = { canvasId, itemId };
   const r = refs();
   const wrapRect = r.wrap.getBoundingClientRect();
-  r.ctx.style.left = (e.clientX - wrapRect.left) + 'px';
-  r.ctx.style.top = (e.clientY - wrapRect.top) + 'px';
+  r.ctx.style.left = e.clientX - wrapRect.left + 'px';
+  r.ctx.style.top = e.clientY - wrapRect.top + 'px';
   r.ctx.hidden = false;
 }
 
@@ -601,7 +707,9 @@ function showConnected(id) {
 function clearHighlight() {
   if (!highlightId) return;
   highlightId = null;
-  document.querySelectorAll('.mm-dim, .mm-highlight-source').forEach(el => el.classList.remove('mm-dim', 'mm-highlight-source'));
+  document
+    .querySelectorAll('.mm-dim, .mm-highlight-source')
+    .forEach(el => el.classList.remove('mm-dim', 'mm-highlight-source'));
 }
 
 // Centers the *main canvas's* camera on a world point — used instead of
@@ -609,7 +717,8 @@ function clearHighlight() {
 // which the DOM's own scroll machinery knows nothing about. Unrelated to
 // mmCam above (that's this view's own camera).
 function centerCameraOn(x, y) {
-  const vw = dom.stage.clientWidth, vh = dom.stage.clientHeight;
+  const vw = dom.stage.clientWidth,
+    vh = dom.stage.clientHeight;
   state.cam.x = vw / 2 - x * state.cam.scale;
   state.cam.y = vh / 2 - y * state.cam.scale;
   applyCam();
@@ -624,7 +733,9 @@ async function navigateToItem(canvasId, itemId) {
   }
 }
 
-export function isMindMapOpen() { return !refs().el.hidden; }
+export function isMindMapOpen() {
+  return !refs().el.hidden;
+}
 
 function closeMindMap() {
   refs().el.hidden = true;
@@ -636,9 +747,11 @@ function zoomMmBy(factor, anchorX, anchorY) {
   const rect = r.svg.getBoundingClientRect();
   const px = anchorX != null ? anchorX - rect.left : rect.width / 2;
   const py = anchorY != null ? anchorY - rect.top : rect.height / 2;
-  const wx = (px - mmCam.x) / mmCam.scale, wy = (py - mmCam.y) / mmCam.scale;
+  const wx = (px - mmCam.x) / mmCam.scale,
+    wy = (py - mmCam.y) / mmCam.scale;
   mmCam.scale = Math.max(0.2, Math.min(2.5, mmCam.scale * factor));
-  mmCam.x = px - wx * mmCam.scale; mmCam.y = py - wy * mmCam.scale;
+  mmCam.x = px - wx * mmCam.scale;
+  mmCam.y = py - wy * mmCam.scale;
   applyMmCam();
 }
 
@@ -649,13 +762,13 @@ function initMmCamera() {
   // on the svg — mirrors onItemPointerDown in drag.js. Keeps tracking the
   // drag even if the pointer leaves the svg mid-gesture (a fast drag easily
   // outruns a small viewport), which a listener scoped to the svg wouldn't.
-  r.svg.addEventListener('pointerdown', (e) => {
+  r.svg.addEventListener('pointerdown', e => {
     if (e.button !== 0) return;
     if (e.target.closest('.mm-node, .mm-sat')) return; // let node clicks handle themselves
     panStart = { sx: e.clientX, sy: e.clientY, cx: mmCam.x, cy: mmCam.y };
     r.svg.classList.add('panning');
 
-    const move = (ev) => {
+    const move = ev => {
       mmCam.x = panStart.cx + (ev.clientX - panStart.sx);
       mmCam.y = panStart.cy + (ev.clientY - panStart.sy);
       applyMmCam();
@@ -670,15 +783,20 @@ function initMmCamera() {
     document.addEventListener('pointerup', up);
   });
 
-  r.svg.addEventListener('wheel', (e) => {
-    e.preventDefault();
-    if (e.ctrlKey || e.metaKey) {
-      zoomMmBy(Math.exp(-e.deltaY * 0.0015), e.clientX, e.clientY);
-    } else {
-      mmCam.x -= e.deltaX; mmCam.y -= e.deltaY;
-      applyMmCam();
-    }
-  }, { passive: false });
+  r.svg.addEventListener(
+    'wheel',
+    e => {
+      e.preventDefault();
+      if (e.ctrlKey || e.metaKey) {
+        zoomMmBy(Math.exp(-e.deltaY * 0.0015), e.clientX, e.clientY);
+      } else {
+        mmCam.x -= e.deltaX;
+        mmCam.y -= e.deltaY;
+        applyMmCam();
+      }
+    },
+    { passive: false }
+  );
 
   r.zoomIn.addEventListener('click', () => zoomMmBy(1.2));
   r.zoomOut.addEventListener('click', () => zoomMmBy(1 / 1.2));
@@ -689,7 +807,10 @@ export function initMindMap() {
   const r = refs();
   document.getElementById('mindMapBtn').addEventListener('click', openMindMap);
   r.close.addEventListener('click', closeMindMap);
-  r.svg.addEventListener('click', () => { closeCtx(); clearHighlight(); });
+  r.svg.addEventListener('click', () => {
+    closeCtx();
+    clearHighlight();
+  });
   r.ctxHighlight.addEventListener('click', () => {
     if (!ctxTarget) return;
     const id = ctxTarget.itemId || ctxTarget.canvasId;
@@ -725,7 +846,7 @@ export function initMindMap() {
     if (itemId) navigateToItem(canvasId, itemId);
     else openCanvas(canvasId);
   });
-  document.addEventListener('keydown', (e) => {
+  document.addEventListener('keydown', e => {
     if (r.el.hidden) return;
     if (e.key === 'Escape') {
       e.preventDefault();

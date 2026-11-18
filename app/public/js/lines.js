@@ -7,7 +7,6 @@ import { select, deleteItem, saveData } from './editing.js';
 import { disarm } from './tools.js';
 import { screenToWorld } from './viewport.js';
 
-
 // Connector lines between two cards. Unlike every other item type, a line
 // has no box of its own on the canvas — it's just a fromId/toId pair drawn
 // into an SVG layer that lives inside #world so it inherits the same
@@ -41,7 +40,10 @@ function ensureLayer() {
 // so a mid-drag renderLines() call can clear the previous batch instead of
 // piling up duplicates the same way the old ensureLayer() bug did for paths.
 let labelEls = [];
-function clearLabels() { labelEls.forEach(el => el.remove()); labelEls = []; }
+function clearLabels() {
+  labelEls.forEach(el => el.remove());
+  labelEls = [];
+}
 
 // Markers can't reference a CSS var per-instance, so each line gets its own
 // arrowhead def sized to its own color instead of sharing one global marker.
@@ -49,8 +51,10 @@ function addArrowMarker(defs, id, color) {
   const marker = document.createElementNS(SVG_NS, 'marker');
   marker.setAttribute('id', id);
   marker.setAttribute('viewBox', '0 0 10 10');
-  marker.setAttribute('refX', '8'); marker.setAttribute('refY', '5');
-  marker.setAttribute('markerWidth', '7'); marker.setAttribute('markerHeight', '7');
+  marker.setAttribute('refX', '8');
+  marker.setAttribute('refY', '5');
+  marker.setAttribute('markerWidth', '7');
+  marker.setAttribute('markerHeight', '7');
   marker.setAttribute('orient', 'auto-start-reverse');
   const path = document.createElementNS(SVG_NS, 'path');
   path.setAttribute('d', 'M0,0 L10,5 L0,10 z');
@@ -66,8 +70,10 @@ function rectOf(id) {
   const el = elMap.get(id);
   if (!el) return null;
   if (el.style.left) {
-    const x = parseFloat(el.style.left) || 0, y = parseFloat(el.style.top) || 0;
-    const w = el.offsetWidth, h = el.offsetHeight;
+    const x = parseFloat(el.style.left) || 0,
+      y = parseFloat(el.style.top) || 0;
+    const w = el.offsetWidth,
+      h = el.offsetHeight;
     return { x, y, w, h, cx: x + w / 2, cy: y + h / 2 };
   }
   // Column children never get an inline left/top (they're positioned by
@@ -79,7 +85,8 @@ function rectOf(id) {
   // rendered screen rect and convert to world space instead.
   const r = el.getBoundingClientRect();
   const topLeft = screenToWorld(r.left, r.top);
-  const w = r.width / state.cam.scale, h = r.height / state.cam.scale;
+  const w = r.width / state.cam.scale,
+    h = r.height / state.cam.scale;
   return { x: topLeft.x, y: topLeft.y, w, h, cx: topLeft.x + w / 2, cy: topLeft.y + h / 2 };
 }
 
@@ -87,7 +94,8 @@ function rectOf(id) {
 // rectangle — dx/dy don't need to be normalized, only their ratio matters.
 function edgeAlongDir(rect, dx, dy) {
   if (!dx && !dy) return { x: rect.cx, y: rect.cy };
-  const hw = rect.w / 2, hh = rect.h / 2;
+  const hw = rect.w / 2,
+    hh = rect.h / 2;
   const scale = Math.min(dx ? Math.abs(hw / dx) : Infinity, dy ? Math.abs(hh / dy) : Infinity);
   return { x: rect.cx + dx * scale, y: rect.cy + dy * scale };
 }
@@ -129,12 +137,17 @@ export function renderLines() {
     }
     const fromAttach = attachPoint(fromRect, toRect.cx, toRect.cy, line.data.fromAnchorDir);
     const toAttach = attachPoint(toRect, fromRect.cx, fromRect.cy, line.data.toAnchorDir);
-    const from = fromAttach.dot, to = toAttach.dot;
-    const mx = (from.x + to.x) / 2, my = (from.y + to.y) / 2;
-    const ddx = to.x - from.x, ddy = to.y - from.y;
+    const from = fromAttach.dot,
+      to = toAttach.dot;
+    const mx = (from.x + to.x) / 2,
+      my = (from.y + to.y) / 2;
+    const ddx = to.x - from.x,
+      ddy = to.y - from.y;
     const len = Math.hypot(ddx, ddy) || 1;
-    const ax = ddx / len, ay = ddy / len;   // unit vector along the line
-    const px = -ay, py = ax;                // unit vector perpendicular to it
+    const ax = ddx / len,
+      ay = ddy / len; // unit vector along the line
+    const px = -ay,
+      py = ax; // unit vector perpendicular to it
     // Two independent offsets from the straight midpoint: "bend" (how far
     // off the line, perpendicular) and "along" (where the bulge sits along
     // the line's own length) — dragging the handle sets both freely, so it
@@ -159,14 +172,17 @@ export function renderLines() {
     if (selected) g.classList.add('selected');
     const d = `M ${from.x},${from.y} Q ${ctrl.x},${ctrl.y} ${to.x},${to.y}`;
     const hit = document.createElementNS(SVG_NS, 'path');
-    hit.setAttribute('d', d); hit.setAttribute('class', 'chit');
+    hit.setAttribute('d', d);
+    hit.setAttribute('class', 'chit');
     const vis = document.createElementNS(SVG_NS, 'path');
-    vis.setAttribute('d', d); vis.setAttribute('class', 'cvis');
+    vis.setAttribute('d', d);
+    vis.setAttribute('class', 'cvis');
     vis.setAttribute('stroke', color);
     vis.setAttribute('marker-end', `url(#${markerId})`);
     // depends on: dashed. became: heavier. relates to: plain.
     if (kind === 'depends') vis.setAttribute('stroke-dasharray', '7 5');
-    g.appendChild(hit); g.appendChild(vis);
+    g.appendChild(hit);
+    g.appendChild(vis);
     // A dot marker sits right on the card edge, decorative (pointer-
     // events:none in CSS) — a much bigger invisible circle underneath it is
     // the actual, easy-to-grab drag target, same trick as the wide
@@ -174,13 +190,18 @@ export function renderLines() {
     for (const attach of [fromAttach, toAttach]) {
       const isFrom = attach === fromAttach;
       const grabArea = document.createElementNS(SVG_NS, 'circle');
-      grabArea.setAttribute('cx', attach.edge.x); grabArea.setAttribute('cy', attach.edge.y); grabArea.setAttribute('r', 14);
+      grabArea.setAttribute('cx', attach.edge.x);
+      grabArea.setAttribute('cy', attach.edge.y);
+      grabArea.setAttribute('r', 14);
       grabArea.setAttribute('class', 'cdot-grab');
       const dot = document.createElementNS(SVG_NS, 'circle');
-      dot.setAttribute('cx', attach.edge.x); dot.setAttribute('cy', attach.edge.y); dot.setAttribute('r', 4);
+      dot.setAttribute('cx', attach.edge.x);
+      dot.setAttribute('cy', attach.edge.y);
+      dot.setAttribute('r', 4);
       dot.setAttribute('class', 'cdot');
       dot.setAttribute('fill', color);
-      g.appendChild(grabArea); g.appendChild(dot);
+      g.appendChild(grabArea);
+      g.appendChild(dot);
 
       // Drag an endpoint dot onto a *different* card to re-point the
       // connector at it. Drag it around while staying off any other card
@@ -189,7 +210,7 @@ export function renderLines() {
       // the same anchorDir attachPoint() reads, reverted if you drop on
       // empty canvas, kept if you drop back on the own card, replaced with
       // the default automatic placement if you retarget to a new card.
-      grabArea.addEventListener('pointerdown', (e) => {
+      grabArea.addEventListener('pointerdown', e => {
         e.stopPropagation();
         if (e.button === 2) return; // right-click: the line's context menu
         e.preventDefault();
@@ -197,8 +218,11 @@ export function renderLines() {
         const ownId = isFrom ? line.data.fromId : line.data.toId;
         const otherId = isFrom ? line.data.toId : line.data.fromId;
         const origDir = isFrom ? line.data.fromAnchorDir : line.data.toAnchorDir;
-        const setDir = (dir) => { if (isFrom) line.data.fromAnchorDir = dir; else line.data.toAnchorDir = dir; };
-        const move = (ev) => {
+        const setDir = dir => {
+          if (isFrom) line.data.fromAnchorDir = dir;
+          else line.data.toAnchorDir = dir;
+        };
+        const move = ev => {
           document.querySelectorAll('.item.line-target').forEach(el => el.classList.remove('line-target'));
           const overEl = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.item');
           if (overEl && overEl.dataset.id !== otherId && overEl.dataset.id !== ownId) {
@@ -210,12 +234,13 @@ export function renderLines() {
           const rect = rectOf(ownId);
           if (!rect) return;
           const w = screenToWorld(ev.clientX, ev.clientY);
-          const dx = w.x - rect.cx, dy = w.y - rect.cy;
+          const dx = w.x - rect.cx,
+            dy = w.y - rect.cy;
           const len = Math.hypot(dx, dy) || 1;
           setDir({ x: dx / len, y: dy / len });
           renderLines();
         };
-        const up = (ev) => {
+        const up = ev => {
           document.removeEventListener('pointermove', move);
           document.removeEventListener('pointerup', up);
           document.querySelectorAll('.item.line-target').forEach(el => el.classList.remove('line-target'));
@@ -228,7 +253,10 @@ export function renderLines() {
             setDir(null);
             saveData(line, isFrom ? { fromId: newId, fromAnchorDir: null } : { toId: newId, toAnchorDir: null });
           } else if (newId === ownId) {
-            saveData(line, isFrom ? { fromAnchorDir: line.data.fromAnchorDir } : { toAnchorDir: line.data.toAnchorDir });
+            saveData(
+              line,
+              isFrom ? { fromAnchorDir: line.data.fromAnchorDir } : { toAnchorDir: line.data.toAnchorDir }
+            );
           } else {
             // Dropped on empty canvas — cancel, revert the live preview.
             setDir(origDir);
@@ -239,31 +267,38 @@ export function renderLines() {
         document.addEventListener('pointerup', up);
       });
     }
-    g.addEventListener('pointerdown', (e) => {
+    g.addEventListener('pointerdown', e => {
       e.stopPropagation();
       // Right button: leave the DOM alone so the contextmenu event still
       // reaches this element (re-rendering here would detach it first).
       if (e.button === 2) return;
-      e.preventDefault(); select(line.id); renderLines();
+      e.preventDefault();
+      select(line.id);
+      renderLines();
     });
-    g.addEventListener('contextmenu', (e) => openLineCtx(e, line));
+    g.addEventListener('contextmenu', e => openLineCtx(e, line));
     layer.appendChild(g);
 
     if (selected) {
       const bendGrab = document.createElementNS(SVG_NS, 'circle');
-      bendGrab.setAttribute('cx', ctrl.x); bendGrab.setAttribute('cy', ctrl.y); bendGrab.setAttribute('r', 14);
+      bendGrab.setAttribute('cx', ctrl.x);
+      bendGrab.setAttribute('cy', ctrl.y);
+      bendGrab.setAttribute('r', 14);
       bendGrab.setAttribute('class', 'cbend-grab');
       const handle = document.createElementNS(SVG_NS, 'circle');
-      handle.setAttribute('cx', ctrl.x); handle.setAttribute('cy', ctrl.y); handle.setAttribute('r', 5);
+      handle.setAttribute('cx', ctrl.x);
+      handle.setAttribute('cy', ctrl.y);
+      handle.setAttribute('r', 5);
       handle.setAttribute('class', 'cbend');
-      bendGrab.addEventListener('contextmenu', (e) => openLineCtx(e, line));
-      bendGrab.addEventListener('pointerdown', (e) => {
+      bendGrab.addEventListener('contextmenu', e => openLineCtx(e, line));
+      bendGrab.addEventListener('pointerdown', e => {
         e.stopPropagation();
         if (e.button === 2) return;
         e.preventDefault();
-        const move = (ev) => {
+        const move = ev => {
           const w = screenToWorld(ev.clientX, ev.clientY);
-          const vx = w.x - mx, vy = w.y - my;
+          const vx = w.x - mx,
+            vy = w.y - my;
           line.data.bend = vx * px + vy * py;
           line.data.along = vx * ax + vy * ay;
           renderLines();
@@ -292,10 +327,15 @@ export function renderLines() {
       // handle, which lives right at the curve's midpoint when unselected
       // labels aren't shown and at the control point once selected.
       label.style.left = curveMid.x + 'px';
-      label.style.top = (curveMid.y + (selected ? 20 : 0)) + 'px';
-      label.addEventListener('pointerdown', (e) => e.stopPropagation());
+      label.style.top = curveMid.y + (selected ? 20 : 0) + 'px';
+      label.addEventListener('pointerdown', e => e.stopPropagation());
       label.addEventListener('input', () => saveData(line, { label: label.textContent.trim() }));
-      label.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); label.blur(); } });
+      label.addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          label.blur();
+        }
+      });
       dom.world.appendChild(label);
       labelEls.push(label);
     }
@@ -306,9 +346,12 @@ export function renderLines() {
       del.title = 'Delete connector';
       del.appendChild(lucideEl('trash-2'));
       del.style.left = ctrl.x + 'px';
-      del.style.top = (ctrl.y - 26) + 'px';
-      del.addEventListener('pointerdown', (e) => e.stopPropagation());
-      del.addEventListener('click', (e) => { e.stopPropagation(); deleteItem(line.id); });
+      del.style.top = ctrl.y - 26 + 'px';
+      del.addEventListener('pointerdown', e => e.stopPropagation());
+      del.addEventListener('click', e => {
+        e.stopPropagation();
+        deleteItem(line.id);
+      });
       dom.world.appendChild(del);
       labelEls.push(del);
       refreshIcons(del);
@@ -318,7 +361,8 @@ export function renderLines() {
 
 // Right-click menu on a connector: its kind, its label, delete.
 function openLineCtx(e, line) {
-  e.preventDefault(); e.stopPropagation();
+  e.preventDefault();
+  e.stopPropagation();
   select(line.id);
   renderLines();
   const menu = dom.ctxmenu;
@@ -328,26 +372,50 @@ function openLineCtx(e, line) {
     b.type = 'button';
     b.className = 'ctx-item' + (opts.danger ? ' danger' : '') + (opts.on ? ' on' : '');
     if (opts.act) b.dataset.act = opts.act;
-    const lab = document.createElement('span'); lab.textContent = label; b.appendChild(lab);
-    if (opts.on) { const k = document.createElement('kbd'); k.textContent = '✓'; b.appendChild(k); }
-    b.onclick = () => { menu.classList.remove('open'); menu.innerHTML = ''; fn(); };
+    const lab = document.createElement('span');
+    lab.textContent = label;
+    b.appendChild(lab);
+    if (opts.on) {
+      const k = document.createElement('kbd');
+      k.textContent = '✓';
+      b.appendChild(k);
+    }
+    b.onclick = () => {
+      menu.classList.remove('open');
+      menu.innerHTML = '';
+      fn();
+    };
     menu.appendChild(b);
   };
-  const sep = () => { const s = document.createElement('div'); s.className = 'ctx-sep'; menu.appendChild(s); };
+  const sep = () => {
+    const s = document.createElement('div');
+    s.className = 'ctx-sep';
+    menu.appendChild(s);
+  };
   const cur = LINE_KINDS[line.data.kind] ? line.data.kind : 'relates';
   for (const [k, text] of Object.entries(LINE_KINDS)) {
-    add(text, () => { saveData(line, { kind: k }); renderLines(); }, { on: k === cur, act: 'kind-' + k });
+    add(
+      text,
+      () => {
+        saveData(line, { kind: k });
+        renderLines();
+      },
+      { on: k === cur, act: 'kind-' + k }
+    );
   }
   sep();
   add(line.data.label ? 'Edit label' : 'Add label', () => editLineLabel(line.id), { act: 'label' });
   sep();
   add('Delete line', () => deleteItem(line.id), { danger: true, act: 'delete' });
   menu.classList.add('open');
-  const mw = 220, mh = menu.offsetHeight || 200;
-  let left = e.clientX, top = e.clientY;
+  const mw = 220,
+    mh = menu.offsetHeight || 200;
+  let left = e.clientX,
+    top = e.clientY;
   if (left + mw > window.innerWidth) left = window.innerWidth - mw - 8;
   if (top + mh > window.innerHeight) top = window.innerHeight - mh - 8;
-  menu.style.left = left + 'px'; menu.style.top = top + 'px';
+  menu.style.left = left + 'px';
+  menu.style.top = top + 'px';
 }
 
 function editLineLabel(lineId) {
@@ -356,8 +424,11 @@ function editLineLabel(lineId) {
   const label = labelEls.find(el => el.dataset.lineId === lineId);
   if (!label) return;
   label.focus();
-  const range = document.createRange(); range.selectNodeContents(label);
-  const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+  const range = document.createRange();
+  range.selectNodeContents(label);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
 }
 
 // Called from onItemPointerDown while the Line tool is armed, instead of
@@ -370,7 +441,10 @@ export function pickLineEndpoint(it) {
     toast('Click another card to connect');
     return;
   }
-  if (state.lineFrom === it.id) { cancelLine(); return; }
+  if (state.lineFrom === it.id) {
+    cancelLine();
+    return;
+  }
   const fromId = state.lineFrom;
   cancelLine();
   createLine(fromId, it.id);
@@ -382,7 +456,15 @@ export function cancelLine() {
 }
 
 async function createLine(fromId, toId) {
-  const body = { canvasId: state.view.canvas.id, type: 'line', x: 0, y: 0, w: 0, color: 'slate', data: { fromId, toId, kind: 'relates' } };
+  const body = {
+    canvasId: state.view.canvas.id,
+    type: 'line',
+    x: 0,
+    y: 0,
+    w: 0,
+    color: 'slate',
+    data: { fromId, toId, kind: 'relates' },
+  };
   const it = await api.create(body);
   state.view.items.push(it);
   renderLines();

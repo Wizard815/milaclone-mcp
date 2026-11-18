@@ -32,69 +32,147 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_items_parent ON items(parentItemId);
 `);
 
-// Additive columns for existing DBs
-const cols = db.prepare("PRAGMA table_info(canvases)").all().map(c => c.name);
-if (!cols.includes('icon')) db.exec('ALTER TABLE canvases ADD COLUMN icon TEXT');
-if (!cols.includes('deletedAt')) db.exec('ALTER TABLE canvases ADD COLUMN deletedAt TEXT');
-const itemCols = db.prepare("PRAGMA table_info(items)").all().map(c => c.name);
-if (!itemCols.includes('deletedAt')) db.exec('ALTER TABLE items ADD COLUMN deletedAt TEXT');
+// Additive columns for existing DBs. `trashedBy` holds the id of the item whose
+// deletion trashed the row, so restoring that item brings back exactly its subtree.
+const colsOf = t =>
+  db
+    .prepare(`PRAGMA table_info(${t})`)
+    .all()
+    .map(c => c.name);
+if (!colsOf('canvases').includes('icon')) db.exec('ALTER TABLE canvases ADD COLUMN icon TEXT');
+for (const t of ['canvases', 'items']) {
+  if (!colsOf(t).includes('trashedBy')) db.exec(`ALTER TABLE ${t} ADD COLUMN trashedBy TEXT`);
+  if (!colsOf(t).includes('trashedAt')) db.exec(`ALTER TABLE ${t} ADD COLUMN trashedAt INTEGER`);
+}
 // Miladash: an idea's pipeline stage (thought | design | code, or NULL for
 // "not in the pipeline") and when the card last changed, which the Pipeline
 // view sorts by. Existing rows keep their data; updatedAt starts at createdAt.
-if (!itemCols.includes('stage')) db.exec('ALTER TABLE items ADD COLUMN stage TEXT');
-if (!itemCols.includes('updatedAt')) {
+if (!colsOf('items').includes('stage')) db.exec('ALTER TABLE items ADD COLUMN stage TEXT');
+if (!colsOf('items').includes('updatedAt')) {
   db.exec('ALTER TABLE items ADD COLUMN updatedAt INTEGER');
   db.exec('UPDATE items SET updatedAt = createdAt WHERE updatedAt IS NULL');
 }
 
+// Before the trash existed, deleting a board soft-deleted it and everything
+// nested in it with one shared `deletedAt` batch marker (other deletes were
+// permanent). Fold those batches into the trash once: the batch's root is its
+// board card (the one whose own board isn't in the same batch), and every row
+// of the batch becomes trashed by that card, so the board shows up in the Trash
+// and restores as a whole.
+function migrateSoftDeletes() {
+  for (const t of ['canvases', 'items']) {
+    if (!colsOf(t).includes('deletedAt')) return;
+  }
+  const batches = db
+    .prepare('SELECT DISTINCT deletedAt AS b FROM items WHERE deletedAt IS NOT NULL AND trashedBy IS NULL')
+    .all();
+  if (!batches.length) return;
+  const now = Date.now();
+  db.transaction(() => {
+    for (const { b } of batches) {
+      const root =
+        db
+          .prepare(
+            `SELECT i.id FROM items i WHERE i.deletedAt = ? AND i.type = 'board'
+               AND NOT EXISTS (SELECT 1 FROM canvases c WHERE c.id = i.canvasId AND c.deletedAt = ?)
+             ORDER BY i.createdAt LIMIT 1`
+          )
+          .get(b, b) || db.prepare('SELECT id FROM items WHERE deletedAt = ? ORDER BY createdAt LIMIT 1').get(b);
+      for (const t of ['items', 'canvases']) {
+        db.prepare(`UPDATE ${t} SET trashedBy = ?, trashedAt = ?, deletedAt = NULL WHERE deletedAt = ?`).run(
+          root.id,
+          now,
+          b
+        );
+      }
+    }
+  })();
+}
+migrateSoftDeletes();
+
 const STAGES = ['thought', 'design', 'code'];
 const LINE_KINDS = ['relates', 'depends', 'became'];
 
-// Prepared statements (created once, reused per request).
+// Prepared statements (created once, reused per request). Every read skips
+// trashed rows, so a trashed item or canvas looks deleted to the rest of the app.
+const LIVE = 'trashedBy IS NULL';
 const stmt = {
   getMeta: db.prepare(`SELECT value FROM meta WHERE key = ?`),
   setMeta: db.prepare(`INSERT INTO meta (key, value) VALUES (?, ?)
                        ON CONFLICT(key) DO UPDATE SET value = excluded.value`),
-  getCanvas: db.prepare(`SELECT * FROM canvases WHERE id = ? AND deletedAt IS NULL`),
-  getCanvasAny: db.prepare(`SELECT * FROM canvases WHERE id = ?`),
-  allCanvases: db.prepare(`SELECT id, title, parentCanvasId, color, icon FROM canvases WHERE deletedAt IS NULL`),
+  getCanvas: db.prepare(`SELECT * FROM canvases WHERE id = ? AND ${LIVE}`),
+  allCanvases: db.prepare(`SELECT id, title, parentCanvasId, color, icon FROM canvases WHERE ${LIVE}`),
   insertCanvas: db.prepare(`INSERT INTO canvases (id, title, parentCanvasId, color, icon, createdAt)
                             VALUES (@id, @title, @parentCanvasId, @color, @icon, @createdAt)`),
   updateCanvas: db.prepare(`UPDATE canvases SET title = @title, color = @color, icon = @icon WHERE id = @id`),
-  deleteCanvas: db.prepare(`DELETE FROM canvases WHERE id = ?`),
-  softDeleteCanvas: db.prepare(`UPDATE canvases SET deletedAt = ? WHERE id = ?`),
-  boardItemsOnCanvas: db.prepare(`SELECT * FROM items WHERE canvasId = ? AND type = 'board' AND deletedAt IS NULL`),
-  getItem: db.prepare(`SELECT * FROM items WHERE id = ? AND deletedAt IS NULL`),
-  getItemAny: db.prepare(`SELECT * FROM items WHERE id = ?`),
-  itemsForCanvas: db.prepare(`SELECT * FROM items WHERE canvasId = ? AND deletedAt IS NULL ORDER BY COALESCE(z, 0), createdAt, id`),
-  itemsByParent: db.prepare(`SELECT * FROM items WHERE parentItemId = ? AND deletedAt IS NULL`),
-  todoItems: db.prepare(`SELECT * FROM items WHERE type = 'todo' AND deletedAt IS NULL ORDER BY createdAt, id`),
-  itemsByCanvas: db.prepare(`SELECT * FROM items WHERE canvasId = ? AND deletedAt IS NULL`),
+  setCanvasParent: db.prepare(`UPDATE canvases SET parentCanvasId = ? WHERE id = ?`),
+  trashCanvas: db.prepare(`UPDATE canvases SET trashedBy = ?, trashedAt = ? WHERE id = ?`),
+  getItem: db.prepare(`SELECT * FROM items WHERE id = ? AND ${LIVE}`),
+  itemsForCanvas: db.prepare(
+    `SELECT * FROM items WHERE canvasId = ? AND ${LIVE} ORDER BY COALESCE(z, 0), createdAt, id`
+  ),
+  itemsByParent: db.prepare(`SELECT * FROM items WHERE parentItemId = ? AND ${LIVE}`),
+  // Live connector lines with an end attached to any of the ids (a JSON array).
+  linesTo: db.prepare(`SELECT * FROM items WHERE type = 'line' AND ${LIVE}
+                       AND (json_extract(data, '$.fromId') IN (SELECT value FROM json_each(@ids))
+                         OR json_extract(data, '$.toId') IN (SELECT value FROM json_each(@ids)))`),
+  todoItems: db.prepare(`SELECT * FROM items WHERE type = 'todo' AND ${LIVE} ORDER BY createdAt, id`),
+  itemsByCanvas: db.prepare(`SELECT * FROM items WHERE canvasId = ? AND ${LIVE}`),
   maxZ: db.prepare(`SELECT MAX(z) AS m FROM items`),
-  childCount: db.prepare(`SELECT COUNT(*) AS c FROM items WHERE canvasId = ? AND parentItemId IS NULL AND deletedAt IS NULL`),
-  insertItem: db.prepare(`INSERT INTO items (id, canvasId, parentItemId, type, x, y, w, h, z, color, data, stage, createdAt, updatedAt)
+  childCount: db.prepare(`SELECT COUNT(*) AS c FROM items WHERE canvasId = ? AND parentItemId IS NULL AND ${LIVE}`),
+  insertItem:
+    db.prepare(`INSERT INTO items (id, canvasId, parentItemId, type, x, y, w, h, z, color, data, stage, createdAt, updatedAt)
                           VALUES (@id, @canvasId, @parentItemId, @type, @x, @y, @w, @h, @z, @color, @data, @stage, @createdAt, @createdAt)`),
-  updateItem: db.prepare(`UPDATE items SET canvasId=@canvasId, parentItemId=@parentItemId, x=@x, y=@y, w=@w, h=@h,
+  updateItem:
+    db.prepare(`UPDATE items SET canvasId=@canvasId, parentItemId=@parentItemId, type=@type, x=@x, y=@y, w=@w, h=@h,
                           z=@z, color=@color, data=@data WHERE id=@id`),
   // Content edits (data/stage/color) bump updatedAt; plain moves don't, so
   // tidying the board never reshuffles the Pipeline's "last change" order.
-  updateItemContent: db.prepare(`UPDATE items SET canvasId=@canvasId, parentItemId=@parentItemId, x=@x, y=@y, w=@w, h=@h,
+  updateItemContent:
+    db.prepare(`UPDATE items SET canvasId=@canvasId, parentItemId=@parentItemId, type=@type, x=@x, y=@y, w=@w, h=@h,
                           z=@z, color=@color, data=@data, stage=@stage, updatedAt=@updatedAt WHERE id=@id`),
-  stagedItems: db.prepare(`SELECT * FROM items WHERE stage IS NOT NULL AND deletedAt IS NULL ORDER BY updatedAt DESC, id`),
-  deleteItem: db.prepare(`DELETE FROM items WHERE id = ?`),
-  softDeleteItem: db.prepare(`UPDATE items SET deletedAt = ? WHERE id = ?`),
-  restoreItemsByBatch: db.prepare(`UPDATE items SET deletedAt = NULL WHERE deletedAt = ?`),
-  restoreCanvasesByBatch: db.prepare(`UPDATE canvases SET deletedAt = NULL WHERE deletedAt = ?`),
-  searchItems: db.prepare(`SELECT * FROM items WHERE data LIKE ? ESCAPE '\\' AND deletedAt IS NULL ORDER BY createdAt DESC LIMIT ?`),
-  searchCanvases: db.prepare(`SELECT * FROM canvases WHERE title LIKE ? ESCAPE '\\' AND deletedAt IS NULL ORDER BY createdAt DESC LIMIT ?`),
-  connectItems: db.prepare(`SELECT * FROM items WHERE type = 'connect' AND deletedAt IS NULL`)
+  stagedItems: db.prepare(`SELECT * FROM items WHERE stage IS NOT NULL AND ${LIVE} ORDER BY updatedAt DESC, id`),
+  searchItems: db.prepare(
+    `SELECT * FROM items WHERE data LIKE ? ESCAPE '\\' AND ${LIVE} ORDER BY createdAt DESC LIMIT ?`
+  ),
+  searchCanvases: db.prepare(
+    `SELECT * FROM canvases WHERE title LIKE ? ESCAPE '\\' AND ${LIVE} ORDER BY createdAt DESC LIMIT ?`
+  ),
+  connectItems: db.prepare(`SELECT * FROM items WHERE type = 'connect' AND ${LIVE}`),
+  trashItem: db.prepare(`UPDATE items SET trashedBy = ?, trashedAt = ? WHERE id = ?`),
+  restoreItems: db.prepare(`UPDATE items SET trashedBy = NULL, trashedAt = NULL WHERE trashedBy = ?`),
+  restoreCanvases: db.prepare(`UPDATE canvases SET trashedBy = NULL, trashedAt = NULL WHERE trashedBy = ?`),
+  // Trash: rows a delete started from (trashedBy = own id), newest first.
+  trashRoots: db.prepare(`SELECT * FROM items WHERE trashedBy = id ORDER BY trashedAt DESC, id`),
+  anyItem: db.prepare(`SELECT * FROM items WHERE id = ?`),
+  anyCanvas: db.prepare(`SELECT * FROM canvases WHERE id = ?`),
+  freeFromColumn: db.prepare(`UPDATE items SET parentItemId = NULL, x = ?, y = ? WHERE id = ?`),
+  trashedSrcs: db.prepare(
+    `SELECT DISTINCT json_extract(data, '$.src') AS src FROM items WHERE trashedBy IS NOT NULL
+       AND json_extract(data, '$.src') IS NOT NULL`
+  ),
+  srcInUse: db.prepare(`SELECT 1 FROM items WHERE json_extract(data, '$.src') = ? LIMIT 1`),
+  purgeItems: db.prepare(`DELETE FROM items WHERE trashedBy IS NOT NULL`),
+  purgeCanvases: db.prepare(`DELETE FROM canvases WHERE trashedBy IS NOT NULL`),
 };
+
+// Callers that predate the Miladash columns (the rich-text tests, older
+// scripts) insert without `stage`: default it rather than throw.
+const insertItemStmt = stmt.insertItem;
+stmt.insertItem = { run: row => insertItemStmt.run({ stage: null, ...row }) };
 
 // Seed a root 'Home' canvas on first run.
 if (!stmt.getMeta.get('rootCanvasId')) {
   const rootId = id('c_');
   db.transaction(() => {
-    stmt.insertCanvas.run({ id: rootId, title: 'Home', parentCanvasId: null, color: 'slate', icon: null, createdAt: Date.now() });
+    stmt.insertCanvas.run({
+      id: rootId,
+      title: 'Home',
+      parentCanvasId: null,
+      color: 'slate',
+      icon: null,
+      createdAt: Date.now(),
+    });
     stmt.setMeta.run('rootCanvasId', rootId);
   })();
 }
@@ -109,8 +187,11 @@ const DEFAULT_SETTINGS = { theme: 'system', look: 'classic', accent: null, calda
 function getSettings() {
   const row = stmt.getMeta.get('settings');
   if (!row) return { ...DEFAULT_SETTINGS };
-  try { return { ...DEFAULT_SETTINGS, ...JSON.parse(row.value) }; }
-  catch { return { ...DEFAULT_SETTINGS }; }
+  try {
+    return { ...DEFAULT_SETTINGS, ...JSON.parse(row.value) };
+  } catch {
+    return { ...DEFAULT_SETTINGS };
+  }
 }
 function setSettings(patch) {
   const next = { ...getSettings(), ...patch };
@@ -118,24 +199,31 @@ function setSettings(patch) {
   return next;
 }
 
-process.on('SIGINT', () => { db.close(); process.exit(0); });
-process.on('SIGTERM', () => { db.close(); process.exit(0); });
+process.on('SIGINT', () => {
+  db.close();
+  process.exit(0);
+});
+process.on('SIGTERM', () => {
+  db.close();
+  process.exit(0);
+});
 
 // ---------------------------------------------------------------------------
 // Mapping helpers: rows <-> API objects. `data` is stored as a JSON string but
 // the API (and the frontend) always work with it as an object.
 // ---------------------------------------------------------------------------
-// `deletedAt` is internal soft-delete bookkeeping (see deleteItemDeep) —
-// every row reaching here already passed a `deletedAt IS NULL` filter, so
-// it'd only ever show up as a stray always-null field in API responses.
+// Trash bookkeeping (`trashedBy`/`trashedAt`, and the pre-trash `deletedAt`
+// column old databases still carry) is internal: every row reaching here
+// already passed a live-row filter, so it would only ever show up as stray
+// always-null fields in API responses.
 function rowToItem(row) {
-  const { deletedAt, ...rest } = row;
+  const { deletedAt, trashedBy, trashedAt, ...rest } = row; // oxlint-disable-line no-unused-vars -- dropped on purpose
   return Object.assign(rest, { stage: row.stage || null, data: row.data ? JSON.parse(row.data) : {} });
 }
 
 function rowToCanvas(row) {
   if (!row) return row;
-  const { deletedAt, ...rest } = row;
+  const { deletedAt, trashedBy, trashedAt, ...rest } = row; // oxlint-disable-line no-unused-vars -- dropped on purpose
   return rest;
 }
 
@@ -157,56 +245,203 @@ function itemsForCanvas(canvasId) {
   return stmt.itemsForCanvas.all(canvasId).map(rowToItem);
 }
 
-// Recursively collect a canvas and all canvases nested beneath it.
-function collectDescendantCanvases(canvasId, acc) {
-  acc.add(canvasId);
-  for (const row of stmt.boardItemsOnCanvas.all(canvasId)) {
+// Collect an item's whole live subtree: the item, cards parented to it (column
+// contents), and for boards every nested canvas and the items on it. Nothing is
+// written here, so callers can copy a board into its own subtree without the copy
+// feeding back into the walk.
+function collectSubtree(itemId) {
+  const items = [],
+    canvases = [],
+    seen = new Set();
+  const addItem = row => {
+    if (!row || seen.has(row.id)) return;
+    seen.add(row.id);
+    items.push(row);
+    for (const k of stmt.itemsByParent.all(row.id)) addItem(k);
     const data = row.data ? JSON.parse(row.data) : {};
-    if (data.childCanvasId && !acc.has(data.childCanvasId)) {
-      collectDescendantCanvases(data.childCanvasId, acc);
-    }
-  }
-  return acc;
+    if (row.type === 'board' && data.childCanvasId) addCanvas(data.childCanvasId);
+  };
+  const addCanvas = cid => {
+    const c = stmt.getCanvas.get(cid);
+    if (!c || seen.has(cid)) return;
+    seen.add(cid);
+    canvases.push(c);
+    for (const r of stmt.itemsByCanvas.all(cid)) if (!r.parentItemId) addItem(r);
+  };
+  addItem(stmt.getItem.get(itemId));
+  // Lines attached to any of these cards belong to the subtree too, so they're
+  // trashed, restored and purged with their cards instead of lingering unseen.
+  const ids = JSON.stringify(items.map(r => r.id));
+  for (const r of stmt.linesTo.all({ ids })) addItem(r);
+  return { items, canvases };
 }
 
-// Recursively delete an item, its parented children, and any nested board
-// subtree. Assumes it runs inside a transaction. `visited` guards against
-// parent cycles. `batchTs` is an opaque per-call marker (not a real
-// timestamp) — a board and everything nested under it get soft-deleted
-// (deletedAt = batchTs) rather than actually removed, so the whole subtree
-// can be brought back in one shot later by clearing deletedAt everywhere it
-// was stamped with that marker. Everything else is still hard-deleted, same
-// as before; the client's plain snapshot-and-recreate undo handles that.
-function deleteItemDeep(itemId, visited, batchTs) {
-  if (visited.has(itemId)) return;
-  visited.add(itemId);
-  const it = stmt.getItem.get(itemId);
-  if (!it) return;
-  // delete children parented to this item (e.g. cards inside a column)
-  for (const child of stmt.itemsByParent.all(itemId)) {
-    deleteItemDeep(child.id, visited, batchTs);
-  }
-  const data = it.data ? JSON.parse(it.data) : {};
-  if (it.type === 'board' && data.childCanvasId) {
-    const canvases = collectDescendantCanvases(data.childCanvasId, new Set());
-    for (const cid of canvases) {
-      for (const sub of stmt.itemsByCanvas.all(cid)) {
-        stmt.softDeleteItem.run(batchTs, sub.id);
-      }
-      stmt.softDeleteCanvas.run(batchTs, cid);
-    }
-    stmt.softDeleteItem.run(batchTs, itemId);
-    return;
-  }
-  stmt.deleteItem.run(itemId);
+// A copied or moved line keeps only ends inside the subtree: one still attached
+// to a card left behind would point across boards (and never draw).
+const strandedLine = (r, inside) => {
+  if (r.type !== 'line') return false;
+  const d = r.data ? JSON.parse(r.data) : {};
+  return [d.fromId, d.toId].some(e => e && !inside.has(e));
+};
+
+// Move an item and its subtree to the trash. Rows are tagged with the item's id
+// so `restoreItem` brings back exactly this deletion. Run inside a transaction.
+function trashItemDeep(itemId) {
+  const { items, canvases } = collectSubtree(itemId);
+  const now = Date.now();
+  for (const r of items) stmt.trashItem.run(itemId, now, r.id);
+  for (const c of canvases) stmt.trashCanvas.run(itemId, now, c.id);
 }
+
+// Brings back exactly the rows one delete trashed. A card whose column was
+// deleted separately comes back loose where that column stood (its own x/y
+// only ordered it inside the column).
+function restoreItem(itemId) {
+  const n = stmt.restoreItems.run(itemId).changes + stmt.restoreCanvases.run(itemId).changes;
+  const row = stmt.getItem.get(itemId);
+  if (row && row.parentItemId && !stmt.getItem.get(row.parentItemId)) {
+    const col = stmt.anyItem.get(row.parentItemId);
+    stmt.freeFromColumn.run(col ? col.x : row.x, col ? col.y : row.y, itemId);
+  }
+  return n;
+}
+
+// Hard-delete everything in the trash. Returns the upload srcs no surviving item
+// references, for the caller to unlink. Run inside a transaction.
+function emptyTrash() {
+  const srcs = stmt.trashedSrcs.all().map(r => r.src);
+  const items = stmt.purgeItems.run().changes;
+  stmt.purgeCanvases.run();
+  return { items, orphanSrcs: srcs.filter(src => !stmt.srcInUse.get(src)) };
+}
+
+// Deep-copy an item (and its subtree) onto `canvasId` at (x, y). Returns the new
+// root item id. Run inside a transaction.
+function copyItemDeep(itemId, canvasId, x, y) {
+  const { items, canvases } = collectSubtree(itemId);
+  const map = new Map();
+  for (const r of items) map.set(r.id, id('i_'));
+  for (const c of canvases) map.set(c.id, id('c_'));
+  const now = Date.now();
+  for (const c of canvases) {
+    stmt.insertCanvas.run({
+      ...c,
+      id: map.get(c.id),
+      parentCanvasId: map.get(c.parentCanvasId) || canvasId,
+      createdAt: now,
+    });
+  }
+  let z = Math.max(0, stmt.maxZ.get().m || 0);
+  items.forEach((r, i) => {
+    const isRoot = i === 0;
+    if (!isRoot && strandedLine(r, map)) return;
+    const data = r.data ? JSON.parse(r.data) : {};
+    delete data.promoted; // a copy is a new idea; only the original became an Orb project
+    if (data.childCanvasId) data.childCanvasId = map.get(data.childCanvasId);
+    // A shortcut to a board copied alongside it opens the copy, not the original.
+    if (map.has(data.targetCanvasId)) data.targetCanvasId = map.get(data.targetCanvasId);
+    for (const end of ['fromId', 'toId']) if (map.has(data[end])) data[end] = map.get(data[end]);
+    // A connect badge copied alongside the card it points at follows the copy.
+    for (const k of ['sourceItemId', 'targetItemId']) if (map.has(data[k])) data[k] = map.get(data[k]);
+    stmt.insertItem.run({
+      ...r,
+      id: map.get(r.id),
+      canvasId: map.get(r.canvasId) || canvasId,
+      parentItemId: isRoot ? null : map.get(r.parentItemId) || null,
+      x: isRoot ? x : r.x,
+      y: isRoot ? y : r.y,
+      z: isRoot ? ++z : r.z,
+      data: JSON.stringify(data),
+      createdAt: now,
+    });
+  });
+  return map.get(itemId);
+}
+
+// Move an item (and the cards inside it) onto another canvas. Returns false if
+// that would put a board inside itself. Run inside a transaction.
+function moveItemDeep(itemId, canvasId, x, y) {
+  const { items, canvases } = collectSubtree(itemId);
+  if (canvases.some(c => c.id === canvasId)) return false;
+  const nested = new Set(canvases.map(c => c.id));
+  const inside = new Set(items.map(r => r.id));
+  for (const r of items) {
+    if (nested.has(r.canvasId)) continue; // lives on a nested canvas: unchanged
+    if (r.id !== itemId && strandedLine(r, inside)) continue; // stays with its other card
+    const it = rowToItem(r);
+    if (r.id === itemId) Object.assign(it, { x, y, parentItemId: null, z: Math.max(0, stmt.maxZ.get().m || 0) + 1 });
+    it.canvasId = canvasId;
+    stmt.updateItem.run({ ...it, data: JSON.stringify(it.data) });
+    if (it.type === 'board' && it.data.childCanvasId) stmt.setCanvasParent.run(canvasId, it.data.childCanvasId);
+  }
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Rich text: notes and comments keep one body, `data.doc` (TipTap JSON) plus
+// `data.text` (its plain text, for search, the trash list and other readers).
+// Plain-text writes (`title` / `body`, from older clients, the importer or a
+// paste) are converted here, and old rows once at boot.
+// ---------------------------------------------------------------------------
+const RICH_TYPES = new Set(['note', 'comment']);
+const para = line => (line ? { type: 'paragraph', content: [{ type: 'text', text: line }] } : { type: 'paragraph' });
+
+const docText = n =>
+  n.type === 'text' ? n.text || '' : (n.content || []).map(docText).join(n.type === 'doc' ? '\n' : '');
+
+function toRich(data) {
+  if (data.doc) return typeof data.text === 'string' ? data : { ...data, text: docText(data.doc).trim() };
+  const { title, body, ...rest } = data;
+  const text = String(body ?? rest.text ?? '');
+  const content = [];
+  if (title) content.push({ type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: String(title) }] });
+  if (text || !content.length) content.push(...text.split('\n').map(para));
+  return { ...rest, doc: { type: 'doc', content }, text: [title, text].filter(Boolean).join('\n') };
+}
+
+// Converts every note/comment still on title + body (trashed ones too), after
+// a backup copy of the database. Returns the backup path, or null if nothing to do.
+function migrateRichText() {
+  const rows = db
+    .prepare("SELECT id, data FROM items WHERE type IN ('note', 'comment') AND json_extract(data, '$.doc') IS NULL")
+    .all();
+  if (!rows.length) return null;
+  const backup = path.join(DATA_DIR, `board.pre-richtext-${Date.now()}.db`);
+  db.prepare('VACUUM INTO ?').run(backup); // consistent snapshot, synchronous (unlike db.backup())
+  const update = db.prepare('UPDATE items SET data = ? WHERE id = ?');
+  db.transaction(() => {
+    for (const r of rows) update.run(JSON.stringify(toRich(JSON.parse(r.data || '{}'))), r.id);
+  })();
+  return backup;
+}
+migrateRichText();
 
 // Escapes %, _ and \ for a LIKE pattern using '\' as the ESCAPE character.
 function likeEscape(s) {
-  return s.replace(/[\\%_]/g, (c) => '\\' + c);
+  return s.replace(/[\\%_]/g, c => '\\' + c);
 }
 
 module.exports = {
-  DB_FILE, db, stmt, id, rootCanvasId, STAGES, LINE_KINDS, getSettings, setSettings,
-  rowToItem, rowToCanvas, breadcrumb, itemsForCanvas, deleteItemDeep, likeEscape
+  DB_FILE,
+  RICH_TYPES,
+  toRich,
+  migrateRichText,
+  db,
+  stmt,
+  id,
+  rootCanvasId,
+  STAGES,
+  LINE_KINDS,
+  getSettings,
+  setSettings,
+  rowToItem,
+  rowToCanvas,
+  breadcrumb,
+  itemsForCanvas,
+  trashItemDeep,
+  restoreItem,
+  emptyTrash,
+  copyItemDeep,
+  moveItemDeep,
+  likeEscape,
 };

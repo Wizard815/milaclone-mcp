@@ -10,6 +10,10 @@ app/public/uploads/*
 app/.e2e-data/
 app/test-results/
 app/playwright-report/
+# test coverage output
+app/coverage/
+# esbuild output (server.js builds it at boot)
+app/public/vendor/
 
 # mcp/ (Python)
 mcp/__pycache__/
@@ -18,3 +22,14 @@ mcp/**/*.pyc
 mcp/.venv/
 mcp/dist/
 mcp/**/*.egg-info/
+
+# Local tooling and private notes
+.claude/*
+!.claude/skills/
+.lavish/
+.impeccable/
+.private/
+
+# Database snapshots and the deployed commit, written by scripts/deploy.sh
+backups/
+.deployed

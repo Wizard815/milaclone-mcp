@@ -9,19 +9,57 @@
    mutated in place (never reassigned) are exported directly.
    ========================================================================= */
 
-export const COLORS = ['slate','gray','teal','green','brown','yellow','orange','red','pink','purple','blue','indigo'];
+export const COLORS = [
+  'slate',
+  'gray',
+  'teal',
+  'green',
+  'brown',
+  'yellow',
+  'orange',
+  'red',
+  'pink',
+  'purple',
+  'blue',
+  'indigo',
+];
 
 export const BOARD_ICONS = [
-  'layout-grid', 'book-open', 'monitor', 'clock', 'heart', 'house', 'lightbulb',
-  'palette', 'briefcase', 'sparkles', 'glasses', 'landmark', 'compass', 'camera',
-  'music', 'pen-tool', 'layers', 'folder', 'star', 'zap', 'globe', 'cpu', 'leaf', 'target'
+  'layout-grid',
+  'book-open',
+  'monitor',
+  'clock',
+  'heart',
+  'house',
+  'lightbulb',
+  'palette',
+  'briefcase',
+  'sparkles',
+  'glasses',
+  'landmark',
+  'compass',
+  'camera',
+  'music',
+  'pen-tool',
+  'layers',
+  'folder',
+  'star',
+  'zap',
+  'globe',
+  'cpu',
+  'leaf',
+  'target',
 ];
 
 // A `shape` card's basic line-art options — see buildShape in cards.js.
 export const SHAPES = ['circle', 'square', 'triangle', 'diamond', 'star'];
 // Lucide icon standing in for each shape on its on-card picker handle.
 export const SHAPE_ICONS = {
-  circle: 'circle', square: 'square', triangle: 'triangle', diamond: 'diamond', star: 'star'
+  circle: 'circle',
+  square: 'square',
+  triangle: 'triangle',
+  diamond: 'diamond',
+  star: 'star',
 };
 
 // Mutable app state, shared live across every module.
@@ -30,8 +68,9 @@ export const state = {
   view: { canvas: null, items: [], breadcrumb: [] },
   cam: { x: 80, y: 60, scale: 1 },
   armed: null,
-  selectedId: null,
-  selectedIds: new Set(), // multi-select; selectedId is the "primary" (last-clicked) member of it — see editing.js
+  selectedId: null, // the primary selected card (rename, board chrome)
+  selection: new Set(), // every selected card id, primary included
+  spaceDown: false, // space held: dragging pans instead of selecting
   editingId: null,
   clipboard: null,
   pendingImageWorld: null,
@@ -41,9 +80,9 @@ export const state = {
   pinching: false,
   suppressNextClick: false,
   lineFrom: null,
-  orb: null,          // { configured } from GET /api/orb, for the Promote menu item
+  orb: null, // { configured } from GET /api/orb, for the Promote menu item
   undoStack: [],
-  redoStack: []
+  redoStack: [],
 };
 
 // Item id -> rendered DOM element. Cleared/repopulated on every render.
@@ -60,5 +99,5 @@ export const dom = {
   fileInput: document.getElementById('fileInput'),
   uploadInput: document.getElementById('uploadInput'),
   zoomLvl: document.getElementById('zoomLvl'),
-  toastEl: document.getElementById('toast')
+  toastEl: document.getElementById('toast'),
 };

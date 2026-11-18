@@ -12,10 +12,12 @@ import { render } from './cards.js';
 // to another column changes its stage. This is the only place where a
 // card's position means its stage; the board itself is a free canvas.
 
-const el = (id) => document.getElementById(id);
+const el = id => document.getElementById(id);
 let items = [];
 
-export function isPipelineOpen() { return !el('pipelineView').hidden; }
+export function isPipelineOpen() {
+  return !el('pipelineView').hidden;
+}
 
 async function openPipeline() {
   el('pipelineView').hidden = false;
@@ -29,7 +31,10 @@ function closePipeline() {
     const changed = new Map(items.map(i => [i.id, i.stage]));
     let dirty = false;
     for (const it of state.view.items) {
-      if (changed.has(it.id) && changed.get(it.id) !== it.stage) { it.stage = changed.get(it.id); dirty = true; }
+      if (changed.has(it.id) && changed.get(it.id) !== it.stage) {
+        it.stage = changed.get(it.id);
+        dirty = true;
+      }
     }
     if (dirty) render();
   }
@@ -46,16 +51,39 @@ function cardFor(it) {
   c.className = 'pl-card' + (it.data && it.data.promoted ? ' promoted' : '');
   c.dataset.id = it.id;
   c.style.setProperty('--pl-accent', colorVar(it.color || it._childColor || 'slate'));
-  const t = document.createElement('div'); t.className = 'pl-title'; t.textContent = it._title || 'Untitled';
+  const t = document.createElement('div');
+  t.className = 'pl-title';
+  t.textContent = it._title || 'Untitled';
   c.appendChild(t);
-  const pitch = it.type === 'note' ? (it.data.body || '').split('\n').find(l => l.trim()) : '';
-  if (pitch) { const p = document.createElement('div'); p.className = 'pl-pitch'; p.textContent = pitch; c.appendChild(p); }
-  const meta = document.createElement('div'); meta.className = 'pl-meta';
-  const where = document.createElement('span'); where.textContent = it._canvasTitle || ''; meta.appendChild(where);
-  const when = document.createElement('span'); when.textContent = ago(it.updatedAt || it.createdAt); meta.appendChild(when);
-  if (it.data && it.data.promoted) { const p = document.createElement('span'); p.className = 'promoted-chip'; p.textContent = 'Project'; meta.appendChild(p); }
+  // a note's pitch: the first line of its rich text after the one that names it
+  const pitch =
+    it.type === 'note'
+      ? String(it.data.text || '')
+          .split('\n')
+          .filter(l => l.trim())[1] || ''
+      : '';
+  if (pitch) {
+    const p = document.createElement('div');
+    p.className = 'pl-pitch';
+    p.textContent = pitch;
+    c.appendChild(p);
+  }
+  const meta = document.createElement('div');
+  meta.className = 'pl-meta';
+  const where = document.createElement('span');
+  where.textContent = it._canvasTitle || '';
+  meta.appendChild(where);
+  const when = document.createElement('span');
+  when.textContent = ago(it.updatedAt || it.createdAt);
+  meta.appendChild(when);
+  if (it.data && it.data.promoted) {
+    const p = document.createElement('span');
+    p.className = 'promoted-chip';
+    p.textContent = 'Project';
+    meta.appendChild(p);
+  }
   c.appendChild(meta);
-  c.addEventListener('pointerdown', (e) => startDrag(e, it, c));
+  c.addEventListener('pointerdown', e => startDrag(e, it, c));
   return c;
 }
 
@@ -72,14 +100,21 @@ function draw() {
     h.firstChild.textContent = label;
     h.lastChild.textContent = String(mine.length);
     col.appendChild(h);
-    const body = document.createElement('div'); body.className = 'pl-body';
-    if (!mine.length) { const e = document.createElement('div'); e.className = 'pl-empty'; e.textContent = 'Nothing here yet'; body.appendChild(e); }
+    const body = document.createElement('div');
+    body.className = 'pl-body';
+    if (!mine.length) {
+      const e = document.createElement('div');
+      e.className = 'pl-empty';
+      e.textContent = 'Nothing here yet';
+      body.appendChild(e);
+    }
     mine.forEach(it => body.appendChild(cardFor(it)));
     col.appendChild(body);
     cols.appendChild(col);
   }
   if (!items.length) {
-    const hint = document.createElement('p'); hint.className = 'pl-hint-empty';
+    const hint = document.createElement('p');
+    hint.className = 'pl-hint-empty';
     hint.textContent = 'No staged ideas yet. Right-click a card on the board and pick Thought, Design or Code.';
     cols.appendChild(hint);
   }
@@ -91,11 +126,12 @@ function draw() {
 function startDrag(e, it, card) {
   if (e.button !== 0) return;
   e.preventDefault();
-  const sx = e.clientX, sy = e.clientY;
+  const sx = e.clientX,
+    sy = e.clientY;
   const r = card.getBoundingClientRect();
   let ghost = null;
   const colAt = (x, y) => document.elementFromPoint(x, y)?.closest('.pl-col');
-  const move = (ev) => {
+  const move = ev => {
     if (!ghost) {
       if (Math.hypot(ev.clientX - sx, ev.clientY - sy) < 5) return;
       ghost = card.cloneNode(true);
@@ -104,14 +140,14 @@ function startDrag(e, it, card) {
       document.body.appendChild(ghost);
       card.classList.add('pl-dragging');
     }
-    ghost.style.left = (r.left + ev.clientX - sx) + 'px';
-    ghost.style.top = (r.top + ev.clientY - sy) + 'px';
+    ghost.style.left = r.left + ev.clientX - sx + 'px';
+    ghost.style.top = r.top + ev.clientY - sy + 'px';
     ghost.style.pointerEvents = 'none';
     document.querySelectorAll('.pl-col.drop').forEach(c => c.classList.remove('drop'));
     const col = colAt(ev.clientX, ev.clientY);
     if (col && col.dataset.stage !== it.stage) col.classList.add('drop');
   };
-  const up = async (ev) => {
+  const up = async ev => {
     document.removeEventListener('pointermove', move);
     document.removeEventListener('pointerup', up);
     document.querySelectorAll('.pl-col.drop').forEach(c => c.classList.remove('drop'));
@@ -149,7 +185,10 @@ function ago(ts) {
 export function initPipeline() {
   el('pipelineBtn').addEventListener('click', openPipeline);
   el('plClose').addEventListener('click', closePipeline);
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && isPipelineOpen()) { e.preventDefault(); closePipeline(); }
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && isPipelineOpen()) {
+      e.preventDefault();
+      closePipeline();
+    }
   });
 }

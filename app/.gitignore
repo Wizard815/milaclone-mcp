@@ -11,3 +11,7 @@ playwright-report/
 
 # Tailscale sidecar auth key
 .env
+coverage/
+
+# esbuild output (server.js builds it at boot)
+public/vendor/

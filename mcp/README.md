@@ -20,8 +20,8 @@ and standalone dev setup.
 | `update_item` | Edit a card's data/position/color/parent/stage |
 | `list_pipeline` | Miladash: every staged idea (thought/design/code), newest change first |
 | `promote_item` | Miladash: turn a Code-stage idea into a Pondering Orb project |
-| `delete_item` | Delete a card (recursively, if it's a nested board) |
-| `restore_item` | Undo a board's deletion (boards only — see below) |
+| `delete_item` | Move a card to the Trash (with everything inside it) |
+| `restore_item` | Restore a deleted card from the Trash |
 | `add_todo_task` | Append a task to a to-do card |
 | `set_todo_task_done` | Check/uncheck a task on a to-do card |
 | `remove_todo_task` | Remove a task from a to-do card |
@@ -34,10 +34,15 @@ automatically — `update_canvas` exists for the one case that doesn't cover:
 the root "Home" board has no card of its own, so it's the only board you
 need `update_canvas` for in practice.
 
-Deleting a `board` card soft-deletes its entire nested subtree, so
-`restore_item(item_id)` (same id you passed to `delete_item`) brings the
-whole thing back exactly as it was. This only applies to boards — deleting
-any other card type is permanent.
+Deleting moves a card to the app's Trash together with everything inside
+it (a column's cards, a board's whole nested subtree, attached lines), so
+`restore_item(item_id)` (same id you passed to `delete_item`) brings it all
+back exactly as it was — for any card type — until the Trash is emptied in
+the web UI.
+
+Notes and comments are rich text: create/update them with `title`/`body` as
+before (the server converts that into the stored `doc`), and read them back
+through `data.text`.
 
 ## Standalone dev setup
 

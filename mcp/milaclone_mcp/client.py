@@ -84,11 +84,11 @@ class MilacloneClient:
         return self._patch(f"/api/item/{item_id}", body)
 
     def delete_item(self, item_id: str) -> dict[str, Any]:
-        """DELETE /api/item/{id} — deletes recursively (children + nested board subtree)."""
+        """DELETE /api/item/{id} — moves the card (and everything inside it) to the Trash."""
         return self._delete(f"/api/item/{item_id}")
 
     def restore_item(self, item_id: str) -> dict[str, Any]:
-        """POST /api/item/{id}/restore — undo a board's deletion (see delete_item)."""
+        """POST /api/item/{id}/restore — bring a deleted card back from the Trash."""
         return self._post(f"/api/item/{item_id}/restore", {})
 
     def promote_item(self, item_id: str) -> dict[str, Any]:

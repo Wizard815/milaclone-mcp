@@ -27,7 +27,7 @@ function refs() {
     caldavPass: document.getElementById('setCaldavPass'),
     caldavStatus: document.getElementById('setCaldavStatus'),
     cancel: document.getElementById('setCancel'),
-    save: document.getElementById('setSave')
+    save: document.getElementById('setSave'),
   };
 }
 
@@ -58,7 +58,8 @@ async function open() {
   r.caldavUrl.value = (cached.caldav && cached.caldav.url) || '';
   r.caldavUser.value = (cached.caldav && cached.caldav.username) || '';
   r.caldavPass.value = '';
-  r.caldavPass.placeholder = cached.caldav && cached.caldav.passwordSet ? 'Leave blank to keep current password' : 'Password';
+  r.caldavPass.placeholder =
+    cached.caldav && cached.caldav.passwordSet ? 'Leave blank to keep current password' : 'Password';
   r.caldavStatus.textContent = '';
   r.root.hidden = false;
 }
@@ -112,12 +113,22 @@ export function initSettings() {
   });
   r.accentHex.addEventListener('input', () => {
     const v = r.accentHex.value.trim();
-    if (/^#[0-9a-fA-F]{3,8}$/.test(v)) { r.accent.value = v.length <= 7 ? v : v.slice(0, 7); applyAccent(v); }
+    if (/^#[0-9a-fA-F]{3,8}$/.test(v)) {
+      r.accent.value = v.length <= 7 ? v : v.slice(0, 7);
+      applyAccent(v);
+    }
   });
-  r.accentReset.onclick = () => { r.accentHex.value = ''; r.accent.value = '#2f6df0'; applyAccent(null); };
+  r.accentReset.onclick = () => {
+    r.accentHex.value = '';
+    r.accent.value = '#2f6df0';
+    applyAccent(null);
+  };
 
   r.lookSeg.querySelectorAll('button').forEach(b => {
-    b.onclick = () => { setLookSeg(r, b.dataset.val); applyLook(b.dataset.val); }; // live preview
+    b.onclick = () => {
+      setLookSeg(r, b.dataset.val);
+      applyLook(b.dataset.val);
+    }; // live preview
   });
 
   r.seg.querySelectorAll('button').forEach(b => {
@@ -127,18 +138,26 @@ export function initSettings() {
   r.save.onclick = () => save().catch(() => toast('Could not save settings'));
   r.cancel.onclick = close;
   r.backdrop.onclick = close;
-  document.addEventListener('keydown', (e) => {
+  document.addEventListener('keydown', e => {
     if (r.root.hidden) return;
-    if (e.key === 'Escape') { e.preventDefault(); close(); }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      close();
+    }
   });
 
   // Mobile "•••" sheet reuses the same settings entry point.
   const msheet = document.getElementById('msheet');
-  msheet?.addEventListener('click', (e) => {
+  msheet?.addEventListener('click', e => {
     if (e.target.closest('[data-act="settings"]')) open();
   });
 
   // Bake in the server-rendered accent (if any) as the live baseline so a
   // Cancel after a live preview has something correct to revert to.
-  api.getSettings().then(s => { cached = s; }).catch(() => {});
+  api
+    .getSettings()
+    .then(s => {
+      cached = s;
+    })
+    .catch(() => {});
 }
