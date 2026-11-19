@@ -13,6 +13,11 @@
     "node": ">=18"
   },
   "dependencies": {
+    "@fontsource-variable/fraunces": "5.3.0",
+    "@fontsource-variable/source-serif-4": "5.3.1",
+    "@fontsource/alegreya-sans": "5.3.0",
+    "@fontsource/cinzel": "5.3.0",
+    "@fontsource/figtree": "5.3.0",
     "better-sqlite3": "^13.0.1",
     "express": "^4.21.2",
     "lucide": "0.469.0",

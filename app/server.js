@@ -68,6 +68,26 @@ app.use('/vendor/lucide', express.static(LUCIDE_UMD, {
   index: false,
   setHeaders: (res) => res.set('Cache-Control', 'no-cache')
 }));
+// Fonts ship as npm packages too (Fontsource), served at /vendor/fonts.css with
+// the family names the stylesheet uses, so nothing is fetched from Google.
+const FONT_FILES = [
+  ['@fontsource-variable/fraunces', 'opsz.css', 'Fraunces'],
+  ['@fontsource-variable/source-serif-4', 'opsz.css', 'Source Serif 4'],
+  ['@fontsource/figtree', '400.css', 'Figtree'], ['@fontsource/figtree', '500.css', 'Figtree'], ['@fontsource/figtree', '600.css', 'Figtree'],
+  ['@fontsource/cinzel', '500.css', 'Cinzel'], ['@fontsource/cinzel', '600.css', 'Cinzel'], ['@fontsource/cinzel', '700.css', 'Cinzel'],
+  ['@fontsource/alegreya-sans', '400.css', 'Alegreya Sans'], ['@fontsource/alegreya-sans', '500.css', 'Alegreya Sans'], ['@fontsource/alegreya-sans', '700.css', 'Alegreya Sans']
+];
+const fontDir = (pkg) => path.dirname(require.resolve(`${pkg}/package.json`));
+const FONTS_CSS = FONT_FILES.map(([pkg, file, family]) => {
+  const slug = pkg.split('/')[1];
+  return fs.readFileSync(path.join(fontDir(pkg), file), 'utf8')
+    .replace(/font-family:\s*'[^']*'/g, `font-family: '${family}'`)
+    .replace(/url\(\.\/files\//g, `url(/vendor/fonts/${slug}/`);
+}).join('\n');
+app.get('/vendor/fonts.css', (req, res) => res.type('text/css').set('Cache-Control', 'no-cache').send(FONTS_CSS));
+for (const pkg of new Set(FONT_FILES.map(f => f[0]))) {
+  app.use(`/vendor/fonts/${pkg.split('/')[1]}`, express.static(path.join(fontDir(pkg), 'files'), { index: false, maxAge: '30d', immutable: true }));
+}
 app.use(express.static(path.join(__dirname, 'public'), {
   index: false,
   setHeaders: (res) => res.set('Cache-Control', 'no-cache')
