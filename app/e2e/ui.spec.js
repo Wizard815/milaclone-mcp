@@ -75,8 +75,9 @@ test('delete a selected board with the Delete key', async ({ page }) => {
   await place(page, 'board');
   await expect(page.locator('.item.type-board')).toHaveCount(1);
   await page.keyboard.press('Escape');                 // leave edit/selection
-  await page.locator('.item.type-board .tile').click(); // select without editing
+  await page.locator('.item.type-board .btitle').click(); // select without editing (the tile opens color & icon)
   await page.keyboard.press('Delete');
+  await page.click('#cmOk');                          // a board deletes its contents too, so it asks
   await expect(page.locator('.item.type-board')).toHaveCount(0);
 });
 

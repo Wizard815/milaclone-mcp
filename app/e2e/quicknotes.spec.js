@@ -104,7 +104,7 @@ test('the add bar appends tasks and stays open for the next one', async ({ page 
   await expect(page.locator('#qnAddTask')).toBeVisible();
 });
 
-test('task detail edits the note, due date and tags', async ({ page }) => {
+test('task detail edits the due date and tags', async ({ page }) => {
   const title = uniq('Life');
   const id = await seedList(page, title, [{ id: 'a', text: 'Book counseling', done: false }]);
   await openQuickNotes(page);
@@ -114,7 +114,6 @@ test('task detail edits the note, due date and tags', async ({ page }) => {
   await expect(page.locator('#qnTaskTitle')).toHaveText('Book counseling');
   await expect(page.locator('#qnTaskBackLabel')).toHaveText(title);
 
-  await page.fill('#qnNote', 'ask about september');
   await page.locator('#qnDetails .qn-dateinput').fill('2030-08-07');
   await expect(page.locator('.qn-due-label')).toHaveText('Due Wed, Aug 7');
 
@@ -131,7 +130,6 @@ test('task detail edits the note, due date and tags', async ({ page }) => {
     const r = await (await fetch('/api/todos')).json();
     return r.lists.find(l => l.id === id).tasks[0];
   }, id);
-  expect(saved.note).toBe('ask about september');
   expect(saved.due).toBe('2030-08-07');
   expect(saved.tags).toEqual(['faith']);
 
@@ -140,19 +138,6 @@ test('task detail edits the note, due date and tags', async ({ page }) => {
   await expect(page.locator('.qn-due-add')).toBeVisible();
 });
 
-test('the note bullet button rewrites the note lines', async ({ page }) => {
-  const title = uniq('Notes');
-  await seedList(page, title, [{ id: 'a', text: 'Plan trip', done: false }]);
-  await openQuickNotes(page);
-  await listRow(page, title).click();
-  await taskRow(page, 'Plan trip').click();
-
-  await page.fill('#qnNote', 'flights\nhotel');
-  await page.click('.qn-fmt button[data-fmt="bullet"]');
-  await expect(page.locator('#qnNote')).toHaveValue('• flights\n• hotel');
-  await page.click('.qn-fmt button[data-fmt="bullet"]');
-  await expect(page.locator('#qnNote')).toHaveValue('flights\nhotel');
-});
 
 test('search matches task text and opens the task', async ({ page }) => {
   const title = uniq('Search');

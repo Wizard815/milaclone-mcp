@@ -120,7 +120,7 @@ test('Enter renames the selected board and the name persists', async ({ page }) 
   const id = await freshCanvas(page);
   await place(page, 'board');
   await page.keyboard.press('Escape');
-  await page.locator('.item.type-board .tile').click();   // select without editing
+  await page.locator('.item.type-board .btitle').click(); // select without editing (the tile opens color & icon)
 
   await page.keyboard.press('Enter');                     // renameSelected -> edit title
   // focus lands on the title input a frame later (rAF); wait for it before
@@ -153,13 +153,14 @@ test('board selection chrome replaces the badge with rail actions', async ({ pag
   await place(page, 'board');
   await page.keyboard.press('Escape');
   const card = page.locator('.item.type-board');
-  await card.locator('.tile').click();
+  await card.locator('.btitle').click();             // the first click on the name selects
 
   await expect(card.locator('.card-tools')).toHaveCount(0);
   await expect(page.locator('#railBoard')).toBeVisible();
   await expect(page.locator('#railCreate')).toBeHidden();
 
-  await page.locator('#railBoardColor').click();
+  // color & icon live on the board's tile now, not the rail
+  await card.locator('.tile').click();
   await expect(page.locator('#palette.open')).toBeVisible();
   await page.locator('#palette .sw').nth(7).click(); // red
   await expect(card.locator('.tile')).toHaveCSS('background-color', 'rgb(239, 75, 75)');
@@ -170,8 +171,10 @@ test('board selection chrome replaces the badge with rail actions', async ({ pag
   await page.locator('#stage').click({ position: { x: 40, y: 40 } }); // blur / deselect
   await expect(page.locator('.item.type-board .btitle')).toHaveValue('Sidebar');
 
-  await card.locator('.tile').click();
+  await card.locator('.btitle').click();
   await page.locator('#railBoardDelete').click();
+  await expect(page.locator('#cmMessage')).toContainText('everything inside it');
+  await page.click('#cmOk');                          // a board deletes its contents too, so it asks
   await expect(page.locator('.item.type-board')).toHaveCount(0);
   await expect(page.locator('#railCreate')).toBeVisible();
 });
