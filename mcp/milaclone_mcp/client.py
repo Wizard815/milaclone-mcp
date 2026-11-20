@@ -100,6 +100,10 @@ class MilacloneClient:
         """POST /api/templates/{id}/use — copy a template out as a new board."""
         return self._post(f"/api/templates/{template_id}/use", body)
 
+    def copy_board(self, canvas_id: str, body: dict[str, Any]) -> dict[str, Any]:
+        """POST /api/canvas/{id}/copy — copy a whole board as a new board card."""
+        return self._post(f"/api/canvas/{canvas_id}/copy", body)
+
     def export_canvas(self, canvas_id: str, nested: bool) -> dict[str, Any]:
         """GET /api/canvas/{id}/export — JSON Canvas document."""
         return self._get(f"/api/canvas/{canvas_id}/export", nested="1" if nested else "0")

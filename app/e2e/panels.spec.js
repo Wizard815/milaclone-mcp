@@ -113,14 +113,16 @@ test('deleting a panel keeps the cards that were inside it', async ({ page }) =>
   await expect(page.locator(`.item[data-id="${note.id}"]`)).toHaveCount(1);
 });
 
-test('a board can be saved as a template from its context menu and reused from Templates', async ({ page }) => {
-  await freshCanvas(page);
-  await page.evaluate(() => { window.prompt = () => 'UI kit'; });
+test('a board can be saved as a template from its context menu', async ({ page }) => {
   await page.goto('/');
-  await page.evaluate(() => { window.prompt = () => 'UI kit'; });
-  const boards = page.locator('.item.type-board');
-  await expect(boards.first()).toBeVisible();
-  await boards.first().click({ button: 'right' });
+  const name = 'UI kit ' + Date.now();
+  const root = (await api(page, 'GET', '/api/root')).rootCanvasId;
+  const b = await api(page, 'POST', '/api/item', { canvasId: root, type: 'board', x: 40, y: 40, data: { title: 'Src ' + name } });
+  await page.reload();
+  await page.evaluate((n) => { window.prompt = () => n; }, name);
+  await page.waitForTimeout(800);
+  await page.locator(`.item[data-id="${b.id}"]`).scrollIntoViewIfNeeded();
+  await page.locator(`.item[data-id="${b.id}"]`).click({ button: 'right' });
   await page.getByRole('button', { name: /Save as template/ }).click();
-  await expect.poll(async () => (await api(page, 'GET', '/api/templates')).templates.map(t => t.name)).toContain('UI kit');
+  await expect.poll(async () => (await api(page, 'GET', '/api/templates')).templates.map(t => t.name)).toContain(name);
 });

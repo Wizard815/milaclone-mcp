@@ -183,10 +183,12 @@ def suite(W):
                           lambda o, c: (has(o, "Product launch") and has(o, "Research"), "mentions template + panels"))
     T["export_import"] = ("Export the Roastery Ops board and import it back onto Home as a board called 'Ops backup'.",
                           lambda o, c: (bool(W.card("Ops backup", type="board")) and used(c, "export_board", "import_board"), "imported"))
+    T["copy_board"] = ("Make a copy of the Roastery Ops board on Home and call the copy 'Ops sandbox'.",
+                       lambda o, c: (bool(W.card("Ops sandbox", type="board")) and len(W.items("Ops sandbox")) >= 5 and used(c, "copy_board"), f"{len(W.items('Ops sandbox'))} cards"))
     T["rename_home"] = ("Rename the top-level Home board to 'Lantern HQ'.",
                         lambda o, c: (bool(W.canvas_id("Lantern HQ")), "renamed"))
     T["panel_rename"] = ("Rename the Product panel on Spring Launch to 'Product & Sourcing'.",
-                         lambda o, c: (bool(W.card("Product & Sourcing", type="panel")) and not W.card("Product", type="panel"), "renamed"))
+                         lambda o, c: (bool(W.card("Product & Sourcing", "Spring Launch", "panel")) and not W.card("Product", "Spring Launch", "panel"), "renamed"))
     T["panel_nest"] = ("Inside the Research panel on Spring Launch, make a smaller panel called 'Hot topics' holding just the Competitor scan note.",
                        lambda o, c: (lambda p, n, r: (bool(p) and n.get("_panelId") == p["id"] and p.get("_panelId") == r["id"], f"scan in {n.get('_panelTitle')}"))(
                            W.card("Hot topics", type="panel"), W.card("Competitor scan"), W.card("Research", type="panel")))

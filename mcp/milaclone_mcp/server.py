@@ -467,6 +467,26 @@ def duplicate_item(
 
 
 @mcp.tool()
+def copy_board(
+    board_id: str, parent_board_id: str | None = None, title: str | None = None, x: int = 60, y: int = 60
+) -> dict[str, Any]:
+    """
+    Copy a whole board (all its cards, panels, columns, lines and nested
+    boards) as a new, independent board card on `parent_board_id` (default
+    Home). Takes the *board's* id (as from `list_boards`), not a card id. Use
+    this for "make a copy of board X"; use `save_as_template` for reusable
+    starting points, and `export_board`/`import_board` only to move a board
+    between systems.
+    """
+    body: dict[str, Any] = {"x": x, "y": y}
+    if parent_board_id:
+        body["canvasId"] = parent_board_id
+    if title:
+        body["title"] = title
+    return _get_client().copy_board(board_id, body)
+
+
+@mcp.tool()
 def list_templates() -> dict[str, Any]:
     """
     List saved templates. A template is a board (cards, panels, columns, nested
@@ -508,7 +528,8 @@ def create_from_template(
 def export_board(board_id: str, include_nested: bool = False) -> dict[str, Any]:
     """
     Export a board as an open JSON Canvas document ({"nodes": [...], "edges":
-    [...]}), for backup or moving it elsewhere. include_nested also exports
+    [...]}), for backup or moving it to another system. (To copy a board within
+    this workspace use `copy_board`.) include_nested also exports
     boards nested inside it.
     """
     return _get_client().export_canvas(board_id, include_nested)

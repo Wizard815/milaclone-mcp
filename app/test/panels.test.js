@@ -277,3 +277,19 @@ test('moving a panel over neighbours warns about newly captured cards', async ()
   const calm = (await call('PATCH', '/api/item/' + p.id, { x: 0, y: 0 })).body;
   assert.equal(calm._warning, undefined);
 });
+
+test('copy a board by canvas id; refuses copying into itself or its descendants', async () => {
+  const src = await newBoard('CopySrc');
+  const sc = src.data.childCanvasId;
+  await mk(sc, 'note', 10, 10, { data: { title: 'n' } });
+  const child = (await call('POST', '/api/item', { canvasId: sc, type: 'board', data: { title: 'Kid' } })).body;
+  const r = await call('POST', `/api/canvas/${sc}/copy`, { title: 'CopyDst' });
+  assert.equal(r.status, 200);
+  assert.equal(r.body._childTitle, 'CopyDst');
+  assert.equal((await board(r.body.data.childCanvasId)).length, 2);
+  assert.equal((await call('POST', `/api/canvas/${sc}/copy`, { canvasId: sc })).status, 400);
+  assert.equal((await call('POST', `/api/canvas/${sc}/copy`, { canvasId: child.data.childCanvasId })).status, 400);
+  assert.equal((await call('POST', '/api/canvas/nope/copy', {})).status, 404);
+  const dflt = (await call('POST', `/api/canvas/${sc}/copy`, {})).body;
+  assert.equal(dflt._childTitle, 'CopySrc (copy)');
+});

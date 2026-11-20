@@ -565,6 +565,20 @@ router.post('/api/templates', (req, res) => {
   res.json(listTemplates().find(t => t.id === cid));
 });
 
+// Copies board `src` out as a new board card on `target`.
+function copyBoardOut(src, target, b) {
+  const title = String(b.title || src.title).slice(0, 200);
+  const itemId = id('i_'), cid = id('c_');
+  db.transaction(() => {
+    stmt.insertCanvas.run({ id: cid, title, parentCanvasId: target, color: src.color || 'slate', icon: src.icon, createdAt: Date.now() });
+    copyCanvasContents(src.id, cid);
+    stmt.insertItem.run({ id: itemId, canvasId: target, parentItemId: null, type: 'board',
+      x: Math.round(Number.isFinite(b.x) ? b.x : 60), y: Math.round(Number.isFinite(b.y) ? b.y : 60), w: 152, h: null,
+      z: Math.max(0, stmt.maxZ.get().m || 0) + 1, color: src.color || 'slate', data: JSON.stringify({ childCanvasId: cid }), stage: null, createdAt: Date.now() });
+  })();
+  return boardInfo(rowToItem(stmt.getItem.get(itemId)));
+}
+
 router.post('/api/templates/:id/use', (req, res) => {
   const tc = templatesCanvas(false);
   const tpl = stmt.getCanvas.get(req.params.id);
@@ -572,16 +586,21 @@ router.post('/api/templates/:id/use', (req, res) => {
   const b = req.body || {};
   const target = b.canvasId || rootCanvasId();
   if (!stmt.getCanvas.get(target)) return res.status(400).json({ error: 'bad canvasId' });
-  const title = String(b.title || tpl.title).slice(0, 200);
-  const itemId = id('i_'), cid = id('c_');
-  db.transaction(() => {
-    stmt.insertCanvas.run({ id: cid, title, parentCanvasId: target, color: tpl.color || 'slate', icon: tpl.icon, createdAt: Date.now() });
-    copyCanvasContents(tpl.id, cid);
-    stmt.insertItem.run({ id: itemId, canvasId: target, parentItemId: null, type: 'board',
-      x: Math.round(Number.isFinite(b.x) ? b.x : 60), y: Math.round(Number.isFinite(b.y) ? b.y : 60), w: 152, h: null,
-      z: Math.max(0, stmt.maxZ.get().m || 0) + 1, color: tpl.color || 'slate', data: JSON.stringify({ childCanvasId: cid }), stage: null, createdAt: Date.now() });
-  })();
-  res.json(boardInfo(rowToItem(stmt.getItem.get(itemId))));
+  res.json(copyBoardOut(tpl, target, b));
+});
+
+// Copy any board (by its canvas id) as a new board card on another board.
+router.post('/api/canvas/:id/copy', (req, res) => {
+  const src = stmt.getCanvas.get(req.params.id);
+  if (!src) return res.status(404).json({ error: 'board not found' });
+  const b = req.body || {};
+  const target = b.canvasId || rootCanvasId();
+  if (!stmt.getCanvas.get(target)) return res.status(400).json({ error: 'bad canvasId' });
+  // Copying a board into itself (or its own descendants) would recurse into the copy.
+  for (let c = stmt.getCanvas.get(target); c; c = c.parentCanvasId ? stmt.getCanvas.get(c.parentCanvasId) : null) {
+    if (c.id === src.id) return res.status(400).json({ error: 'cannot copy a board into itself or one of its own sub-boards' });
+  }
+  res.json(copyBoardOut(src, target, { title: b.title || src.title + ' (copy)', x: b.x, y: b.y }));
 });
 
 // ---- Quick notes -----------------------------------------------------------
