@@ -13,6 +13,7 @@ import { renderLines } from './lines.js';
 import { navigateToConnect } from './connect.js';
 import { snapshotTaskEdit } from './undo.js';
 import { STAGE_LABELS } from './stages.js';
+import { PANEL_SHAPES, refreshPanels, startPanelResize } from './panels.js';
 
 // Rendering of the canvas and every card type. This module owns the DOM for
 // items; other modules ask it to (re)render when data changes.
@@ -24,7 +25,11 @@ export function childrenOf(id) {
 export function render() {
   dom.world.innerHTML = '';
   elMap.clear();
-  const free = state.view.items.filter(it => !it.parentItemId && it.type !== 'line');
+  const free = state.view.items.filter(it => !it.parentItemId && it.type !== 'line')
+    // Panels go first, largest first, so a smaller panel nested in a bigger
+    // one is later in the DOM and so paints (and is clickable) on top of it.
+    .sort((a, b) => (b.type === 'panel') - (a.type === 'panel')
+      || (a.type === 'panel' ? (b.w * (b.h || 1)) - (a.w * (a.h || 1)) : 0));
   for (const it of free) {
     const el = renderItem(it);
     dom.world.appendChild(el);
@@ -33,6 +38,7 @@ export function render() {
   renderLines();
   dom.hint.style.display = state.view.items.length ? 'none' : 'block';
   refreshIcons(dom.world);
+  refreshPanels();
 }
 
 export function renderCrumbs() {
@@ -77,7 +83,7 @@ export function renderItem(it) {
     // Shapes stay square (via CSS aspect-ratio) until stretched — once
     // stretched, it.h is real and wins over that (explicit width+height
     // always beats aspect-ratio).
-    if (it.type === 'shape' && it.h) el.style.height = it.h + 'px';
+    if ((it.type === 'shape' || it.type === 'panel') && it.h) el.style.height = it.h + 'px';
     el.style.zIndex = it.z || 1;
   } else {
     el.classList.add('in-column');
@@ -97,6 +103,7 @@ export function renderItem(it) {
   else if (it.type === 'color') buildColor(el, it);
   else if (it.type === 'draw') buildDraw(el, it);
   else if (it.type === 'shape') buildShape(el, it);
+  else if (it.type === 'panel') buildPanel(el, it);
   else if (it.type === 'connect') buildConnect(el, it);
 
   // Miladash: stage chip (Thought / Design / Code) and the promoted state.
@@ -219,7 +226,7 @@ export function renderItem(it) {
     el.appendChild(lockBadge);
   }
 
-  if (it.type !== 'board' && it.type !== 'document' && it.type !== 'shape' && !it.parentItemId && !isLocked(it)) {
+  if (it.type !== 'board' && it.type !== 'document' && it.type !== 'shape' && it.type !== 'panel' && !it.parentItemId && !isLocked(it)) {
     const rz = document.createElement('div'); rz.className = 'resize'; rz.setAttribute('data-nodrag', '');
     rz.addEventListener('pointerdown', (e) => startResize(e, it, el));
     el.appendChild(rz);
@@ -526,6 +533,43 @@ function buildShape(el, it) {
   handle.appendChild(lucideEl(SHAPE_ICONS[it.data.shape] || 'circle'));
   handle.addEventListener('click', (e) => { e.stopPropagation(); openPalette(it, handle, 'shape'); });
   el.appendChild(handle);
+}
+
+// A named, free-form background region that groups the cards placed over it
+// (see panels.js). Only its header, edge and corner handle take pointer
+// events -- the body is click-through, so you can still pan the canvas and
+// marquee-select across it. Always behind every real card.
+function buildPanel(el, it) {
+  el.classList.add('panel', 'shape-' + (it.data.shape || 'rounded'));
+  el.style.zIndex = '0';
+  const c = colorVar(it.color || 'slate');
+  el.style.setProperty('--panel-c', c);
+  if (!it.h) el.style.height = '320px';
+  const head = document.createElement('div');
+  head.className = 'panel-head';
+  const t = makeField('input', 'panel-title', it.data.title, 'Panel name');
+  t.addEventListener('input', () => { saveData(it, { title: t.value }); refreshPanels(); });
+  const count = document.createElement('span');
+  count.className = 'panel-count';
+  count.textContent = (it._memberCount || 0) + ((it._memberCount || 0) === 1 ? ' item' : ' items');
+  const shapeBtn = document.createElement('button');
+  shapeBtn.className = 'panel-shape-btn'; shapeBtn.setAttribute('data-nodrag', '');
+  shapeBtn.title = 'Panel shape: ' + (it.data.shape || 'rounded') + ' (click to change)';
+  shapeBtn.appendChild(lucideEl({ rect: 'square', rounded: 'square-round-corner', ellipse: 'circle' }[it.data.shape || 'rounded'] || 'square'));
+  shapeBtn.onclick = (e) => {
+    e.stopPropagation();
+    const next = PANEL_SHAPES[(PANEL_SHAPES.indexOf(it.data.shape || 'rounded') + 1) % PANEL_SHAPES.length];
+    saveData(it, { shape: next }); refreshItem(it); refreshPanels();
+  };
+  head.append(t, count, shapeBtn);
+  el.appendChild(head);
+  if (!isLocked(it)) {
+    const rz = document.createElement('div');
+    rz.className = 'panel-resize'; rz.setAttribute('data-nodrag', '');
+    rz.title = 'Drag to resize';
+    rz.addEventListener('pointerdown', (e) => startPanelResize(e, it, el));
+    el.appendChild(rz);
+  }
 }
 
 function buildDraw(el, it) {

@@ -90,7 +90,7 @@ function textFor(it, title) {
 
 // Data that can't be read back out of the node text, kept in the
 // `miladash` extension so a Miladash -> Miladash round trip is lossless.
-const OPAQUE_TYPES = new Set(['document', 'table', 'color', 'draw', 'shape', 'image', 'file', 'connect']);
+const OPAQUE_TYPES = new Set(['document', 'table', 'color', 'draw', 'shape', 'panel', 'image', 'file', 'connect']);
 
 function itemsOn(canvasId) {
   return stmt.itemsForCanvas.all(canvasId).map(rowToItem);

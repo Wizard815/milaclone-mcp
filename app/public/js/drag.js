@@ -7,6 +7,7 @@ import { screenToWorld, cancelCamAnimation } from './viewport.js';
 import { select, toggleSelect, enterEdit } from './editing.js';
 import { render } from './cards.js';
 import { renderLines, pickLineEndpoint } from './lines.js';
+import { membersOf, refreshPanels, highlightDropPanel, clearDropPanel } from './panels.js';
 
 // Dragging cards (free-move + in/out of columns) and resizing.
 
@@ -45,7 +46,12 @@ export function onItemPointerDown(e, it, el) {
   const rect = el.getBoundingClientRect();
   const startWorld = screenToWorld(rect.left, rect.top);
   const startSize = { w: rect.width, h: rect.height };
-  state.drag = { it, el, start, startWorld, fromColumn, moved: false, dropCol: null };
+  // Dragging a panel carries every card inside it (the server does the same
+  // when the panel's x/y is PATCHed, so API and UI agree).
+  const carried = it.type === 'panel'
+    ? membersOf(it).map(m => ({ it: m, el: elMap.get(m.id), x: m.x, y: m.y })).filter(m => m.el)
+    : [];
+  state.drag = { it, el, start, startWorld, fromColumn, moved: false, dropCol: null, carried };
   el.setPointerCapture(e.pointerId);
 
   const move = (ev) => {
@@ -70,7 +76,10 @@ export function onItemPointerDown(e, it, el) {
       const wx = startWorld.x + dx / state.cam.scale;
       const wy = startWorld.y + dy / state.cam.scale;
       el.style.left = wx + 'px'; el.style.top = wy + 'px';
+      const cdx = dx / state.cam.scale, cdy = dy / state.cam.scale;
+      carried.forEach(m => { m.el.style.left = (m.x + cdx) + 'px'; m.el.style.top = (m.y + cdy) + 'px'; });
       highlightColumn(ev, it);
+      highlightDropPanel(it, wx, wy);
     }
     renderLines();
   };
@@ -105,6 +114,15 @@ function startGroupDrag(e, primaryIt, primaryEl) {
     .map(id => ({ it: state.view.items.find(x => x.id === id), el: elMap.get(id) }))
     .filter(m => m.it && m.el && !m.it.parentItemId && !isLocked(m.it));
   if (!members.length) return;
+  // A selected panel brings along the cards inside it, unless they're
+  // already selected themselves.
+  const have = new Set(members.map(m => m.it.id));
+  for (const pm of [...members].filter(m => m.it.type === 'panel')) {
+    for (const c of membersOf(pm.it)) {
+      if (have.has(c.id) || !elMap.get(c.id) || isLocked(c)) continue;
+      have.add(c.id); members.push({ it: c, el: elMap.get(c.id) });
+    }
+  }
 
   const start = { sx: e.clientX, sy: e.clientY };
   members.forEach(m => { m.startX = m.it.x || 0; m.startY = m.it.y || 0; });
@@ -135,6 +153,7 @@ function startGroupDrag(e, primaryIt, primaryEl) {
       return { id: m.it.id, x: m.it.x, y: m.it.y };
     });
     await api.patchMany(updates);
+    refreshPanels();
   };
 
   document.addEventListener('pointermove', move);
@@ -170,6 +189,7 @@ function highlightColumn(ev, it) {
 
 async function finishDrag(ev) {
   const { it, el } = state.drag;
+  clearDropPanel();
   dom.world.querySelectorAll('.column.drop-target').forEach(c => c.classList.remove('drop-target'));
   if (state.drag.dropCol) {
     const order = insertOrder(state.drag.dropCol, ev.clientY, it.id);
@@ -184,9 +204,13 @@ async function finishDrag(ev) {
     const wx = Math.round(parseFloat(el.style.left));
     const wy = Math.round(parseFloat(el.style.top));
     const wasChild = state.drag.fromColumn;
+    const dx = wx - it.x, dy = wy - it.y;
     it.x = wx; it.y = wy; it.parentItemId = null;
+    state.drag.carried.forEach(m => { m.it.x += dx; m.it.y += dy; });
     await api.patch(it.id, { x: wx, y: wy, parentItemId: null });
     if (wasChild) render();
+    clearDropPanel();
+    refreshPanels();
   }
   state.drag = null;
 }

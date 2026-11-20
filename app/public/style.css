@@ -1471,3 +1471,43 @@ body.qn-open .toast {
 .pl-meta { display: flex; gap: 8px; align-items: center; justify-content: space-between; font-size: 11.5px; color: var(--ink-soft); margin-top: 6px; }
 .pl-hint-empty { position: absolute; left: 0; right: 0; bottom: 24px; text-align: center; color: var(--ink-soft); font-size: 13px; margin: 0; }
 @media (max-width: 760px) { .pl-cols { grid-template-columns: 1fr; } .pl-hint { display: none; } }
+
+/* ---------- panel (named free-form background area that groups cards) ---------- */
+.item.panel {
+  padding: 0; min-height: 80px; cursor: default;
+  background: color-mix(in srgb, var(--panel-c) 9%, transparent);
+  border: 2px dashed color-mix(in srgb, var(--panel-c) 55%, transparent);
+  box-shadow: none; border-radius: 6px;
+  pointer-events: none; /* the body is click-through: pan/marquee across it */
+}
+.item.panel.shape-rounded { border-radius: 22px; }
+.item.panel.shape-ellipse { border-radius: 50%; }
+.item.panel:hover { box-shadow: none; }
+.item.panel.drop-target { background: color-mix(in srgb, var(--panel-c) 20%, transparent); border-style: solid; }
+.item.selected.panel { border-color: var(--user-accent); box-shadow: none; border-style: solid; }
+.panel-head, .panel-resize, .panel .card-tools, .panel .item-tags, .panel .due-badge { pointer-events: auto; }
+.panel-head {
+  display: flex; align-items: center; gap: 8px; padding: 8px 12px; height: 44px; box-sizing: border-box;
+  cursor: grab; max-width: 100%;
+}
+.item.panel.shape-ellipse .panel-head { padding-left: 15%; padding-right: 15%; }
+.panel-title {
+  flex: 1 1 auto; min-width: 40px; background: transparent; border: 0; outline: 0;
+  font: 600 15px/1.2 inherit; font-family: inherit; color: color-mix(in srgb, var(--panel-c) 70%, var(--ink));
+  cursor: inherit; text-overflow: ellipsis;
+}
+.panel-title:focus { cursor: text; }
+.panel-count { font-size: 11px; color: var(--ink-soft); white-space: nowrap; }
+.panel-shape-btn {
+  width: 24px; height: 24px; display: grid; place-items: center; border: 0; border-radius: 6px;
+  background: transparent; color: var(--ink-soft); cursor: pointer; padding: 0;
+}
+.panel-shape-btn:hover { background: color-mix(in srgb, var(--panel-c) 20%, transparent); }
+.panel-shape-btn svg { width: 15px; height: 15px; }
+.panel-resize {
+  position: absolute; right: 6px; bottom: 6px; width: 16px; height: 16px; cursor: nwse-resize;
+  border-right: 3px solid var(--panel-c); border-bottom: 3px solid var(--panel-c); border-radius: 0 0 6px 0; opacity: .6;
+}
+.item.panel.shape-ellipse .panel-resize { right: 18%; bottom: 18%; }
+.panel-resize:hover { opacity: 1; }
+.panel .card-tools { top: -34px; }

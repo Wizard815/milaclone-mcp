@@ -11,6 +11,7 @@ const {
   rowToItem, rowToCanvas, breadcrumb, itemsForCanvas, deleteItemDeep, likeEscape
 } = require('./db');
 const canvasFile = require('./canvasfile');
+const panels = require('./panels');
 
 // stage: one of STAGES, or null for "not in the pipeline".
 const badStage = (v) => v !== undefined && v !== null && !STAGES.includes(v);
@@ -166,6 +167,7 @@ router.get('/api/canvas/:id', (req, res) => {
     }
     return it;
   });
+  panels.annotate(items);
   res.json({ canvas: rowToCanvas(canvas), items, breadcrumb: breadcrumb(canvas.id) });
 });
 
@@ -187,6 +189,13 @@ router.post('/api/item', (req, res) => {
   if (badStage(b.stage)) return res.status(400).json({ error: 'stage must be one of ' + STAGES.join(', ') + ' or null' });
   if (badLineKind(b.type, b.data)) return res.status(400).json({ error: 'line kind must be one of ' + LINE_KINDS.join(', ') });
 
+  if (b.type === 'panel') {
+    b.data = Object.assign({ title: 'Panel', shape: 'rounded' }, b.data || {});
+    if (!panels.SHAPES.includes(b.data.shape)) return res.status(400).json({ error: 'panel shape must be one of ' + panels.SHAPES.join(', ') });
+    b.w = b.w || panels.DEFAULT_PANEL.w;
+    b.h = b.h || panels.DEFAULT_PANEL.h;
+  }
+
   const item = {
     id: id('i_'),
     canvasId: b.canvasId,
@@ -196,7 +205,7 @@ router.post('/api/item', (req, res) => {
     y: Math.round(b.y || 60),
     w: Math.round(b.w || 240),
     h: b.h != null ? Math.round(b.h) : null,
-    z: Math.max(0, stmt.maxZ.get().m || 0) + 1,
+    z: b.type === 'panel' ? 0 : Math.max(0, stmt.maxZ.get().m || 0) + 1,
     color: b.color || null,
     data: b.data || {},
     stage: b.stage || null,
@@ -232,8 +241,16 @@ router.post('/api/item', (req, res) => {
     });
   }
 
-  res.json(item);
+  res.json(item.type === 'panel' ? annotateOne(item) : item);
 });
+
+// Panel/member annotations for a single item (needs its whole canvas to know).
+function annotateOne(item) {
+  const all = itemsForCanvas(item.canvasId).map(x => x.id === item.id ? item : x);
+  if (!all.includes(item)) all.push(item);
+  panels.annotate(all);
+  return item;
+}
 
 router.get('/api/item/:id', (req, res) => {
   const row = stmt.getItem.get(req.params.id);
@@ -249,7 +266,7 @@ router.get('/api/item/:id', (req, res) => {
       _childIcon: child ? (child.icon || 'layout-grid') : 'layout-grid'
     });
   }
-  res.json(it);
+  res.json(annotateOne(it));
 });
 
 router.patch('/api/item/:id', (req, res) => {
@@ -257,6 +274,17 @@ router.patch('/api/item/:id', (req, res) => {
   if (!row) return res.status(404).json({ error: 'not found' });
   const it = rowToItem(row);
   const b = req.body || {};
+  if (it.type === 'panel' && b.data && b.data.shape !== undefined && !panels.SHAPES.includes(b.data.shape)) {
+    return res.status(400).json({ error: 'panel shape must be one of ' + panels.SHAPES.join(', ') });
+  }
+  // Moving a panel carries everything inside it (unless moveMembers: false).
+  // Membership is read from where things are *before* the move.
+  let carried = [], dx = 0, dy = 0;
+  if (it.type === 'panel' && b.moveMembers !== false && (b.x != null || b.y != null)) {
+    dx = b.x != null ? Math.round(b.x) - it.x : 0;
+    dy = b.y != null ? Math.round(b.y) - it.y : 0;
+    if (dx || dy) carried = panels.allMembers(it, itemsForCanvas(it.canvasId));
+  }
   if (badStage(b.stage)) return res.status(400).json({ error: 'stage must be one of ' + STAGES.join(', ') + ' or null' });
   if (badLineKind(it.type, b.data)) return res.status(400).json({ error: 'line kind must be one of ' + LINE_KINDS.join(', ') });
   for (const k of ['x', 'y', 'w', 'h', 'z']) {
@@ -297,9 +325,18 @@ router.patch('/api/item/:id', (req, res) => {
       stage: it.stage,
       updatedAt: it.updatedAt ?? it.createdAt
     });
+    for (const m of carried) {
+      stmt.updateItem.run({
+        id: m.id, canvasId: m.canvasId, parentItemId: m.parentItemId ?? null,
+        x: m.x + dx, y: m.y + dy, w: m.w, h: m.h ?? null, z: m.z,
+        color: m.color ?? null, data: JSON.stringify(m.data)
+      });
+    }
   })();
 
-  res.json(it);
+  const out = it.type === 'panel' ? annotateOne(it) : it;
+  if (carried.length) out._moved = carried.map(m => m.id);
+  res.json(out);
 });
 
 // Bulk position update (used after multi-select drags / reflows)
@@ -357,6 +394,87 @@ router.post('/api/item/:id/restore', (req, res) => {
     });
   }
   res.json(restored);
+});
+
+// ---- Panels ------------------------------------------------------------
+// Panels are background regions that group the cards inside them -- see
+// panels.js. These routes are the convenient way to work with them in bulk.
+const previewOf = (it) => ({ id: it.id, type: it.type, preview: String(previewTextFor(it)).slice(0, 60) });
+
+// Every panel on a board with its members (any depth of nesting is flattened
+// to direct membership: a card lists under the smallest panel holding it).
+router.get('/api/canvas/:id/panels', (req, res) => {
+  const canvas = stmt.getCanvas.get(req.params.id);
+  if (!canvas) return res.status(404).json({ error: 'not found' });
+  const items = panels.annotate(itemsForCanvas(canvas.id));
+  const byId = new Map(items.map(i => [i.id, i]));
+  const list = items.filter(panels.isPanel).map(p => ({
+    id: p.id, title: p.data.title || 'Panel', shape: p.data.shape || 'rounded', color: p.color,
+    x: p.x, y: p.y, w: p.w, h: p.h, parentPanelId: p._panelId || null,
+    members: p._memberIds.map(mid => previewOf(byId.get(mid)))
+  }));
+  const ungrouped = items.filter(i => !panels.isPanel(i) && i.type !== 'line' && !i.parentItemId && !i._panelId).map(previewOf);
+  res.json({ canvasId: canvas.id, panels: list, ungrouped });
+});
+
+// Wraps existing cards in a new panel sized to fit them. Nothing moves.
+router.post('/api/canvas/:id/panels/group', (req, res) => {
+  const canvas = stmt.getCanvas.get(req.params.id);
+  if (!canvas) return res.status(404).json({ error: 'not found' });
+  const b = req.body || {};
+  const ids = Array.isArray(b.itemIds) ? b.itemIds : [];
+  if (!ids.length) return res.status(400).json({ error: 'itemIds is required' });
+  const items = ids.map(i => stmt.getItem.get(i)).filter(Boolean).map(rowToItem);
+  if (items.length !== ids.length) return res.status(404).json({ error: 'some itemIds were not found' });
+  const bad = items.find(i => i.canvasId !== canvas.id || i.parentItemId || i.type === 'line');
+  if (bad) return res.status(400).json({ error: `item ${bad.id} must be a free card on this board (not a line, and not inside a column -- pass the column instead)` });
+  const box = panels.boundsFor(items, { padding: Number.isFinite(b.padding) ? b.padding : 40 });
+  const shape = panels.SHAPES.includes(b.shape) ? b.shape : 'rounded';
+  const panel = {
+    id: id('i_'), canvasId: canvas.id, parentItemId: null, type: 'panel',
+    x: box.x, y: box.y, w: box.w, h: box.h, z: 0, color: b.color || 'slate',
+    data: { title: String(b.title || 'Panel').slice(0, 200), shape }, stage: null, createdAt: Date.now()
+  };
+  panel.updatedAt = panel.createdAt;
+  stmt.insertItem.run(Object.assign({}, panel, { data: JSON.stringify(panel.data) }));
+  const all = itemsForCanvas(canvas.id);
+  panels.annotate(all);
+  res.json(all.find(i => i.id === panel.id));
+});
+
+// Puts cards inside a panel. Cards already inside stay put; others are laid
+// out in rows in the panel's free space (below the header), without resizing.
+router.post('/api/panel/:id/members', (req, res) => {
+  const row = stmt.getItem.get(req.params.id);
+  if (!row || row.type !== 'panel') return res.status(404).json({ error: 'panel not found' });
+  const panel = rowToItem(row);
+  const ids = Array.isArray(req.body && req.body.itemIds) ? req.body.itemIds : [];
+  if (!ids.length) return res.status(400).json({ error: 'itemIds is required' });
+  const items = ids.map(i => stmt.getItem.get(i)).filter(Boolean).map(rowToItem);
+  if (items.length !== ids.length) return res.status(404).json({ error: 'some itemIds were not found' });
+  const bad = items.find(i => i.canvasId !== panel.canvasId || i.parentItemId || i.type === 'line' || i.id === panel.id);
+  if (bad) return res.status(400).json({ error: `item ${bad.id} must be a free card on the same board as the panel` });
+  const GAP = 20, pad = 20, rowH = 150;
+  let cx = panel.x + pad, cy = panel.y + panels.HEADER_H + pad, rowBottom = cy;
+  const moves = [];
+  for (const it of items) {
+    if (panels.isMemberOf(panel, it)) continue;
+    const w = it.w || 240;
+    if (cx + w > panel.x + panel.w - pad && cx > panel.x + pad) { cx = panel.x + pad; cy = rowBottom + GAP; }
+    moves.push({ it, x: cx, y: cy });
+    cx += w + GAP; rowBottom = Math.max(cy + (it.h || rowH), rowBottom);
+  }
+  db.transaction(() => {
+    for (const m of moves) {
+      stmt.updateItem.run({ id: m.it.id, canvasId: m.it.canvasId, parentItemId: null, x: Math.round(m.x), y: Math.round(m.y),
+        w: m.it.w, h: m.it.h ?? null, z: m.it.z, color: m.it.color ?? null, data: JSON.stringify(m.it.data) });
+    }
+  })();
+  const all = itemsForCanvas(panel.canvasId);
+  panels.annotate(all);
+  const out = all.find(i => i.id === panel.id);
+  const overflow = moves.length && moves[moves.length - 1].y + rowH > panel.y + panel.h;
+  res.json({ panel: out, moved: moves.map(m => m.it.id), ...(overflow ? { warning: 'panel is too small for everything; some cards extend past its edge -- resize the panel' } : {}) });
 });
 
 // ---- Quick notes -----------------------------------------------------------

@@ -26,6 +26,7 @@ export function defaultsFor(type) {
     case 'color':   return { w: 160, data: { hex: '#2f6df0' } };
     case 'draw':    return { w: 320, color: 'slate', data: { title: 'Untitled drawing', strokes: [] } };
     case 'shape':   return { w: 200, color: 'slate', data: { shape: 'circle', filled: false, thickness: 4 } };
+    case 'panel':   return { w: 480, h: 320, color: 'slate', data: { title: 'Panel', shape: 'rounded' } };
     default:        return { w: 240, data: {} };
   }
 }
@@ -48,6 +49,9 @@ export async function createAt(type, wx, wy) {
     const el = elMap.get(it.id);
     const handle = el.querySelector('.shape-handle');
     if (handle) openPalette(it, handle, 'shape');
+  } else if (type === 'panel') {
+    const f = elMap.get(it.id)?.querySelector('.panel-title');
+    if (f) { enterEdit(elMap.get(it.id)); f.focus(); f.select(); }
   } else if (type !== 'board' && type !== 'image' && type !== 'file') {
     const el = elMap.get(it.id); enterEdit(el); el.querySelector('[data-edit]')?.focus();
   }
