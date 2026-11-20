@@ -57,6 +57,18 @@ If you point your tunnel's ingress rules at either service, that'd be
 No Tailscale involved by default; add a sidecar the same way if you'd rather
 use that instead.
 
+## What's in the app
+
+`app/` is [ellshep/milaclone](https://github.com/ellshep/milaclone) (rich-text
+notes, Trash, lines, templates, Quick notes, task API, optional voice add-on)
+plus this repo's additions: **panels** (named background regions that group
+cards), **Miladash** (idea stages, Pipeline view, promote to Orb, JSON Canvas),
+API-key auth and offline icons/fonts. See [`app/README.md`](app/README.md).
+
+To use the voice add-on set `COMPOSE_PROFILES=voice` and the keys listed in
+`.env.example`; the pipeline then runs beside the app and files tasks through
+the task API. `TASK_API_TOKEN` also turns on the MCP's `add_task`/`list_tasks`.
+
 ## Auth
 
 Two independent layers, both optional, both off by default:

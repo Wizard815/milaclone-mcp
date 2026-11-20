@@ -31,6 +31,28 @@ file you own.
 | :-------------------------------------------: | :------------------------------------------------------: | :----------------------------------------------------: |
 | ![Dark mode](docs/screenshots/board-dark.png) | ![A board on a phone](docs/screenshots/mobile-board.png) | ![Quick notes](docs/screenshots/mobile-quicknotes.png) |
 
+## Panels, templates and Miladash
+
+- **Panels** (the Panel tool): a named background region of any size, drawn
+  behind the cards, shaped rect / rounded / ellipse (click the icon in its
+  header). Drop a card onto it and the card is logged as in that panel
+  (positional: card centre + 24px down); drag the header and everything inside
+  moves with it; resize from the corner handle. The body is click-through so you
+  can still pan and box-select across it. Panels nest (a card belongs to the
+  smallest one). API: `GET /api/canvas/:id/panels`,
+  `POST /api/canvas/:id/panels/group`, `POST /api/panel/:id/members`; cards and
+  panels carry `_panelId` / `_memberIds`.
+- **Templates** are boards inside the Templates board on Home (the Template
+  tool). `GET/POST /api/templates`, `POST /api/templates/:id/use` and
+  `POST /api/canvas/:id/copy` make the same thing available to scripts and the MCP.
+- **Miladash**: stage chips (right-click a card: Thought / Design / Code), the
+  Pipeline view (kanban button), arrow kinds on lines (right-click a line:
+  Relates to / Depends on / Became), promote a Code idea to a Pondering Orb
+  project (`ORB_URL`, `ORB_TOKEN`), and JSON Canvas import/export in the Export menu.
+- `API_KEY` (optional) protects `/api/*`: send it as `X-API-Key` or a bearer
+  token; the browser UI gets it automatically. The task API keeps its own token.
+- `node scripts/seed-demo.js <url>` fills a board with demo data.
+
 ## Quick notes: every to-do list in one place
 
 Quick notes turns all your to-do cards into a task app. Every to-do card on

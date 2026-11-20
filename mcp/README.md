@@ -11,24 +11,27 @@ and standalone dev setup.
 |---|---|
 | `get_root` | Get the Home board's id |
 | `list_boards` | Recursively list nested boards (titles/ids/counts) |
-| `get_board` | Get a board's cards + breadcrumb |
-| `get_item` | Fetch a single card by id, without its board_id |
+| `get_board_outline` | Compact map of a board: one line per card with id, type, label, position, panel. Start here |
+| `get_board` | A board's full cards (+ `_panelId`, breadcrumb) — heavier than the outline |
+| `get_item` | Fetch a single card by id |
+| `search` | Search card text and board titles (`{results: [...]}`) |
+| `list_todo_lists` | Every to-do checklist across the whole tree |
+| `create_item` / `create_items` | Create one card / several in one call (note, todo, link, column, comment, board, document, table, swatch, line, shortcut, panel; optional `stage`) |
+| `update_item` | Edit a card's data/position/size/color/parent/stage (a panel's x/y carries its members) |
+| `move_item` | Move a card (with its column cards / nested boards) to another board |
+| `duplicate_item` | Deep-copy a card (a column with its cards, a board with its subtree) |
+| `delete_item` / `restore_item` / `list_trash` | Delete to the Trash, undo any delete, see what's in the Trash |
+| `create_panel` | A named floating panel (any size; rect/rounded/ellipse) that groups the cards placed inside it |
+| `group_into_panel` | Wrap existing cards in a new panel sized to fit them (warns if bystanders get swept in) |
+| `add_to_panel` | Put cards inside a panel (laid out in its free space; warns if it's too small) |
+| `list_panels` | Every panel with its members, plus the cards in no panel |
+| `copy_board` | Copy a whole board (panels, nested boards, lines) as a new board |
+| `list_templates` / `save_as_template` / `create_from_template` | Reusable board templates (kept in the Templates board on Home) |
+| `export_board` / `import_board` / `export_board_markdown` | JSON Canvas (Obsidian) out/in; Markdown snapshot |
+| `list_pipeline` / `promote_item` | Miladash: staged ideas (thought/design/code); promote a Code idea to a Pondering Orb project |
+| `add_todo_task` / `set_todo_task_done` / `remove_todo_task` | Edit a to-do card's checklist |
+| `add_task` / `list_tasks` | The app's task API (Inbox; the voice add-on's target). Need `TASK_API_TOKEN` |
 | `update_canvas` | Rename/recolor/re-icon a board by canvas id (mainly for Home) |
-| `search` | Search card contents and board titles |
-| `list_todo_lists` | List every to-do checklist across the whole tree |
-| `create_item` | Create a note/todo/link/column/comment/board/heading/document/table/color/draw/line/shape/panel card (optional `stage`; lines take `kind`) |
-| `update_item` | Edit a card's data/position/color/parent/stage |
-| `create_panel` | Create a named floating panel (any size; rect/rounded/ellipse) that groups the cards placed inside it |
-| `group_into_panel` | Wrap existing cards in a new panel sized to fit them (warns if bystander cards get swept in) |
-| `add_to_panel` | Put cards inside an existing panel (laid out in its free space; warns if it's too small) |
-| `list_panels` | Every panel on a board with its members, plus the cards not in any panel |
-| `list_pipeline` | Miladash: every staged idea (thought/design/code), newest change first |
-| `promote_item` | Miladash: turn a Code-stage idea into a Pondering Orb project |
-| `delete_item` | Delete a card (recursively, if it's a nested board) |
-| `restore_item` | Undo a board's deletion (boards only — see below) |
-| `add_todo_task` | Append a task to a to-do card |
-| `set_todo_task_done` | Check/uncheck a task on a to-do card |
-| `remove_todo_task` | Remove a task from a to-do card |
 
 Image and file-upload cards can't be created via MCP (they require an actual
 file upload) but are visible in `get_board`/`search` results.
@@ -38,10 +41,14 @@ automatically — `update_canvas` exists for the one case that doesn't cover:
 the root "Home" board has no card of its own, so it's the only board you
 need `update_canvas` for in practice.
 
-Deleting a `board` card soft-deletes its entire nested subtree, so
-`restore_item(item_id)` (same id you passed to `delete_item`) brings the
-whole thing back exactly as it was. This only applies to boards — deleting
-any other card type is permanent.
+Deleting a card moves it (and what hangs off it: a board's nested boards, a
+column's cards, attached lines) to the Trash; `restore_item(item_id)` brings
+back exactly that delete, and `list_trash` shows what is there. Nothing is
+erased until the Trash is emptied in the web UI.
+
+Notes and comments are rich text: write them with `{"title", "body"}` (plain
+text) and read them back from `data.text` (a note's title is its first line).
+Editing one body through the MCP flattens any rich formatting made in the app.
 
 ## Standalone dev setup
 
