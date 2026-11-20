@@ -2,6 +2,20 @@
 
 import { toast } from './util.js';
 
+// When the server runs with API_KEY it embeds the key in index.html; every
+// same-origin /api request then carries it. One patch here covers all callers.
+const API_KEY = document.querySelector('meta[name="milaclone-key"]')?.content || '';
+if (API_KEY) {
+  const nativeFetch = window.fetch.bind(window);
+  window.fetch = (input, init = {}) => {
+    const url = typeof input === 'string' ? input : input.url;
+    if (!url.startsWith('/api/') && !url.startsWith(location.origin + '/api/')) return nativeFetch(input, init);
+    const headers = new Headers(init.headers || (typeof input === 'string' ? undefined : input.headers));
+    headers.set('X-API-Key', API_KEY);
+    return nativeFetch(input, { ...init, headers });
+  };
+}
+
 const json = (method, body, extra) => ({
   method,
   headers: { 'Content-Type': 'application/json' },
@@ -24,6 +38,23 @@ async function write(url, init) {
 
 // Thin wrappers over the JSON endpoints exposed by the Node backend.
 export const api = {
+  async pipeline() {
+    return (await fetch('/api/pipeline')).json();
+  },
+  async orb() {
+    return (await fetch('/api/orb')).json();
+  },
+  async promote(id) {
+    const r = await fetch('/api/item/' + id + '/promote', json('POST', {}));
+    return { ok: r.ok, body: await r.json() };
+  },
+  async exportCanvas(id, nested) {
+    return (await fetch('/api/canvas/' + id + '/export' + (nested ? '?nested=1' : ''))).json();
+  },
+  async importCanvas(id, body) {
+    const r = await fetch('/api/canvas/' + id + '/import', json('POST', body));
+    return { ok: r.ok, body: await r.json() };
+  },
   async root() {
     return (await fetch('/api/root')).json();
   },

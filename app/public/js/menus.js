@@ -8,6 +8,7 @@ import { select, renameSelected, deleteSelection, selectedItems } from './editin
 import { copySelected, pasteClipboard, duplicateSelected, toggleLock } from './clipboard.js';
 import { setLine, editLabel } from './lines.js';
 import { openLabels } from './labels.js';
+import { STAGE_LABELS, setStage, promoteItem } from './stages.js';
 
 // The floating color/icon palette and the right-click context menu.
 
@@ -104,6 +105,18 @@ export function openCtx(e, it) {
       ['both', 'Arrows at Both Ends'],
       ['none', 'No Arrows'],
     ].map(([a, label]) => ({ label, hint: arrow === a ? '✓' : '', fn: () => setLine(it, { arrow: a }) })),
+    { sep: true },
+    // Miladash: what kind of relationship the arrow means (data.kind).
+    ...[
+      ['relates', 'Relates to'],
+      ['depends', 'Depends on'],
+      ['became', 'Became'],
+    ].map(([k, label]) => ({
+      label,
+      hint: (it.data.kind || 'relates') === k ? '✓' : '',
+      fn: () => setLine(it, { kind: k, dashed: k === 'depends' }),
+    })),
+    { sep: true },
     { label: it.data.dashed ? 'Solid Line' : 'Dashed Line', fn: () => setLine(it, { dashed: !it.data.dashed }) },
     { label: it.data.label ? 'Edit Label' : 'Add Label', fn: () => editLabel(it) },
     { label: 'Colour…', fn: () => openPalette(it, elMap.get(it.id), 'color') },
@@ -130,6 +143,10 @@ export function openCtx(e, it) {
             ? []
             : [{ label: 'Rename', hint: 'Return', fn: () => renameSelected() }]),
           { label: locked ? 'Unlock Position' : 'Lock Position', fn: () => toggleLock() },
+          { sep: true },
+          { stages: selectedItems().filter(x => x.type !== 'line' && x.type !== 'panel') },
+          ...(!many && it.stage === 'code' ? [promoteRow(it)] : []),
+          { sep: true },
           { label: 'Labels…', fn: () => openLabels() },
           ...(it.type === 'board' && !many ? [{ label: 'Create Shortcut', fn: () => createShortcut(it) }] : []),
           ...(it.type === 'image'
@@ -149,6 +166,10 @@ export function openCtx(e, it) {
       const s = document.createElement('div');
       s.className = 'ctx-sep';
       dom.ctxmenu.appendChild(s);
+      return;
+    }
+    if (r.stages) {
+      if (r.stages.length) dom.ctxmenu.appendChild(stageRow(r.stages));
       return;
     }
     const b = document.createElement('button');
@@ -220,4 +241,52 @@ async function createShortcut(board) {
   render();
   select(it.id);
   toast('Shortcut made — cut and paste it onto any board');
+}
+
+// "Stage" row: Thought / Design / Code / None, as one segmented control.
+// Applies to every card in a multi-selection at once.
+function stageRow(items) {
+  const wrap = document.createElement('div');
+  wrap.className = 'ctx-stages';
+  const lab = document.createElement('span');
+  lab.className = 'ctx-stages-label';
+  lab.textContent = 'Stage';
+  wrap.appendChild(lab);
+  const current = items.every(x => x.stage === items[0].stage) ? items[0].stage : undefined;
+  for (const [val, text] of [...Object.entries(STAGE_LABELS), [null, 'None']]) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className =
+      'ctx-stage' +
+      (current === val || (!val && !current && current !== undefined) ? ' on' : '') +
+      (val ? ' stage-' + val : '');
+    b.dataset.stage = val || 'none';
+    b.textContent = text;
+    b.onclick = () => {
+      closeCtx();
+      setStage(items, val);
+    };
+    wrap.appendChild(b);
+  }
+  return wrap;
+}
+
+function promoteRow(it) {
+  if (it.data.promoted) {
+    return {
+      label: 'Promoted to Orb',
+      disabled: true,
+      hint: it.data.promoted.name ? '“' + it.data.promoted.name + '”' : '',
+    };
+  }
+  if (!state.orb || !state.orb.configured) {
+    return { label: 'Promote to a project', disabled: true, hint: 'set ORB_URL' };
+  }
+  return {
+    label: 'Promote to a project',
+    fn: () => {
+      closeCtx();
+      promoteItem(it);
+    },
+  };
 }

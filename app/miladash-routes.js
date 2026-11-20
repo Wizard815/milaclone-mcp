@@ -79,20 +79,28 @@ router.post('/api/item/:id/promote', async (req, res) => {
   if (!row) return res.status(404).json({ error: 'not found' });
   const it = boardInfo(rowToItem(row));
   const { url, token } = orbConfig();
-  if (!url) return res.status(409).json({ error: 'ORB_URL is not set on the Miladash server, so there is no Orb to promote to.' });
+  if (!url)
+    return res
+      .status(409)
+      .json({ error: 'ORB_URL is not set on the Miladash server, so there is no Orb to promote to.' });
   if (it.stage !== 'code') return res.status(409).json({ error: 'Only ideas at the Code stage can be promoted.' });
   if (it.data.promoted) return res.status(409).json({ error: 'Already promoted.', promoted: it.data.promoted });
 
   const name = orbName(titleOf(it));
   const body = it.type === 'note' ? richParts(it.data).body : it.data.pitch || '';
-  const next = String((req.body && req.body.next) || body.split('\n').find(l => l.trim()) || '').trim().slice(0, 300);
+  const next = String((req.body && req.body.next) || body.split('\n').find(l => l.trim()) || '')
+    .trim()
+    .slice(0, 300);
 
   let resp, doc;
   try {
     const headers = { 'Content-Type': 'application/json' };
     if (token) headers.Authorization = 'Bearer ' + token;
     resp = await fetch(url + '/api/c/projects', {
-      method: 'POST', headers, body: JSON.stringify({ name, next, status: 'next' }), signal: AbortSignal.timeout(10000),
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ name, next, status: 'next' }),
+      signal: AbortSignal.timeout(10000),
     });
     doc = await resp.json().catch(() => ({}));
   } catch (e) {
@@ -102,10 +110,21 @@ router.post('/api/item/:id/promote', async (req, res) => {
 
   // Re-read in case the card changed while Orb was answering.
   const fresh = rowToItem(stmt.getItem.get(it.id) || row);
-  fresh.data = Object.assign({}, fresh.data, { promoted: { at: Date.now(), projectId: doc && doc.id ? String(doc.id) : null, name } });
+  fresh.data = Object.assign({}, fresh.data, {
+    promoted: { at: Date.now(), projectId: doc && doc.id ? String(doc.id) : null, name },
+  });
   stmt.updateItem.run({
-    id: fresh.id, canvasId: fresh.canvasId, parentItemId: fresh.parentItemId ?? null, type: fresh.type,
-    x: fresh.x, y: fresh.y, w: fresh.w, h: fresh.h ?? null, z: fresh.z, color: fresh.color ?? null, data: JSON.stringify(fresh.data),
+    id: fresh.id,
+    canvasId: fresh.canvasId,
+    parentItemId: fresh.parentItemId ?? null,
+    type: fresh.type,
+    x: fresh.x,
+    y: fresh.y,
+    w: fresh.w,
+    h: fresh.h ?? null,
+    z: fresh.z,
+    color: fresh.color ?? null,
+    data: JSON.stringify(fresh.data),
   });
   stmt.setStage.run({ id: fresh.id, stage: fresh.stage, updatedAt: Date.now() });
   res.json({ item: boardInfo(rowToItem(stmt.getItem.get(fresh.id))), project: doc });
@@ -117,7 +136,11 @@ router.get('/api/canvas/:id/export', (req, res) => {
   const out = canvasFile.exportCanvas(req.params.id, { nested });
   if (!out) return res.status(404).json({ error: 'not found' });
   const canvas = stmt.getCanvas.get(req.params.id);
-  const file = (canvas.title || 'board').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-') || 'board';
+  const file =
+    (canvas.title || 'board')
+      .replace(/[^\w\- ]+/g, '')
+      .trim()
+      .replace(/\s+/g, '-') || 'board';
   res.set('Content-Disposition', `attachment; filename="${file}.canvas"`);
   res.json(out);
 });

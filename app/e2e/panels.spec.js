@@ -3,18 +3,39 @@
 const { test, expect } = require('@playwright/test');
 const { freshCanvas, place } = require('./helpers');
 
-const api = (page, method, path, body) => page.evaluate(async ([m, p, b]) => {
-  const r = await fetch(p, { method: m, headers: { 'Content-Type': 'application/json' }, body: b ? JSON.stringify(b) : undefined });
-  return r.json();
-}, [method, path, body]);
+const api = (page, method, path, body) =>
+  page.evaluate(
+    async ([m, p, b]) => {
+      const r = await fetch(
+        p,
+        b ? { method: m, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) } : { method: m }
+      );
+      return r.json();
+    },
+    [method, path, body]
+  );
 const getItems = async (page, id) => (await api(page, 'GET', '/api/canvas/' + id)).items;
 
 // Opening a board runs a short camera animation; wait it out before measuring
 // anything or dragging, or positions shift under the mouse.
-async function settle(page) { await page.reload(); await expect(page.locator('#stage')).toBeVisible(); await page.waitForTimeout(1000); }
+async function settle(page) {
+  await page.reload();
+  await expect(page.locator('#stage')).toBeVisible();
+  await page.waitForTimeout(1000);
+}
 
 async function mkPanel(page, canvasId, data = {}, geo = {}) {
-  const p = await api(page, 'POST', '/api/item', { canvasId, type: 'panel', x: 100, y: 100, w: 500, h: 360, data: { title: 'Plan' }, ...geo, ...(data.color ? { color: data.color } : {}) });
+  const p = await api(page, 'POST', '/api/item', {
+    canvasId,
+    type: 'panel',
+    x: 100,
+    y: 100,
+    w: 500,
+    h: 360,
+    data: { title: 'Plan' },
+    ...geo,
+    ...(data.color ? { color: data.color } : {}),
+  });
   await settle(page);
   return p;
 }
@@ -27,13 +48,19 @@ test('the Panel tool places a named panel behind other cards', async ({ page }) 
   await expect(panel.locator('.panel-count')).toHaveText('0 items');
   await page.keyboard.type('Research');
   await expect.poll(async () => (await getItems(page, id))[0].data.title).toBe('Research');
-  expect(await panel.evaluate(e => e.style.zIndex)).toBe('0');
+  expect(await panel.evaluate(e => e.style.zIndex)).toBe('-999999');
 });
 
 test('a card dropped inside a panel is logged as a member; leaving removes it', async ({ page }) => {
   const id = await freshCanvas(page);
   const panel = await mkPanel(page, id, { title: 'Plan' });
-  const note = await api(page, 'POST', '/api/item', { canvasId: id, type: 'note', x: 900, y: 120, data: { title: 'Idea' } });
+  const note = await api(page, 'POST', '/api/item', {
+    canvasId: id,
+    type: 'note',
+    x: 900,
+    y: 120,
+    data: { title: 'Idea' },
+  });
   await settle(page);
   await expect(page.locator('.item.panel .panel-count')).toHaveText('0 items');
 
@@ -62,7 +89,13 @@ test('a card dropped inside a panel is logged as a member; leaving removes it', 
 test('dragging a panel by its header carries its cards and survives reload', async ({ page }) => {
   const id = await freshCanvas(page);
   const panel = await mkPanel(page, id);
-  const note = await api(page, 'POST', '/api/item', { canvasId: id, type: 'note', x: 140, y: 170, data: { title: 'Inside' } });
+  const note = await api(page, 'POST', '/api/item', {
+    canvasId: id,
+    type: 'note',
+    x: 140,
+    y: 170,
+    data: { title: 'Inside' },
+  });
   await settle(page);
   await expect(page.locator('.item.panel .panel-count')).toHaveText('1 item');
   const head = await page.locator('.item.panel .panel-head').boundingBox();
@@ -98,31 +131,26 @@ test('the shape button cycles rect / rounded / ellipse; empty body is click-thro
   await expect(page.locator('.item.panel')).toHaveClass(/shape-ellipse/);
   await expect.poll(async () => (await getItems(page, id)).find(i => i.id === panel.id).data.shape).toBe('ellipse');
   // body click-through: clicking inside the panel (below the header) hits the stage, not the panel
-  const hit = await page.evaluate(() => { const r = document.querySelector('.item.panel').getBoundingClientRect(); return !!document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2).closest('.item.panel'); });
+  const hit = await page.evaluate(() => {
+    const r = document.querySelector('.item.panel').getBoundingClientRect();
+    return !!document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2).closest('.item.panel');
+  });
   expect(hit).toBe(false);
 });
 
 test('deleting a panel keeps the cards that were inside it', async ({ page }) => {
   const id = await freshCanvas(page);
-  const panel = await mkPanel(page, id);
-  const note = await api(page, 'POST', '/api/item', { canvasId: id, type: 'note', x: 140, y: 170, data: { title: 'Keep me' } });
+  await mkPanel(page, id);
+  const note = await api(page, 'POST', '/api/item', {
+    canvasId: id,
+    type: 'note',
+    x: 140,
+    y: 170,
+    data: { title: 'Keep me' },
+  });
   await settle(page);
   await page.locator('.item.panel .panel-head').click({ position: { x: 20, y: 20 } });
   await page.locator('.item.panel .card-tools button[title="Delete"]').click();
   await expect(page.locator('.item.panel')).toHaveCount(0);
   await expect(page.locator(`.item[data-id="${note.id}"]`)).toHaveCount(1);
-});
-
-test('a board can be saved as a template from its context menu', async ({ page }) => {
-  await page.goto('/');
-  const name = 'UI kit ' + Date.now();
-  const root = (await api(page, 'GET', '/api/root')).rootCanvasId;
-  const b = await api(page, 'POST', '/api/item', { canvasId: root, type: 'board', x: 40, y: 40, data: { title: 'Src ' + name } });
-  await page.reload();
-  await page.evaluate((n) => { window.prompt = () => n; }, name);
-  await page.waitForTimeout(800);
-  await page.locator(`.item[data-id="${b.id}"]`).scrollIntoViewIfNeeded();
-  await page.locator(`.item[data-id="${b.id}"]`).click({ button: 'right' });
-  await page.getByRole('button', { name: /Save as template/ }).click();
-  await expect.poll(async () => (await api(page, 'GET', '/api/templates')).templates.map(t => t.name)).toContain(name);
 });

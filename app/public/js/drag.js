@@ -6,6 +6,7 @@ import { isLocked, zRange, snap } from './util.js';
 import { screenToWorld } from './viewport.js';
 import { select, enterEdit, toggleSelect, selectedItems } from './editing.js';
 import { render } from './cards.js';
+import { membersOf, refreshPanels, highlightDropPanel, clearDropPanel } from './panels.js';
 
 // Dragging cards (free-move + in/out of columns, several at once) and resizing.
 
@@ -43,6 +44,16 @@ export function onItemPointerDown(e, it, el) {
         .filter(o => o.id !== it.id && o.type !== 'line' && !o.parentItemId && !isLocked(o) && elMap.get(o.id))
         .map(o => ({ it: o, el: elMap.get(o.id), x: o.x, y: o.y }))
     : [];
+  // Dragging a panel carries every card inside it (and any selected companions).
+  const withMembers = [it, ...others.map(o => o.it)].filter(p => p.type === 'panel');
+  const have = new Set([it.id, ...others.map(o => o.it.id)]);
+  for (const p of withMembers) {
+    for (const m of membersOf(p)) {
+      if (have.has(m.id) || isLocked(m) || !elMap.get(m.id)) continue;
+      have.add(m.id);
+      others.push({ it: m, el: elMap.get(m.id), x: m.x, y: m.y });
+    }
+  }
   state.drag = { it, el, start, startWorld, fromColumn, moved: false, dropCol: null, others };
   el.setPointerCapture(e.pointerId);
 
@@ -56,9 +67,13 @@ export function onItemPointerDown(e, it, el) {
       el.classList.add('dragging');
       // Dragging raises the cards above everything else, keeping their own order.
       let z = zRange(state.view.items)[1];
-      for (const c of [...others.map(o => o.it), it].sort((a, b) => (a.z || 0) - (b.z || 0))) c.z = ++z;
-      for (const o of others) o.el.style.zIndex = o.it.z;
-      el.style.zIndex = fromColumn ? 99999 : it.z;
+      // (panels stay behind everything: they never take part in the raise)
+      for (const c of [...others.map(o => o.it), it]
+        .filter(c => c.type !== 'panel')
+        .sort((a, b) => (a.z || 0) - (b.z || 0)))
+        c.z = ++z;
+      for (const o of others) if (o.it.type !== 'panel') o.el.style.zIndex = o.it.z;
+      if (it.type !== 'panel') el.style.zIndex = fromColumn ? 99999 : it.z;
       if (fromColumn) {
         dom.world.appendChild(el);
         el.classList.remove('in-column');
@@ -75,6 +90,7 @@ export function onItemPointerDown(e, it, el) {
       o.el.style.top = o.y + wy - startWorld.y + 'px';
     }
     if (!others.length) highlightColumn(ev, it);
+    if (it.type !== 'panel') highlightDropPanel(it, wx, wy);
   };
 
   const up = ev => {
@@ -129,6 +145,7 @@ function highlightColumn(ev, it) {
 
 async function finishDrag(ev) {
   const { it, el } = state.drag;
+  clearDropPanel();
   dom.world.querySelectorAll('.column.drop-target').forEach(c => c.classList.remove('drop-target'));
   if (state.drag.dropCol) {
     const order = insertOrder(state.drag.dropCol, ev.clientY, it.id);
@@ -156,6 +173,7 @@ async function finishDrag(ev) {
       ...others.map(o => ({ id: o.it.id, x: o.it.x, y: o.it.y, z: o.it.z })),
     ]);
     if (wasChild) render();
+    refreshPanels();
   }
   state.drag = null;
 }

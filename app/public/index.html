@@ -13,12 +13,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#212226" media="(prefers-color-scheme: dark)" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Figtree:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&display=swap"
-      rel="stylesheet"
-    />
+    <link rel="stylesheet" href="/vendor/fonts.css" />
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
@@ -50,6 +45,9 @@
         </button>
         <button type="button" class="top-phone" id="trashBtn" aria-label="Trash" title="Trash" aria-haspopup="dialog">
           <i data-lucide="trash-2"></i>
+        </button>
+        <button type="button" class="top-phone" id="pipelineBtn" aria-label="Pipeline" title="Pipeline: ideas by stage">
+          <i data-lucide="kanban"></i>
         </button>
         <button type="button" class="ghost" id="filterBtn" aria-haspopup="menu" aria-expanded="false">Filter</button>
         <button type="button" class="ghost" id="exportBtn" aria-haspopup="menu" aria-expanded="false">Export</button>
@@ -118,6 +116,14 @@
         <button class="tool" data-tool="sketch" title="Sketch">
           <i data-lucide="pen-line"></i>
           Sketch
+        </button>
+        <button
+          class="tool"
+          data-tool="panel"
+          title="Panel — a named background area that groups the cards placed on it"
+        >
+          <i data-lucide="layout-panel-top"></i>
+          Panel
         </button>
         <button class="tool" data-tool="table" title="Table">
           <i data-lucide="table"></i>
@@ -440,9 +446,26 @@
 
     <div id="exportMenu" role="menu" hidden>
       <a role="menuitem" id="exportMd" download>This board as Markdown</a>
+      <button type="button" role="menuitem" id="exportCanvas">This board as JSON Canvas</button>
+      <button type="button" role="menuitem" id="exportCanvasNested">…with nested boards</button>
+      <button type="button" role="menuitem" id="importCanvas">Import a .canvas file…</button>
       <a role="menuitem" href="/api/backup" download title="Every board and card; uploaded files aren't included"
         >Database backup (.db)</a
       >
+    </div>
+
+    <input type="file" id="canvasInput" accept=".canvas,.json,application/json" hidden />
+
+    <div id="pipelineView" hidden>
+      <div class="pl-top">
+        <button class="pl-close" id="plClose"><i data-lucide="x"></i> Close</button>
+        <h3>Pipeline</h3>
+        <span class="pl-hint"
+          >Every staged idea, newest change first. Drag a card to another column to change its stage; click it to open
+          it on its board.</span
+        >
+      </div>
+      <div class="pl-cols" id="plCols"></div>
     </div>
 
     <dialog id="searchDialog" aria-label="Search">
@@ -466,7 +489,7 @@
     />
     <div class="toast" id="toast"></div>
 
-    <script src="https://unpkg.com/lucide@0.469.0"></script>
+    <script src="/vendor/lucide/lucide.min.js"></script>
     <script type="module" src="/js/main.js"></script>
   </body>
 </html>

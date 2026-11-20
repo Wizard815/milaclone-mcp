@@ -1,5 +1,7 @@
 'use strict';
 
+import { STAGE_LABELS } from './stages.js';
+import { PANEL_SHAPES, refreshPanels, startPanelResize } from './panels.js';
 import { state, dom, elMap, COLORS } from './state.js';
 import {
   colorVar,
@@ -46,7 +48,12 @@ export function render() {
   leaveRichEdit(elMap.get(state.editingId));
   dom.world.innerHTML = '';
   elMap.clear();
-  const free = state.view.items.filter(it => !it.parentItemId);
+  // Panels first, largest first, so a smaller panel nested in a bigger one is
+  // later in the DOM and so paints (and takes clicks) on top of it.
+  const area = p => (p.w || 480) * (p.h || 320);
+  const free = state.view.items
+    .filter(it => !it.parentItemId)
+    .sort((a, b) => (b.type === 'panel') - (a.type === 'panel') || (a.type === 'panel' ? area(b) - area(a) : 0));
   for (const it of free) {
     if (it.type === 'line') continue; // drawn by lines.js
     const el = renderItem(it);
@@ -54,6 +61,7 @@ export function render() {
     elMap.set(it.id, el);
   }
   applyFilter(); // and redraws the lines, whose ends may have just hidden
+  refreshPanels();
   dom.hint.style.display = state.view.items.length ? 'none' : 'block';
   refreshIcons(dom.world);
 }
@@ -139,7 +147,8 @@ export function renderItem(it) {
     el.style.left = it.x + 'px';
     el.style.top = it.y + 'px';
     el.style.width = (it.w || 240) + 'px';
-    el.style.zIndex = it.z ?? 1; // may be negative after Send to Back
+    if (it.type === 'panel' && it.h) el.style.height = it.h + 'px';
+    el.style.zIndex = it.type === 'panel' ? PANEL_Z : (it.z ?? 1); // may be negative after Send to Back
   } else {
     el.classList.add('in-column');
   }
@@ -157,6 +166,25 @@ export function renderItem(it) {
   else if (it.type === 'document') buildDocument(el, it);
   else if (it.type === 'sketch') buildSketch(el, it);
   else if (it.type === 'shortcut') buildShortcut(el, it);
+  else if (it.type === 'panel') buildPanel(el, it);
+
+  // Miladash: stage chip (Thought / Design / Code) and the promoted state.
+  if (it.stage) {
+    el.dataset.stage = it.stage;
+    const chip = document.createElement('span');
+    chip.className = 'stage-chip stage-' + it.stage;
+    chip.textContent = STAGE_LABELS[it.stage] || it.stage;
+    chip.title = 'Stage (right-click to change)';
+    el.appendChild(chip);
+  }
+  if (it.data && it.data.promoted) {
+    el.classList.add('promoted');
+    const p = document.createElement('span');
+    p.className = 'promoted-chip';
+    p.textContent = 'Project';
+    p.title = 'Promoted to Pondering Orb' + (it.data.promoted.name ? ' as "' + it.data.promoted.name + '"' : '');
+    el.appendChild(p);
+  }
 
   const chips = labelChips(it);
   if (chips) (el.querySelector('.col-head') || el).appendChild(chips);
@@ -201,7 +229,7 @@ export function renderItem(it) {
     el.appendChild(lockBadge);
   }
 
-  if (it.type !== 'board' && !it.parentItemId && !isLocked(it)) {
+  if (it.type !== 'board' && it.type !== 'panel' && !it.parentItemId && !isLocked(it)) {
     const rz = document.createElement('div');
     rz.className = 'resize';
     rz.setAttribute('data-nodrag', '');
@@ -237,6 +265,53 @@ function richField(cls, it, placeholder) {
   f.toggleAttribute('data-empty', isEmptyDoc(it.data.doc));
   f.appendChild(docToDom(it.data.doc));
   return f;
+}
+
+// A named, free-form background region that groups the cards placed over it
+// (see panels.js). Only its header, edge and corner handle take pointer events
+// -- the body is click-through, so you can still pan and box-select across it.
+// Always behind every real card (PANEL_Z is below any card's z).
+const PANEL_Z = -999999;
+function buildPanel(el, it) {
+  el.classList.add('panel', 'shape-' + (it.data.shape || 'rounded'));
+  el.style.setProperty('--panel-c', colorVar(it.color || 'slate'));
+  if (!it.h) el.style.height = '320px';
+  const head = document.createElement('div');
+  head.className = 'panel-head';
+  const t = makeField('input', 'panel-title', it.data.title, 'Panel name');
+  t.addEventListener('input', () => {
+    saveData(it, { title: t.value });
+    refreshPanels();
+  });
+  const count = document.createElement('span');
+  count.className = 'panel-count';
+  count.textContent = (it._memberCount || 0) + ((it._memberCount || 0) === 1 ? ' item' : ' items');
+  const shapeBtn = document.createElement('button');
+  shapeBtn.className = 'panel-shape-btn';
+  shapeBtn.setAttribute('data-nodrag', '');
+  shapeBtn.title = 'Panel shape: ' + (it.data.shape || 'rounded') + ' (click to change)';
+  shapeBtn.appendChild(
+    lucideEl(
+      { rect: 'square', rounded: 'rectangle-horizontal', ellipse: 'circle' }[it.data.shape || 'rounded'] || 'square'
+    )
+  );
+  shapeBtn.onclick = e => {
+    e.stopPropagation();
+    const next = PANEL_SHAPES[(PANEL_SHAPES.indexOf(it.data.shape || 'rounded') + 1) % PANEL_SHAPES.length];
+    saveData(it, { shape: next });
+    refreshItem(it);
+    refreshPanels();
+  };
+  head.append(t, count, shapeBtn);
+  el.appendChild(head);
+  if (!isLocked(it)) {
+    const rz = document.createElement('div');
+    rz.className = 'panel-resize';
+    rz.setAttribute('data-nodrag', '');
+    rz.title = 'Drag to resize';
+    rz.addEventListener('pointerdown', e => startPanelResize(e, it, el));
+    el.appendChild(rz);
+  }
 }
 
 function buildComment(el, it) {

@@ -1,6 +1,7 @@
 'use strict';
 
 const express = require('express');
+const fs = require('fs');
 const path = require('path');
 const { DB_FILE } = require('./db');
 
@@ -18,7 +19,44 @@ require('esbuild').buildSync({
   logLevel: 'warning',
 });
 
+const API_KEY = (process.env.API_KEY || '').trim();
+
 const app = express();
+
+// Lucide icons and the UI fonts ship as pinned npm dependencies and are served
+// by the app itself, so a self-hosted box with no route to a CDN still renders.
+const pkgDir = pkg => path.dirname(require.resolve(`${pkg}/package.json`));
+app.use('/vendor/lucide', express.static(path.join(pkgDir('lucide'), 'dist', 'umd'), { index: false }));
+const FONT_FILES = [
+  ['@fontsource-variable/fraunces', 'opsz.css', 'Fraunces'],
+  ['@fontsource-variable/source-serif-4', 'opsz.css', 'Source Serif 4'],
+  ['@fontsource/figtree', '400.css', 'Figtree'],
+  ['@fontsource/figtree', '500.css', 'Figtree'],
+  ['@fontsource/figtree', '600.css', 'Figtree'],
+];
+const FONTS_CSS = FONT_FILES.map(([pkg, file, family]) =>
+  fs
+    .readFileSync(path.join(pkgDir(pkg), file), 'utf8')
+    .replace(/font-family:\s*'[^']*'/g, `font-family: '${family}'`)
+    .replace(/url\(\.\/files\//g, `url(/vendor/fonts/${pkg.split('/')[1]}/`)
+).join('\n');
+app.get('/vendor/fonts.css', (req, res) => res.type('text/css').send(FONTS_CSS));
+for (const pkg of new Set(FONT_FILES.map(f => f[0]))) {
+  app.use(
+    `/vendor/fonts/${pkg.split('/')[1]}`,
+    express.static(path.join(pkgDir(pkg), 'files'), { index: false, maxAge: '30d', immutable: true })
+  );
+}
+
+// With API_KEY set, index.html carries the key as a meta tag so the browser UI
+// keeps authenticating against /api/* (see public/js/api.js).
+if (API_KEY) {
+  const html = () =>
+    fs
+      .readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8')
+      .replace('</head>', `  <meta name="milaclone-key" content="${API_KEY.replace(/"/g, '&quot;')}">\n</head>`);
+  app.get(['/', '/index.html'], (req, res) => res.set('Cache-Control', 'no-cache').type('html').send(html()));
+}
 // The generic handler can also reach public/uploads (e.g. via an encoded URL), so
 // it applies the same upload safety headers to anything it resolves in there.
 const routes = require('./routes');

@@ -5,6 +5,7 @@ const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const crypto = require('crypto');
 
 const {
   db,
@@ -20,18 +21,19 @@ const {
   copyItemDeep,
   moveItemDeep,
   RICH_TYPES,
+  richParts,
   STAGES,
   LINE_KINDS,
   toRich,
 } = require('./db');
 const { exportMarkdown } = require('./export-md');
 const panels = require('./panels');
-const canvasFile = require('./canvasfile');
 
 // stage: one of STAGES, or null for "not in the pipeline". A connector line's
 // kind lives in data.kind (relates | depends | became).
 const badStage = v => v !== undefined && v !== null && !STAGES.includes(v);
-const badLineKind = (type, data) => type === 'line' && data && data.kind !== undefined && !LINE_KINDS.includes(data.kind);
+const badLineKind = (type, data) =>
+  type === 'line' && data && data.kind !== undefined && !LINE_KINDS.includes(data.kind);
 
 const UPLOAD_DIR = path.join(__dirname, 'public', 'uploads');
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -80,6 +82,25 @@ const ALLOWED_UPLOAD = mime =>
   mime === 'application/json';
 
 const router = express.Router();
+
+// ---- API key auth ------------------------------------------------------------------
+// Set API_KEY to require every /api/* request (except the health check and the
+// task API, which has its own bearer token) to present it as `X-API-Key` or
+// `Authorization: Bearer <key>`. Unset keeps the API open (network-trust setups).
+const API_KEY = (process.env.API_KEY || '').trim();
+const keyMatches = (a, b) => {
+  const x = Buffer.from(a),
+    y = Buffer.from(b);
+  return x.length === y.length && crypto.timingSafeEqual(x, y);
+};
+router.use('/api', (req, res, next) => {
+  if (!API_KEY || req.path === '/health' || req.path.startsWith('/tasks')) return next();
+  const header = req.get('Authorization') || '';
+  const bearer = header.toLowerCase().startsWith('bearer ') ? header.slice(7).trim() : '';
+  const provided = req.get('X-API-Key') || bearer;
+  if (provided && keyMatches(provided, API_KEY)) return next();
+  res.status(401).json({ error: 'unauthorized' });
+});
 // No client sends compressed bodies, so refuse them (415) rather than inflate:
 // the gzip path is where body-parser < 1.20.9 can be stalled (GHSA-27r3-jxmh-p828).
 router.use(express.json({ limit: '5mb', inflate: false }));
@@ -220,8 +241,10 @@ router.post('/api/item', (req, res) => {
   if (badParent(b.parentItemId, b.canvasId, null, b.type || 'note')) {
     return res.status(400).json({ error: 'bad parentItemId' });
   }
-  if (badStage(b.stage)) return res.status(400).json({ error: 'stage must be one of ' + STAGES.join(', ') + ' or null' });
-  if (badLineKind(b.type, b.data)) return res.status(400).json({ error: 'line kind must be one of ' + LINE_KINDS.join(', ') });
+  if (badStage(b.stage))
+    return res.status(400).json({ error: 'stage must be one of ' + STAGES.join(', ') + ' or null' });
+  if (badLineKind(b.type, b.data))
+    return res.status(400).json({ error: 'line kind must be one of ' + LINE_KINDS.join(', ') });
   if (b.type === 'shortcut' && !stmt.getCanvas.get(b.data && b.data.targetCanvasId)) {
     return res.status(400).json({ error: 'bad targetCanvasId' });
   }
@@ -320,15 +343,21 @@ router.patch('/api/item/:id', (req, res) => {
   }
   // Moving a panel carries everything inside it (unless moveMembers: false).
   // Membership is read from where things are *before* the move.
-  let carried = [], dx = 0, dy = 0;
-  const priorMembers = it.type === 'panel' ? new Set(panels.allMembers(it, itemsForCanvas(it.canvasId)).map(m => m.id)) : new Set();
+  let carried = [],
+    dx = 0,
+    dy = 0;
+  const priorMembers =
+    it.type === 'panel' ? new Set(panels.allMembers(it, itemsForCanvas(it.canvasId)).map(m => m.id)) : new Set();
   if (it.type === 'panel' && b.moveMembers !== false && (b.x != null || b.y != null)) {
     dx = b.x != null ? Math.round(b.x) - it.x : 0;
     dy = b.y != null ? Math.round(b.y) - it.y : 0;
-    if (dx || dy) carried = panels.allMembers(it, itemsForCanvas(it.canvasId));
+    // A card with its position locked stays where it is, like a drag in the UI.
+    if (dx || dy) carried = panels.allMembers(it, itemsForCanvas(it.canvasId)).filter(m => !(m.data && m.data.locked));
   }
-  if (badStage(b.stage)) return res.status(400).json({ error: 'stage must be one of ' + STAGES.join(', ') + ' or null' });
-  if (badLineKind(it.type, b.data)) return res.status(400).json({ error: 'line kind must be one of ' + LINE_KINDS.join(', ') });
+  if (badStage(b.stage))
+    return res.status(400).json({ error: 'stage must be one of ' + STAGES.join(', ') + ' or null' });
+  if (badLineKind(it.type, b.data))
+    return res.status(400).json({ error: 'line kind must be one of ' + LINE_KINDS.join(', ') });
   for (const k of ['x', 'y', 'w', 'h', 'z']) {
     if (b[k] != null) it[k] = Math.round(b[k]);
   }
@@ -354,8 +383,10 @@ router.patch('/api/item/:id', (req, res) => {
   // A client from before rich text may still send title/body: rebuild the body
   // from them so the edit isn't stored somewhere nothing renders.
   if (RICH_TYPES.has(it.type) && b.data && (b.data.title != null || b.data.body != null)) {
-    const { doc, text, ...rest } = it.data; // oxlint-disable-line no-unused-vars -- dropped on purpose
-    it.data = toRich(rest);
+    // Only the field sent changes: {body} alone keeps the existing title, and vice versa.
+    const cur = richParts(row.data ? JSON.parse(row.data) : {});
+    const { doc, text, title: _t, body: _b, ...rest } = it.data; // oxlint-disable-line no-unused-vars -- dropped on purpose
+    it.data = toRich({ ...rest, title: b.data.title ?? cur.title, body: b.data.body ?? cur.body });
   }
 
   const isBoard = it.type === 'board' && it.data && it.data.childCanvasId;
@@ -399,8 +430,17 @@ router.patch('/api/item/:id', (req, res) => {
     }
     for (const m of carried) {
       stmt.updateItem.run({
-        id: m.id, canvasId: m.canvasId, parentItemId: m.parentItemId ?? null, type: m.type,
-        x: m.x + dx, y: m.y + dy, w: m.w, h: m.h ?? null, z: m.z, color: m.color ?? null, data: JSON.stringify(m.data),
+        id: m.id,
+        canvasId: m.canvasId,
+        parentItemId: m.parentItemId ?? null,
+        type: m.type,
+        x: m.x + dx,
+        y: m.y + dy,
+        w: m.w,
+        h: m.h ?? null,
+        z: m.z,
+        color: m.color ?? null,
+        data: JSON.stringify(m.data),
       });
     }
   })();

@@ -26,7 +26,7 @@ from typing import Any
 
 from mcp.server.mcpserver import MCPServer
 
-from milaclone_mcp.auth import load_config
+from milaclone_mcp.auth import load_config, load_task_token
 from milaclone_mcp.client import MilacloneClient
 from milaclone_mcp.exceptions import NotFoundError
 
@@ -45,8 +45,38 @@ def _check_stage(stage: str | None) -> None:
 
 CREATABLE_TYPES = (
     "note", "todo", "link", "column", "comment", "board",
-    "heading", "document", "table", "color", "draw", "line", "shape", "panel",
+    "document", "table", "swatch", "line", "shortcut", "panel",
 )
+
+
+def _line_data(data: dict[str, Any]) -> dict[str, Any]:
+    """Friendly line fields (fromId/toId, label) -> the app's stored shape (from/to, text)."""
+    d = dict(data)
+    if "fromId" in d:
+        d["from"] = {"id": d.pop("fromId")}
+    if "toId" in d:
+        d["to"] = {"id": d.pop("toId")}
+    if d.get("label") is not None:
+        d["text"] = d["label"]
+    if d.get("kind") == "depends" and "dashed" not in d:
+        d["dashed"] = True
+    return d
+
+
+def _normalize(item_type: str, data: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    """Map legacy/alias item types and friendly fields onto what the app stores."""
+    if item_type == "color":
+        item_type = "swatch"
+    if item_type == "heading":
+        item_type, data = "note", {"title": data.get("text") or data.get("title") or "", "body": ""}
+    if item_type == "swatch" and "hex" in data and "text" not in data:
+        data = {**data, "text": data["hex"]}
+    if item_type == "line":
+        data = _line_data(data)
+        for end in ("from", "to"):
+            if not isinstance(data.get(end), dict) or not data[end].get("id"):
+                raise ValueError(f"a line needs {end}Id (the id of a card on the same board)")
+    return item_type, data
 
 
 def _get_client() -> MilacloneClient:
@@ -121,9 +151,13 @@ def get_board(board_id: str) -> dict[str, Any]:
             `data.childCanvasId` in a parent board's item list.
 
     Each item has: id, type (note/todo/link/column/comment/board/image/file/
-    heading/document/table/color/draw/line), x/y/w/h, color, data (shape
-    depends on type — see `create_item`), and for board items,
-    `_childTitle`/`_childCount` describing the nested board.
+    document/table/swatch/sketch/shortcut/line/panel), x/y/w/h, color, stage,
+    data (shape depends on type — see `create_item`), and: for board items
+    `_childTitle`/`_childCount`; for cards `_panelId`/`_panelTitle` when
+    inside a panel; for panels `_memberIds`/`_memberCount`. Notes and comments
+    carry their text in `data.text` (a note's title is its first line) beside
+    the rich `data.doc`. Prefer `get_board_outline` first — this returns every
+    card's full contents.
     """
     return _get_client().get_canvas(board_id)
 
@@ -175,12 +209,17 @@ def search(query: str, limit: int = 25) -> dict[str, Any]:
 
     Args:
         query: text to search for.
-        limit: max matches to return per category (items / boards), default 25.
+        limit: max results to return, default 25.
 
-    Returns {"items": [...], "boards": [...]}. Each item includes its
-    canvasId/canvasTitle so you can jump to it with `get_board`.
+    Returns {"results": [...]}: boards first ({"kind": "board", "canvasId",
+    "title", "path"}) then cards ({"kind": "item", "id", "canvasId", "type",
+    "title" (a snippet around the match), "path"}). `path` is the board
+    breadcrumb as titles. Use `get_board_outline`/`get_board` with canvasId or
+    `get_item` with id to read more.
     """
-    return _get_client().search(query, limit=limit)
+    res = _get_client().search(query, limit=limit)
+    res["results"] = res.get("results", [])[:limit]
+    return res
 
 
 @mcp.tool()
@@ -213,63 +252,43 @@ def create_item(
     Args:
         canvas_id: board to add the card to.
         item_type: one of "note", "todo", "link", "column", "comment", "board",
-            "heading", "document", "table", "color", "draw", "line", "shape",
-            "panel" (prefer `create_panel` / `group_into_panel` for panels).
-            (Images and uploaded files aren't supported here — they require a
-            file upload through the web UI.)
+            "document", "table", "swatch", "line", "shortcut", "panel".
+            Aliases: "heading" makes a note whose text is a title only;
+            "color" is "swatch". (Images, uploads and sketches need the web UI.)
         data: shape depends on item_type:
-            note:     {"title": str, "body": str}
+            note:     {"title": str, "body": str} — plain text; stored as rich
+                text (title becomes a heading). Reading it back gives
+                `data.text` ("title\nbody") plus `data.doc` (rich JSON). Rich
+                formatting made in the web UI is flattened if you edit the body
+                here. Optional "labels": [str, ...].
+            comment:  {"body": str}
             todo:     {"title": str, "tasks": [{"id": str, "text": str, "done": bool}]}
             link:     {"title": str, "url": str}
-            column:   {"title": str}
-            comment:  {"body": str}
+            column:   {"title": str} — a vertical stack; add cards to it with
+                parent_item_id.
             board:    {"title": str, "icon": str (optional Lucide icon name)}
-            heading:  {"text": str, "bold": bool (optional), "underline": bool
-                (optional)} — text color comes from the card's `color`, not
-                a data field.
-            document: {"title": str, "bodyHtml": str} — bodyHtml is rendered
-                rich text (the in-app editor writes real HTML: <b>, <i>, <ul>,
-                <blockquote>, etc.), not markdown or plain text. The card
-                itself is just a tile; opening it in the web UI shows the
-                full-page editor.
-            table:    {"rows": [[str, ...], ...]} — a rectangular grid; every
-                row must be the same length.
-            color:    {"hex": str} — a "#rrggbb" swatch value.
-            draw:     {"strokes": [{"points": [[x, y], ...], "color": str,
-                "width": int}, ...]} — freehand paths in the card's own local
-                pixel space (top-left = 0,0). Not practical to hand-author;
-                mainly useful for reading back what a user drew.
+            document: {"title": str, "text": str} — a full-page document card.
+            table:    {"rows": [[str, ...], ...], "text": str} — rectangular
+                grid (every row the same length); `text` is its plain-text
+                form for search (join cells with spaces).
+            swatch:   {"hex": "#rrggbb", "text": "#rrggbb"}
+            shortcut: {"targetCanvasId": str} — an alias card that opens that board.
             line:     {"fromId": str, "toId": str, "label": str (optional),
-                "kind": "relates" | "depends" | "became" (optional, default
-                "relates"; "depends" draws dashed, "became" marks an idea
-                that turned into something else),
-                "bend": number (optional), "along": number (optional)} — a
-                connector between two *other* items already on this board
-                (by id). x/y/w are ignored for this type — the connector's
-                position is derived entirely from the two cards it joins.
-                `bend`/`along` offset the curve's control point
-                perpendicular/parallel to the straight line between them;
-                omit both for a straight connector.
-            shape:    {"shape": str, "filled": bool, "thickness": int (optional,
-                1-20, default 4)} — a single basic shape ("circle", "square",
-                "triangle", "diamond", or "star") as line art (filled: false)
-                or a solid fill (filled: true), in the card's `color`.
-                `thickness` sets the outline's stroke width (applies whether
-                filled or not). Always renders behind every other card
-                regardless of creation order or z — it's a background
-                decoration, not meant to be interacted with like a normal
-                card. Pass `h` via `update_item` to make it non-square (a
-                rectangle/ellipse/etc. instead of square/circle/etc.) — the
-                shape's geometry stretches to fill whatever w/h it's given.
-            panel:    {"title": str, "shape": "rect" | "rounded" | "ellipse"
-                (default "rounded")} — see `create_panel`.
-        x, y: position on the canvas in board units (default 60, 60). Ignored
-            for item_type "line".
+                "kind": "relates" | "depends" | "became" (optional),
+                "arrow": "end" | "both" | "none" (default "end"),
+                "dashed": bool} — a connector between two *other* cards on
+                this board, by id. (Stored by the app as from:{id}/to:{id};
+                fromId/toId are converted for you.) kind is one of "relates",
+                "depends" (drawn dashed) or "became". x/y/w are ignored.
+            panel:    {"title": str, "shape": "rect" | "rounded" | "ellipse"}
+                — see `create_panel`.
+        x, y: position on the canvas in board units (default 60, 60); 0 is a
+            real coordinate. Ignored for "line".
         w: card width in pixels (defaults to a sensible per-type value).
-            Ignored for "line"; "draw" and "document" are fixed-size and
-            can't be resized after creation.
-        color: one of milaclone's palette names (e.g. "blue", "slate", "rose").
-        parent_item_id: set to nest this card inside a `column` card.
+        color: one of the palette names ("slate", "gray", "teal", "green",
+            "brown", "yellow", "orange", "red", "pink", "purple", "blue",
+            "indigo").
+        parent_item_id: set to nest this card inside a `column` card (same board).
         stage: Miladash idea stage, one of "thought", "design", "code" (omit
             for a card that isn't in the idea pipeline). Stage is a field,
             not a position: it shows as a chip on the card and puts the card
@@ -278,6 +297,7 @@ def create_item(
     Returns the created item, including its new `id`.
     """
     _check_stage(stage)
+    item_type, data = _normalize(item_type, data)
     if item_type == "line" and data.get("kind") not in (None, *LINE_KINDS):
         raise ValueError(f"line kind must be one of {LINE_KINDS}")
     if item_type not in CREATABLE_TYPES:
@@ -397,14 +417,15 @@ def get_board_outline(board_id: str) -> dict[str, Any]:
         d = it.get("data") or {}
         label = (
             it.get("_childTitle") if it["type"] == "board"
-            else d.get("title") or d.get("text") or (d.get("body") or "")[:60] or d.get("url") or ""
+            else d.get("title") or (d.get("text") or "").split("\n")[0] or (d.get("body") or "")[:60] or d.get("url") or ""
         )
         row: dict[str, Any] = {"id": it["id"], "type": it["type"], "label": label[:60],
                                "x": it["x"], "y": it["y"], "w": it.get("w")}
         if it.get("h"):
             row["h"] = it["h"]
         if it["type"] == "line":
-            row = {"id": it["id"], "type": "line", "from": d.get("fromId"), "to": d.get("toId"), "label": d.get("label", "")}
+            row = {"id": it["id"], "type": "line", "from": (d.get("from") or {}).get("id"),
+                   "to": (d.get("to") or {}).get("id"), "label": d.get("label", ""), "kind": d.get("kind", "relates")}
         if it["type"] == "board":
             row["board_id"] = (d or {}).get("childCanvasId")
         if it.get("parentItemId"):
@@ -450,20 +471,91 @@ def duplicate_item(
 ) -> dict[str, Any]:
     """
     Deep-copy a card. A column is copied with its cards; a `board` card is
-    copied with its entire nested subtree (new independent boards). Lines can't
-    be duplicated on their own. By default the copy lands 30 units down-right
-    of the original on the same board; pass canvas_id (and x/y) to copy it to
-    another board. To copy a whole board's *contents* as a reusable starting
-    point, use `save_as_template` instead.
+    copied with its entire nested subtree (new independent boards). By default
+    the copy lands 30 units down-right of the original on the same board; pass
+    canvas_id (and x/y) to copy it to another board. Lines can't be copied on
+    their own (they are copied with their cards). To copy a whole board's
+    contents as a reusable starting point, use `save_as_template`.
     """
-    body: dict[str, Any] = {}
-    if canvas_id is not None:
-        body["canvasId"] = canvas_id
-    if x is not None:
-        body["x"] = x
-    if y is not None:
-        body["y"] = y
-    return _get_client().duplicate_item(item_id, body)
+    client = _get_client()
+    src = client.get_item(item_id)
+    target = canvas_id or src["canvasId"]
+    same = target == src["canvasId"]
+    return client.copy_item(item_id, {
+        "canvasId": target,
+        "x": x if x is not None else (src["x"] + 30 if same else src["x"]),
+        "y": y if y is not None else (src["y"] + 30 if same else src["y"]),
+    })
+
+
+@mcp.tool()
+def move_item(item_id: str, canvas_id: str, x: int = 60, y: int = 60) -> dict[str, Any]:
+    """
+    Move a card (with its column cards / nested boards) to another board at x, y.
+    Use this rather than `update_item(canvas_id=...)` for boards and columns,
+    since it carries their contents along. A board can't be moved into itself.
+    """
+    return _get_client().move_item(item_id, {"canvasId": canvas_id, "x": x, "y": y})
+
+
+@mcp.tool()
+def list_trash() -> dict[str, Any]:
+    """
+    List deleted cards still in the Trash, newest first: id, type, title, the
+    board they were on and whether they are `restorable` (false when their board
+    is itself in the Trash — restore that first). `restore_item(id)` brings one
+    back. Nothing is erased until someone empties the Trash in the web UI.
+    """
+    return _get_client().get_trash()
+
+
+@mcp.tool()
+def export_board_markdown(board_id: str) -> str:
+    """
+    The board as Markdown text (cards under headings; nested boards flattened
+    into sections) — a readable snapshot for summaries or hand-off.
+    """
+    return _get_client().export_markdown(board_id)
+
+
+@mcp.tool()
+def add_task(
+    title: str, notes: str | None = None, tags: list[str] | None = None, due_date: str | None = None,
+    starred: bool = False, list_id: str | None = None,
+) -> dict[str, Any]:
+    """
+    Add a task to the Inbox to-do on Home (or to the to-do card `list_id`) via the
+    app's task API — the same inbox the voice add-on feeds. Needs TASK_API_TOKEN
+    in the MCP's environment (and on the app); otherwise explains how to set it.
+    due_date is YYYY-MM-DD. Skips an open task with the same title.
+    """
+    token = load_task_token()
+    if not token:
+        raise ValueError("add_task needs TASK_API_TOKEN set for the MCP server (same value as the app's). "
+                         "To add a task without it, use `add_todo_task` on a to-do card.")
+    body: dict[str, Any] = {"title": title, "source": "mcp", "dedupe": True, "starred": starred}
+    if notes:
+        body["notes"] = notes
+    if tags:
+        body["tags"] = tags
+    if due_date:
+        body["dueDate"] = due_date
+    if list_id:
+        body["listId"] = list_id
+    return _get_client().tasks_create(token, body)
+
+
+@mcp.tool()
+def list_tasks(status: str = "open") -> dict[str, Any]:
+    """
+    Every task across all to-do cards, by due date: status "open" (default),
+    "done" or "all". Each task has listId/listTitle. Needs TASK_API_TOKEN like
+    `add_task`; `list_todo_lists` works without it.
+    """
+    token = load_task_token()
+    if not token:
+        raise ValueError("list_tasks needs TASK_API_TOKEN; use `list_todo_lists` instead.")
+    return _get_client().tasks_list(token, status)
 
 
 @mcp.tool()
@@ -562,7 +654,8 @@ def update_item(
     Partially update a card. Only pass the fields you want to change.
 
     `data` is shallow-merged into the existing data server-side — for a
-    `note`, passing {"body": "new text"} leaves `title` untouched. For a
+    `note`, passing {"body": "new text"} leaves its title untouched (and
+    {"title": ...} leaves the body). For a
     `todo`'s `tasks` array specifically, a partial merge won't work (the
     whole array is replaced) — use `add_todo_task`/`set_todo_task_done`, or
     pass the full tasks list yourself.
@@ -579,6 +672,11 @@ def update_item(
     _check_stage(stage)
     body: dict[str, Any] = {}
     if data is not None:
+        if any(k in data for k in ("fromId", "toId", "label")):
+            data = _line_data(data)
+            for end in ("from", "to"):  # an end is replaced as a whole: {id} or a free {x, y}
+                if end in data and not isinstance(data[end], dict):
+                    raise ValueError(f"{end} must be an object like {{\"id\": ...}}")
         body["data"] = data
     if x is not None:
         body["x"] = x
@@ -625,12 +723,10 @@ def promote_item(item_id: str) -> dict[str, Any]:
 @mcp.tool()
 def delete_item(item_id: str) -> dict[str, Any]:
     """
-    Delete a card. If it's a `board` card, its entire nested board (and
-    everything on it, recursively) is deleted too.
-
-    Deleting a `board` card can be undone with `restore_item` (pass this
-    same item_id) — the whole nested subtree comes back exactly as it was.
-    Deleting any other card type is permanent; there's no restore for those.
+    Move a card to the Trash. A `board` card takes its whole nested board with
+    it, a column takes its cards, and lines attached to it go too. Nothing is
+    erased: `restore_item` (same item_id) brings back exactly what that delete
+    removed, and `list_trash` shows what is there.
     """
     return _get_client().delete_item(item_id)
 
@@ -638,16 +734,15 @@ def delete_item(item_id: str) -> dict[str, Any]:
 @mcp.tool()
 def restore_item(item_id: str) -> dict[str, Any]:
     """
-    Undo the deletion of a `board` card — brings back the board and
-    everything nested inside it (however deep), exactly as it was.
+    Undo a delete: brings back the card and everything that went with it (a
+    board's nested boards, a column's cards, attached lines).
 
     Args:
-        item_id: the id of the deleted board card (the id you passed to
-            `delete_item`, not its child board's id).
+        item_id: the id passed to `delete_item` (see `list_trash`).
 
-    Only works for boards, and only until something else deletes that same
-    board again. Other card types can't be restored this way — deleting
-    them is permanent, so there's nothing to call this with.
+    Fails if the card's own board is in the Trash (restore that board first) or
+    if the item isn't in the Trash. A card restored after its column was
+    deleted separately comes back loose where the column stood.
     """
     return _get_client().restore_item(item_id)
 

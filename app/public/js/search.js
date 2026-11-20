@@ -58,12 +58,17 @@ async function run() {
   refreshIcons(list);
 }
 
-async function go(r) {
+function go(r) {
   el('searchDialog').close();
-  await openCanvas(r.canvasId);
+  return revealCard(r.canvasId, r.kind === 'item' ? r.id : null);
+}
+
+// Opens a board and, given a card id, centres and selects that card.
+export async function revealCard(canvasId, itemId) {
+  await openCanvas(canvasId);
   // another navigation won, or the board was gone and we fell back to Home
-  if (r.kind !== 'item' || !state.view.canvas || state.view.canvas.id !== r.canvasId) return;
-  const it = state.view.items.find(i => i.id === r.id);
+  if (!itemId || !state.view.canvas || state.view.canvas.id !== canvasId) return;
+  const it = state.view.items.find(i => i.id === itemId);
   if (!it) return;
   // A card inside a column is shown by centring its column.
   const at = (it.parentItemId && state.view.items.find(i => i.id === it.parentItemId)) || it;

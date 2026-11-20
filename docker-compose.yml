@@ -26,6 +26,10 @@ services:
       # API token (one of Orb's ORB_API_TOKENS). Server-side only.
       - ORB_URL=${ORB_URL:-}
       - ORB_TOKEN=${ORB_TOKEN:-}
+      # Bearer token for the task API (/api/tasks; docs: app/docs/task-api.md),
+      # used by the voice add-on and the MCP's add_task/list_tasks. Unset = off.
+      - TASK_API_TOKEN=${TASK_API_TOKEN:-}
+      - TASK_TZ=${TASK_TZ:-UTC}
     networks:
       - edge
     deploy:
@@ -51,6 +55,8 @@ services:
       # Protects THIS server's own /mcp endpoint (streamable-http). Separate
       # concern from API_KEY above — see mcp/README.md.
       - MCP_AUTH_TOKEN=${MCP_AUTH_TOKEN:-}
+      # Same value as the app's, enables the MCP's add_task / list_tasks.
+      - TASK_API_TOKEN=${TASK_API_TOKEN:-}
     networks:
       # `edge` for tunnel reachability (same as `app`); `ai` in addition, so
       # AI tooling can reach this service directly without going through the
@@ -62,6 +68,52 @@ services:
         limits:
           cpus: "0.25"
           memory: 128M
+
+  # ---- Optional voice capture add-on (app/addons/voice/README.md) ------------
+  # Off unless COMPOSE_PROFILES=voice in .env. Sends audio to Deepgram and the
+  # transcript to an LLM, then creates tasks through the app's task API over
+  # the edge network. The Alexa/Cloudflare part is in app/docker-compose.yml.
+  pipeline:
+    build: ./app/addons/voice/pipeline
+    image: milaclone-pipeline:local
+    container_name: milaclone-pipeline
+    profiles: ["voice"]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8183:8000"
+    volumes:
+      - milaclone_ingest:/data
+    environment:
+      - INGEST_API_TOKEN=${INGEST_API_TOKEN:-}
+      - TASK_API_TOKEN=${TASK_API_TOKEN:-}
+      - APP_URL=http://milaclone-app:4321
+      - TASK_TZ=${TASK_TZ:-UTC}
+      - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY:-}
+      - DEEPGRAM_MODEL=${DEEPGRAM_MODEL:-nova-3}
+      - DEEPGRAM_LANGUAGE=${DEEPGRAM_LANGUAGE:-en}
+      - DEEPGRAM_MIP_OPT_OUT=${DEEPGRAM_MIP_OPT_OUT:-true}
+      - DEEPGRAM_KEYTERMS=${DEEPGRAM_KEYTERMS:-}
+      - TRANSCRIBE_RETRY_DELAYS=${TRANSCRIBE_RETRY_DELAYS:-60,300,900}
+      - ALERT_WEBHOOK_URL=${ALERT_WEBHOOK_URL:-}
+      - INGEST_REVIEW_URL=${INGEST_REVIEW_URL:-}
+      - EXTRACT_PROVIDER=${EXTRACT_PROVIDER:-anthropic}
+      - EXTRACT_MODEL=${EXTRACT_MODEL:-}
+      - EXTRACT_API_KEY=${EXTRACT_API_KEY:-}
+      - EXTRACT_BASE_URL=${EXTRACT_BASE_URL:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - app
+    networks:
+      - edge
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M
+
+volumes:
+  milaclone_ingest:
 
 networks:
   # Existing Cloudflare Tunnel (cloudflared) network — lets it reach either

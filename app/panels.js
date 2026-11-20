@@ -20,18 +20,21 @@ const SHAPES = ['rect', 'rounded', 'ellipse'];
 const DEFAULT_PANEL = { w: 480, h: 320 };
 const HEADER_H = 44;
 
-const isPanel = (it) => it.type === 'panel';
-const area = (p) => (p.w || DEFAULT_PANEL.w) * (p.h || DEFAULT_PANEL.h);
+const isPanel = it => it.type === 'panel';
+const area = p => (p.w || DEFAULT_PANEL.w) * (p.h || DEFAULT_PANEL.h);
 
 function anchorOf(it) {
   return { x: it.x + (it.w || 240) / 2, y: it.y + ANCHOR_DROP };
 }
 
 function containsPoint(panel, pt) {
-  const w = panel.w || DEFAULT_PANEL.w, h = panel.h || DEFAULT_PANEL.h;
+  const w = panel.w || DEFAULT_PANEL.w,
+    h = panel.h || DEFAULT_PANEL.h;
   if (panel.data && panel.data.shape === 'ellipse') {
-    const rx = w / 2, ry = h / 2;
-    const dx = (pt.x - (panel.x + rx)) / rx, dy = (pt.y - (panel.y + ry)) / ry;
+    const rx = w / 2,
+      ry = h / 2;
+    const dx = (pt.x - (panel.x + rx)) / rx,
+      dy = (pt.y - (panel.y + ry)) / ry;
     return dx * dx + dy * dy <= 1;
   }
   return pt.x >= panel.x && pt.x <= panel.x + w && pt.y >= panel.y && pt.y <= panel.y + h;
@@ -90,34 +93,61 @@ function annotate(items) {
 function estimateH(it) {
   const d = it.data || {};
   switch (it.type) {
-    case 'todo': return 70 + 36 * Math.max(1, (d.tasks || []).length);
-    case 'table': return 50 + 32 * Math.max(1, (d.rows || []).length);
-    case 'column': return 80;
-    case 'note': return 60 + 22 * Math.ceil(String(d.text || d.body || '').length / 28);
-    case 'board': case 'document': return 140;
-    case 'link': return 110;
-    case 'heading': return 60;
-    case 'color': return 150;
-    default: return 140;
+    case 'todo':
+      return 70 + 36 * Math.max(1, (d.tasks || []).length);
+    case 'table':
+      return 50 + 32 * Math.max(1, (d.rows || []).length);
+    case 'column':
+      return 80;
+    case 'note':
+      return 60 + 22 * Math.ceil(String(d.text || d.body || '').length / 28);
+    case 'board':
+    case 'document':
+      return 140;
+    case 'link':
+      return 110;
+    case 'heading':
+      return 60;
+    case 'color':
+      return 150;
+    default:
+      return 140;
   }
 }
 
 function boundsFor(items, { padding = 40, estimateH: est = estimateH } = {}) {
-  let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+  let x1 = Infinity,
+    y1 = Infinity,
+    x2 = -Infinity,
+    y2 = -Infinity;
   for (const it of items) {
-    const w = it.w || 240, h = it.h || est(it);
-    x1 = Math.min(x1, it.x); y1 = Math.min(y1, it.y);
-    x2 = Math.max(x2, it.x + w); y2 = Math.max(y2, it.y + h);
+    const w = it.w || 240,
+      h = it.h || est(it);
+    x1 = Math.min(x1, it.x);
+    y1 = Math.min(y1, it.y);
+    x2 = Math.max(x2, it.x + w);
+    y2 = Math.max(y2, it.y + h);
   }
   return {
     x: Math.round(x1 - padding),
     y: Math.round(y1 - padding - HEADER_H),
     w: Math.round(x2 - x1 + padding * 2),
-    h: Math.round(y2 - y1 + padding * 2 + HEADER_H)
+    h: Math.round(y2 - y1 + padding * 2 + HEADER_H),
   };
 }
 
 module.exports = {
-  SHAPES, DEFAULT_PANEL, HEADER_H, ANCHOR_DROP,
-  isPanel, anchorOf, containsPoint, isMemberOf, computeMembership, allMembers, annotate, boundsFor, estimateH
+  SHAPES,
+  DEFAULT_PANEL,
+  HEADER_H,
+  ANCHOR_DROP,
+  isPanel,
+  anchorOf,
+  containsPoint,
+  isMemberOf,
+  computeMembership,
+  allMembers,
+  annotate,
+  boundsFor,
+  estimateH,
 };

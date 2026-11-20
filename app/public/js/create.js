@@ -39,6 +39,8 @@ export function defaultsFor(type) {
       return { w: 320, data: { strokes: [] } };
     case 'document':
       return { w: 220, data: { title: '' } };
+    case 'panel':
+      return { w: 480, h: 320, color: 'slate', data: { title: 'Panel', shape: 'rounded' } };
     default:
       return { w: 240, data: {} };
   }
@@ -52,7 +54,15 @@ export async function createAt(type, wx, wy) {
   state.view.items.push(it);
   render();
   select(it.id);
-  if (type !== 'board' && type !== 'image' && type !== 'file') {
+  if (type === 'panel') {
+    const el = elMap.get(it.id);
+    const f = el?.querySelector('.panel-title');
+    if (f) {
+      enterEdit(el);
+      f.focus();
+      f.select();
+    }
+  } else if (type !== 'board' && type !== 'image' && type !== 'file') {
     const el = elMap.get(it.id);
     enterEdit(el);
     el.querySelector('[data-edit]')?.focus();

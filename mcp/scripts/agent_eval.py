@@ -85,7 +85,15 @@ class World:
         return httpx.get(self.base + path, timeout=20).json()
 
     def canvases(self):
-        return self.get("/api/graph")["canvases"]
+        """Every live board, found by walking down from Home (there's no list-all endpoint)."""
+        root = self.get("/api/root")["rootCanvasId"]
+        out, queue = [], [root]
+        while queue:
+            cid = queue.pop()
+            data = self.get(f"/api/canvas/{cid}")
+            out.append({"id": cid, "title": data["canvas"]["title"]})
+            queue += [i["data"]["childCanvasId"] for i in data["items"] if i["type"] == "board" and i["data"].get("childCanvasId")]
+        return out
 
     def canvas_id(self, title):
         return next((c["id"] for c in self.canvases() if c["title"] == title), None)
@@ -103,7 +111,8 @@ class World:
     def card(self, label, canvas=None, type=None):
         def lab(i):
             d = i.get("data") or {}
-            return d.get("title") or d.get("text") or d.get("body") or i.get("_childTitle")
+            # notes keep "title\nbody" in data.text: a note's label is its first line
+            return d.get("title") or (d.get("text") or "").split("\n")[0] or d.get("body") or i.get("_childTitle")
         return next((i for i in self.items(canvas) if lab(i) == label and (not type or i["type"] == type)), None)
 
 
@@ -149,14 +158,14 @@ def suite(W):
     T["todo_remove"] = ("Remove 'Lock bag size at 12oz' from the Product tasks list.",
                         lambda o, c: (not any(t == "Lock bag size at 12oz" for t, _ in tasks_of("Product tasks")), "removed"))
     T["edit_note"] = ("In the Customer interviews note, change the count of cafe owners interviewed from 12 to 15. Keep the rest of the text.",
-                      lambda o, c: (lambda n: ("15 cafe" in n["data"].get("body", "") and "espresso" in n["data"].get("body", ""), n["data"].get("body", "")[:70]))(W.card("Customer interviews")))
+                      lambda o, c: (lambda n: ("15 cafe" in n["data"].get("text", "") and "espresso" in n["data"].get("text", ""), n["data"].get("text", "")[:70]))(W.card("Customer interviews")))
     T["restyle"] = ("Make the Competitor scan note red and 320 wide.",
                     lambda o, c: (lambda n: (n["color"] == "red" and n["w"] == 320, f"color={n['color']} w={n['w']}"))(W.card("Competitor scan")))
     T["make_table"] = ("On the Roastery Ops board add a table of the weekly roast plan with a header row 'Day','Roast' and rows Mon/House blend, Tue/Single origins, Wed/Wholesale.",
                        lambda o, c: (lambda t: (bool(t) and t["data"]["rows"][0] == ["Day", "Roast"] and len(t["data"]["rows"]) == 4, f"rows={t and t['data']['rows']}"))(
                            next((i for i in W.items("Roastery Ops") if i["type"] == "table"), None)))
     T["heading_link"] = ("On Brand & Packaging add a heading that says 'Launch palette' and a link card titled 'Pantone chips' pointing to https://example.com/pantone.",
-                         lambda o, c: (bool(W.card("Launch palette", "Brand & Packaging", "heading")) and (W.card("Pantone chips", "Brand & Packaging", "link") or {"data": {}})["data"].get("url") == "https://example.com/pantone", "heading + link"))
+                         lambda o, c: (bool(W.card("Launch palette", "Brand & Packaging")) and (W.card("Pantone chips", "Brand & Packaging", "link") or {"data": {}})["data"].get("url") == "https://example.com/pantone", "heading + link"))
     T["connector"] = ("On Spring Launch, draw a 'relates' arrow from the Customer interviews note to the Open question note, labelled 'raises'.",
                       lambda o, c: (lambda a, b, ln: (bool(ln), f"line={ln and ln['data']}"))(
                           W.card("Customer interviews"), W.card("Open question"),
@@ -185,16 +194,25 @@ def suite(W):
                           lambda o, c: (bool(W.card("Ops backup", type="board")) and used(c, "export_board", "import_board"), "imported"))
     T["copy_board"] = ("Make a copy of the Roastery Ops board on Home and call the copy 'Ops sandbox'.",
                        lambda o, c: (bool(W.card("Ops sandbox", type="board")) and len(W.items("Ops sandbox")) >= 5 and used(c, "copy_board"), f"{len(W.items('Ops sandbox'))} cards"))
+    T["trash_roundtrip"] = ("On the Spring Launch board, delete the Competitor scan note, look in the trash to confirm it is there, then put it back.",
+                            lambda o, c: (bool(W.card("Competitor scan", "Spring Launch")) and used(c, "delete_item", "list_trash", "restore_item"), "deleted, seen in trash, restored"))
+    T["move_board"] = ("Move the Supplier contacts board so it lives inside Brand & Packaging instead of Roastery Ops.",
+                       lambda o, c: (bool(W.card("Supplier contacts", "Brand & Packaging", "board")) and not W.card("Supplier contacts", "Roastery Ops", "board"), "moved out of Roastery Ops into Brand & Packaging"))
+    T["add_task"] = ("Add a starred task 'Renew roaster permit' due 2027-01-15 to my task inbox.",
+                     lambda o, c: (lambda t: (bool(t) and t[0].get("starred") and t[0].get("due") == "2027-01-15", f"task={t and t[0]}"))(
+                         [x for i in W.items() if i["type"] == "todo" for x in i["data"].get("tasks", []) if x["text"] == "Renew roaster permit"]))
+    T["markdown"] = ("Export the Brand & Packaging board as Markdown and tell me the first heading line you see.",
+                     lambda o, c: (used(c, "export_board_markdown") and len(o) > 5, "used markdown export"))
     T["rename_home"] = ("Rename the top-level Home board to 'Lantern HQ'.",
                         lambda o, c: (bool(W.canvas_id("Lantern HQ")), "renamed"))
     T["panel_rename"] = ("Rename the Product panel on Spring Launch to 'Product & Sourcing'.",
                          lambda o, c: (bool(W.card("Product & Sourcing", "Spring Launch", "panel")) and not W.card("Product", "Spring Launch", "panel"), "renamed"))
     T["panel_nest"] = ("Inside the Research panel on Spring Launch, make a smaller panel called 'Hot topics' holding just the Competitor scan note.",
                        lambda o, c: (lambda p, n, r: (bool(p) and n.get("_panelId") == p["id"] and p.get("_panelId") == r["id"], f"scan in {n.get('_panelTitle')}"))(
-                           W.card("Hot topics", type="panel"), W.card("Competitor scan"), W.card("Research", type="panel")))
+                           W.card("Hot topics", "Spring Launch", "panel"), W.card("Competitor scan", "Spring Launch"), W.card("Research", "Spring Launch", "panel")))
     T["panel_move"] = ("Slide the Research panel on Spring Launch 200 to the right, but leave every card where it is (don't carry them).",
                        lambda o, c: (lambda p, n: (p["x"] == state_rx[0] + 200 and n["x"] == 70 and "move_members" in json.dumps(c), f"panel x={p['x']} note x={n['x']}"))(
-                           W.card("Research", type="panel"), W.card("Customer interviews")))
+                           W.card("Research", "Spring Launch", "panel"), W.card("Customer interviews", "Spring Launch")))
     T["bad_id"] = ("Delete the card with id i_doesnotexist and tell me whether it worked.",
                    lambda o, c: (bool(re.search(r"not found|doesn.t exist|does not exist|couldn.t|could not|unable|no such|failed|error", o, re.I)), "reported failure honestly"))
     T["promote_fail"] = ("Promote the Product tasks card to a Pondering Orb project.",

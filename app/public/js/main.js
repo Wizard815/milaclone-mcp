@@ -29,6 +29,9 @@ import { initLines } from './lines.js';
 import { initLabels, resetFilter } from './labels.js';
 import { initSearch, openSearch } from './search.js';
 import { initExport } from './export.js';
+import { initPipeline } from './pipeline.js';
+import { initCanvasIO } from './canvasio.js';
+import { loadOrbStatus } from './stages.js';
 
 // Entry point: canvas loading/navigation, global keyboard + pointer handling,
 // and boot. Wiring for the viewport and toolbar lives in their own modules and
@@ -235,6 +238,9 @@ initLines();
 initLabels();
 initSearch();
 initExport();
+initPipeline();
+initCanvasIO();
+loadOrbStatus();
 
 (async function boot() {
   refreshIcons();

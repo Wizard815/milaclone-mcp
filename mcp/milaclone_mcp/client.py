@@ -48,6 +48,36 @@ class MilacloneClient:
     def _get(self, path: str, **params: Any) -> dict[str, Any]:
         return self._handle(self._http.get(path, params=params or None))
 
+    # ---- Task API (separate bearer token; see app/docs/task-api.md) ----------
+    def tasks_create(self, token: str, body: dict[str, Any]) -> dict[str, Any]:
+        """POST /api/tasks — add a task to the Inbox (or a given to-do card)."""
+        return self._handle(self._http.post("/api/tasks", json=body, headers={"Authorization": f"Bearer {token}"}))
+
+    def tasks_list(self, token: str, status: str) -> dict[str, Any]:
+        """GET /api/tasks?status=open|done|all."""
+        return self._handle(self._http.get("/api/tasks", params={"status": status}, headers={"Authorization": f"Bearer {token}"}))
+
+    # ---- Copy / move / trash / markdown -----------------------------------------
+    def copy_item(self, item_id: str, body: dict[str, Any]) -> dict[str, Any]:
+        """POST /api/item/{id}/copy — deep copy to {canvasId, x, y}."""
+        return self._post(f"/api/item/{item_id}/copy", body)
+
+    def move_item(self, item_id: str, body: dict[str, Any]) -> dict[str, Any]:
+        """POST /api/item/{id}/move — move (with subtree) to {canvasId, x, y}."""
+        return self._post(f"/api/item/{item_id}/move", body)
+
+    def get_trash(self) -> dict[str, Any]:
+        """GET /api/trash — one entry per delete, newest first."""
+        return self._get("/api/trash")
+
+    def export_markdown(self, canvas_id: str) -> str:
+        """GET /api/canvas/{id}/export.md — the board as Markdown text."""
+        resp = self._http.get(f"/api/canvas/{canvas_id}/export.md")
+        if resp.status_code == 404:
+            raise NotFoundError(f"Not found: {resp.request.url}")
+        resp.raise_for_status()
+        return resp.text
+
     def _post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
         return self._handle(self._http.post(path, json=body))
 

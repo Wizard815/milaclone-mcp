@@ -35,3 +35,8 @@ def load_config(env_file: Path | None = None) -> tuple[str, str]:
 
     api_key = os.environ.get("MILACLONE_API_KEY", "").strip()
     return base_url, api_key
+
+
+def load_task_token() -> str:
+    """TASK_API_TOKEN for the app's /api/tasks (optional; empty = task tools off)."""
+    return os.environ.get("TASK_API_TOKEN", "").strip()
