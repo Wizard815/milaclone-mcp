@@ -70,6 +70,19 @@ class MilacloneClient:
         """PATCH /api/canvas/{id} — rename/recolor/re-icon a board."""
         return self._patch(f"/api/canvas/{canvas_id}", body)
 
+    # ---- Panels ---------------------------------------------------------------
+    def list_panels(self, canvas_id: str) -> dict[str, Any]:
+        """GET /api/canvas/{id}/panels — panels with members, plus ungrouped cards."""
+        return self._get(f"/api/canvas/{canvas_id}/panels")
+
+    def group_items(self, canvas_id: str, body: dict[str, Any]) -> dict[str, Any]:
+        """POST /api/canvas/{id}/panels/group — wrap existing cards in a new panel."""
+        return self._post(f"/api/canvas/{canvas_id}/panels/group", body)
+
+    def add_panel_members(self, panel_id: str, item_ids: list[str]) -> dict[str, Any]:
+        """POST /api/panel/{id}/members — place cards inside a panel."""
+        return self._post(f"/api/panel/{panel_id}/members", {"itemIds": item_ids})
+
     # ---- Items ----------------------------------------------------------------
     def get_item(self, item_id: str) -> dict[str, Any]:
         """GET /api/item/{id} — a single card, wherever it lives."""

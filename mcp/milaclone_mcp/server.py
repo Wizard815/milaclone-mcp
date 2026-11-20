@@ -45,7 +45,7 @@ def _check_stage(stage: str | None) -> None:
 
 CREATABLE_TYPES = (
     "note", "todo", "link", "column", "comment", "board",
-    "heading", "document", "table", "color", "draw", "line", "shape",
+    "heading", "document", "table", "color", "draw", "line", "shape", "panel",
 )
 
 
@@ -213,7 +213,8 @@ def create_item(
     Args:
         canvas_id: board to add the card to.
         item_type: one of "note", "todo", "link", "column", "comment", "board",
-            "heading", "document", "table", "color", "draw", "line", "shape".
+            "heading", "document", "table", "color", "draw", "line", "shape",
+            "panel" (prefer `create_panel` / `group_into_panel` for panels).
             (Images and uploaded files aren't supported here — they require a
             file upload through the web UI.)
         data: shape depends on item_type:
@@ -260,6 +261,8 @@ def create_item(
                 card. Pass `h` via `update_item` to make it non-square (a
                 rectangle/ellipse/etc. instead of square/circle/etc.) — the
                 shape's geometry stretches to fill whatever w/h it's given.
+            panel:    {"title": str, "shape": "rect" | "rounded" | "ellipse"
+                (default "rounded")} — see `create_panel`.
         x, y: position on the canvas in board units (default 60, 60). Ignored
             for item_type "line".
         w: card width in pixels (defaults to a sensible per-type value).
@@ -298,6 +301,87 @@ def create_item(
 
 
 @mcp.tool()
+def create_panel(
+    canvas_id: str,
+    title: str,
+    x: int = 60,
+    y: int = 60,
+    w: int = 480,
+    h: int = 320,
+    shape: str = "rounded",
+    color: str | None = None,
+) -> dict[str, Any]:
+    """
+    Create a named floating panel: a background region of any size/shape that
+    groups whatever cards sit inside it. Membership is purely positional — a
+    card is "in" the panel when its anchor (horizontal centre, 24px below its
+    top edge) lies inside the panel. So to put a card in a panel, place it
+    there (create_item/update_item x,y) or use `add_to_panel`.
+
+    Args:
+        shape: "rect", "rounded" (default) or "ellipse".
+        w, h: any size; a panel is drawn behind all other cards. Leave the top
+            44px free for its title bar when placing cards inside.
+
+    Moving a panel (`update_item` with new x/y) carries every card inside it;
+    pass nothing special — to move it alone use the web UI. Deleting a panel
+    keeps its cards. Panels can nest: a card belongs to the smallest panel
+    containing it. Read membership from `get_board` (`_panelId`/`_panelTitle`
+    on cards, `_memberIds` on panels) or `list_panels`.
+    """
+    body = {"title": title, "shape": shape}
+    data: dict[str, Any] = body
+    return _get_client().create_item({
+        "canvasId": canvas_id, "type": "panel", "x": x, "y": y, "w": w, "h": h,
+        "data": data, **({"color": color} if color else {}),
+    })
+
+
+@mcp.tool()
+def group_into_panel(
+    canvas_id: str,
+    item_ids: list[str],
+    title: str,
+    shape: str = "rounded",
+    color: str | None = None,
+    padding: int = 40,
+) -> dict[str, Any]:
+    """
+    Group existing cards by wrapping them in a new named panel sized to fit
+    them. Nothing moves — the panel is drawn around the cards. The easiest way
+    to organise a board: call once per cluster. Cards must be free cards on
+    this board (not lines; a card inside a column is grouped via its column).
+
+    Returns the new panel including `_memberIds`.
+    """
+    body: dict[str, Any] = {"itemIds": item_ids, "title": title, "shape": shape, "padding": padding}
+    if color:
+        body["color"] = color
+    return _get_client().group_items(canvas_id, body)
+
+
+@mcp.tool()
+def add_to_panel(panel_id: str, item_ids: list[str]) -> dict[str, Any]:
+    """
+    Put cards inside an existing panel. Cards already inside stay where they
+    are; others are laid out in rows in the panel's free space. The panel is
+    never resized — if it's too small the result has a `warning`; enlarge it
+    with `update_item(panel_id, w=..., h=...)`.
+    """
+    return _get_client().add_panel_members(panel_id, item_ids)
+
+
+@mcp.tool()
+def list_panels(canvas_id: str) -> dict[str, Any]:
+    """
+    List every panel on a board with the cards inside each (id, type, short
+    preview), plus `ungrouped` — cards not in any panel. The compact way to
+    see how a board is organised without reading every card.
+    """
+    return _get_client().list_panels(canvas_id)
+
+
+@mcp.tool()
 def update_item(
     item_id: str,
     data: dict[str, Any] | None = None,
@@ -318,6 +402,9 @@ def update_item(
     `todo`'s `tasks` array specifically, a partial merge won't work (the
     whole array is replaced) — use `add_todo_task`/`set_todo_task_done`, or
     pass the full tasks list yourself.
+
+    Updating a `panel`'s x/y moves every card inside it too; w/h resize it
+    (membership is recomputed from positions).
 
     `canvas_id`/`parent_item_id` move the card to a different board/column.
 

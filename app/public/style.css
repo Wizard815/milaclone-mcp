@@ -1511,3 +1511,4 @@ body.qn-open .toast {
 .item.panel.shape-ellipse .panel-resize { right: 18%; bottom: 18%; }
 .panel-resize:hover { opacity: 1; }
 .panel .card-tools { top: -34px; }
+.item.panel.shape-ellipse .panel-head { margin-top: 9%; }

@@ -555,7 +555,7 @@ function buildPanel(el, it) {
   const shapeBtn = document.createElement('button');
   shapeBtn.className = 'panel-shape-btn'; shapeBtn.setAttribute('data-nodrag', '');
   shapeBtn.title = 'Panel shape: ' + (it.data.shape || 'rounded') + ' (click to change)';
-  shapeBtn.appendChild(lucideEl({ rect: 'square', rounded: 'square-round-corner', ellipse: 'circle' }[it.data.shape || 'rounded'] || 'square'));
+  shapeBtn.appendChild(lucideEl({ rect: 'square', rounded: 'rectangle-horizontal', ellipse: 'circle' }[it.data.shape || 'rounded'] || 'square'));
   shapeBtn.onclick = (e) => {
     e.stopPropagation();
     const next = PANEL_SHAPES[(PANEL_SHAPES.indexOf(it.data.shape || 'rounded') + 1) % PANEL_SHAPES.length];
