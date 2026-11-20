@@ -1,0 +1,157 @@
+name: milaclone
+
+services:
+  app:
+    build: .
+    image: milaclone:local
+    container_name: milaclone-app
+    restart: unless-stopped
+    # Bind to loopback only: NOT on the LAN, NOT directly on the tailnet.
+    # Tailscale Serve (see README) bridges it onto the tailnet over HTTPS.
+    ports:
+      - '127.0.0.1:8182:4321'
+    volumes:
+      - milaclone_data:/data
+      # Uploads live under public/ so Express serves them at /uploads/*.
+      - milaclone_uploads:/app/public/uploads
+    environment:
+      - PORT=4321
+      - DATA_DIR=/data
+      # Bearer token for the task API (/api/tasks). Unset = the API answers 503.
+      - TASK_API_TOKEN=${TASK_API_TOKEN:-}
+      # Time zone used to turn an ISO datetime into a task's due date.
+      - TASK_TZ=${TASK_TZ:-UTC}
+    # Dev loop: `docker compose watch` syncs edits into the running container.
+    # Plain `up -d` ignores this block, so the normal deploy is unaffected.
+    develop:
+      watch:
+        # Frontend is static — sync the file and hit reload in the browser.
+        - action: sync
+          path: ./public
+          target: /app/public
+          ignore:
+            - uploads/
+        # Backend is required once at boot, so it needs a process restart.
+        - action: sync+restart
+          path: ./server.js
+          target: /app/server.js
+        - action: sync+restart
+          path: ./routes.js
+          target: /app/routes.js
+        - action: sync+restart
+          path: ./db.js
+          target: /app/db.js
+        # Dependency changes can't be synced — better-sqlite3 must recompile.
+        - action: rebuild
+          path: ./package-lock.json
+    # Hard cap so this can never starve the CCTV / Home Assistant workload.
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 256M
+
+  # ---- Optional voice capture add-on (addons/voice/README.md) ----------------
+  # Off unless enabled: COMPOSE_PROFILES=voice in .env (or alexa, which needs it).
+  # Sends audio to Deepgram for transcription and the transcript to the LLM,
+  # then creates tasks through the task API over the compose network.
+  pipeline:
+    build: ./addons/voice/pipeline
+    image: milaclone-pipeline:local
+    container_name: milaclone-pipeline
+    profiles: ['voice', 'alexa']
+    restart: unless-stopped
+    # Loopback only, like the app; the Tailscale sidecar serves /ingest/.
+    ports:
+      - '127.0.0.1:8183:8000'
+    volumes:
+      # ingest.db (every transcript and extraction) + the uploaded audio.
+      - milaclone_ingest:/data
+    environment:
+      - INGEST_API_TOKEN=${INGEST_API_TOKEN:-}
+      - TASK_API_TOKEN=${TASK_API_TOKEN:-}
+      - APP_URL=http://app:4321
+      - TASK_TZ=${TASK_TZ:-UTC}
+      - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY:-}
+      - DEEPGRAM_MODEL=${DEEPGRAM_MODEL:-nova-3}
+      - DEEPGRAM_LANGUAGE=${DEEPGRAM_LANGUAGE:-en}
+      - DEEPGRAM_MIP_OPT_OUT=${DEEPGRAM_MIP_OPT_OUT:-true}
+      - DEEPGRAM_KEYTERMS=${DEEPGRAM_KEYTERMS:-}
+      # Seconds between transcription retries when Deepgram is busy or down.
+      - TRANSCRIBE_RETRY_DELAYS=${TRANSCRIBE_RETRY_DELAYS:-60,300,900}
+      # Webhook (e.g. Home Assistant) that gets one POST per note that failed for good.
+      - ALERT_WEBHOOK_URL=${ALERT_WEBHOOK_URL:-}
+      - INGEST_REVIEW_URL=${INGEST_REVIEW_URL:-}
+      - EXTRACT_PROVIDER=${EXTRACT_PROVIDER:-anthropic}
+      - EXTRACT_MODEL=${EXTRACT_MODEL:-}
+      - EXTRACT_API_KEY=${EXTRACT_API_KEY:-}
+      - EXTRACT_BASE_URL=${EXTRACT_BASE_URL:-}
+    # Lets ALERT_WEBHOOK_URL reach a service on this host, e.g.
+    # http://host.docker.internal:8123/api/webhook/<id> for Home Assistant.
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    depends_on:
+      - app
+    # Transcription and extraction run remotely, so this is mostly waiting on
+    # HTTP; the cap keeps it well clear of anything else on the server.
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 256M
+
+  # Alexa part of the voice add-on (addons/voice/docs/alexa.md): an
+  # outbound-only Cloudflare Tunnel so the Alexa skill's Worker can reach the
+  # pipeline's /ingest/text. Off unless COMPOSE_PROFILES=alexa is set in .env.
+  # Which hostname and path it serves is set on the tunnel in the Cloudflare
+  # dashboard, not here.
+  cloudflared:
+    image: cloudflare/cloudflared:2026.10.7
+    container_name: milaclone-cloudflared
+    profiles: ['alexa']
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      - pipeline
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+
+  # Own tailnet node, so the app answers on https://mila.<tailnet>.ts.net
+  # at "/" rather than a path prefix. Reaches the app over the compose network;
+  # the loopback port binding above stays as-is for local access.
+  tailscale:
+    image: tailscale/tailscale:stable
+    container_name: milaclone-ts
+    restart: unless-stopped
+    environment:
+      - TS_AUTHKEY=${TS_AUTHKEY:?set TS_AUTHKEY in .env}
+      - TS_HOSTNAME=mila
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_SERVE_CONFIG=/config/serve.json
+      - TS_USERSPACE=true
+    volumes:
+      - milaclone_ts_state:/var/lib/tailscale
+      # The folder, not the file: git replaces serve.json on update, and a
+      # single-file mount would keep showing the old copy. Tailscale watches
+      # this folder and applies a changed serve.json without a restart.
+      - ./tailscale:/config:ro
+    # serve.json also routes /ingest/ to the voice add-on; without the add-on
+    # that path just answers 502.
+    depends_on:
+      - app
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+
+volumes:
+  milaclone_data:
+  milaclone_uploads:
+  milaclone_ts_state:
+  milaclone_ingest:

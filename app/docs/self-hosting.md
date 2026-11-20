@@ -1,0 +1,308 @@
+# Self-hosting
+
+How to run milaclone on a server, put it on your tailnet, and deploy updates.
+
+## Run it with Docker
+
+Its own Compose project, resource
+capped, bound to loopback only, published to the tailnet by a Tailscale
+sidecar. Two services come up — `app` (the Node server) and `tailscale` (its
+own tailnet node).
+
+The sidecar needs an auth key, so create a `.env` next to `docker-compose.yml`
+first (it's gitignored):
+
+```bash
+echo 'TS_AUTHKEY=tskey-auth-…' > .env
+```
+
+Generate the key at
+[login.tailscale.com/admin/settings/keys](https://login.tailscale.com/admin/settings/keys).
+A reusable key is easiest; the node's state lives in the `milaclone_ts_state`
+volume, so it won't need to re-authenticate on restart. Then:
+
+```bash
+docker compose up -d --build
+```
+
+The app itself listens on `127.0.0.1:8182` only — not on the LAN, not directly
+on the tailnet. The sidecar is what puts it
+on the tailnet, over HTTPS, at <https://mila.your-tailnet.ts.net> — see
+[Access over Tailscale](#access-over-tailscale) below. On iPhone, Share → Add
+to Home Screen gives it an app icon that opens fullscreen.
+
+Data lives in three named volumes, so `docker compose down` keeps it:
+
+| Volume               | Mounted at            | Holds                       |
+| -------------------- | --------------------- | --------------------------- |
+| `milaclone_data`     | `/data`               | `board.db` (SQLite)         |
+| `milaclone_uploads`  | `/app/public/uploads` | uploaded images/files       |
+| `milaclone_ts_state` | `/var/lib/tailscale`  | the sidecar's node identity |
+
+Back up the board with:
+
+```bash
+docker compose cp app:/data/board.db ./backup-$(date +%F).db
+```
+
+To ship a new version, see [Deploying to the server](#deploying-to-the-server).
+`docker compose down -v` wipes the volumes and resets to a blank canvas — it
+also drops the tailnet node identity, so the next start re-authenticates.
+
+## Access over Tailscale
+
+### With Docker: the Tailscale sidecar
+
+The Compose stack runs a `tailscale` service alongside the app. It joins your
+tailnet as **its own node** — not as a path on the host's node — so the board
+gets a clean URL of its own with `/` as the root:
+
+```
+https://mila.your-tailnet.ts.net
+```
+
+That matters because the app serves absolute paths (`/style.css`, `/uploads/*`),
+which break under a path-prefixed proxy.
+
+How the pieces fit:
+
+| Piece                  | Where                           | Does what                                    |
+| ---------------------- | ------------------------------- | -------------------------------------------- |
+| `TS_AUTHKEY`           | `.env` (gitignored)             | Authenticates the node on first start        |
+| `TS_HOSTNAME=mila`     | `docker-compose.yml`            | Names the node → `mila.your-tailnet.ts.net`  |
+| `tailscale/serve.json` | its folder mounted at `/config` | Terminates HTTPS, proxies `/` → `app:4321`   |
+| `milaclone_ts_state`   | volume at `/var/lib/tailscale`  | Remembers the node so restarts don't re-auth |
+
+The Serve config uses `${TS_CERT_DOMAIN}`, which the container substitutes at
+startup, so it works on any tailnet without editing. Tailscale provisions the
+TLS certificate itself. To change the hostname, edit `TS_HOSTNAME` and run
+`docker compose up -d` — the node is renamed on next start. An edit to
+`serve.json` (or a deploy that changes it) applies within seconds, with no
+restart: Compose mounts the whole `tailscale/` folder, which Tailscale watches.
+
+Checking and troubleshooting:
+
+```bash
+docker compose logs tailscale                      # auth + serve errors show here
+docker compose exec tailscale tailscale status     # is the node up?
+docker compose exec tailscale tailscale serve status  # is / proxied to app:4321?
+```
+
+If `docker compose up` fails immediately with `set TS_AUTHKEY in .env`, the
+`.env` file is missing or empty. If the node appears on the tailnet but the URL
+returns nothing, the Serve config didn't load — check that `tailscale/serve.json`
+exists and is valid JSON.
+
+Traffic reaches the app over the private Compose network, so the app's
+`127.0.0.1:8182` binding stays loopback-only and is never exposed.
+
+### Without Docker: `tailscale serve` on the host
+
+Running `npm start` directly, the server binds to `0.0.0.0`, so once the box is
+on your tailnet it's reachable at `http://my-server.your-tailnet.ts.net:4321`
+(`tailscale ip -4` or the MagicDNS name). For a clean HTTPS URL instead of
+`:4321`:
+
+```bash
+sudo tailscale serve --bg 4321
+```
+
+That proxies `https://my-server.your-tailnet.ts.net` to the app on the host's
+own tailnet node. `tailscale serve status` shows the mapping and
+`sudo tailscale serve --bg off` stops it. Don't combine this with the sidecar —
+pick one or the other.
+
+## Deploying to the server
+
+The server runs from a git checkout, so deploying is: move the checkout to the
+commit you want, then rebuild the image. Code is baked into the image at build
+time, so `docker compose restart` alone will **not** pick up changes.
+
+Deploy the latest `main` with the script:
+
+```bash
+scripts/deploy.sh          # does nothing when the running app is already origin/main
+scripts/deploy.sh --force  # rebuild and restart anyway
+```
+
+It refuses to run off `main` or with uncommitted changes, fast-forwards to
+`origin/main`, and skips the rest only when the commit it last deployed (kept
+in the gitignored `.deployed`) is that commit and the app is answering. So
+running `git pull` yourself first doesn't stop it rebuilding. Otherwise it saves a database snapshot to `backups/` (newest 10 kept;
+uploads aren't included), rebuilds, and waits for the app to answer on
+`127.0.0.1:8182` — printing the app's logs if it doesn't.
+
+Or by hand:
+
+```bash
+cd ~/milaclone                  # wherever the checkout lives
+git fetch origin
+git checkout main
+git pull --ff-only
+docker compose up -d --build
+```
+
+Deploy a feature branch instead (e.g. to try a PR on the real device):
+
+```bash
+git fetch origin
+git switch -c my-branch origin/my-branch   # first time for that branch
+# git switch my-branch && git pull --ff-only   # every time after
+docker compose up -d --build
+```
+
+If `git checkout` refuses because the working tree is dirty — usually an edit
+made directly on the server — either keep it with `git stash` (then
+`git stash pop` later) or discard it with `git checkout -- .`.
+
+Verify it came up:
+
+```bash
+docker compose ps                    # app + tailscale both "running"
+curl -s localhost:8182/api/health    # {"ok":true}
+docker compose logs -f app           # ctrl-C to stop following
+```
+
+Roll back by pointing the same loop at the previous commit:
+
+```bash
+git checkout <previous-sha>          # `git log --oneline` to find it
+docker compose up -d --build
+```
+
+Worth knowing:
+
+- **Your data survives.** The named volumes aren't touched by a rebuild, so
+  boards and uploads carry across deploys and rollbacks. Never use
+  `docker compose down -v` to deploy — that deletes them.
+- **Most rebuilds are fast.** `npm ci` is a cached layer keyed on
+  `package.json` / `package-lock.json`; only dependency changes trigger the slow
+  path where `better-sqlite3` recompiles.
+- **Only `app` rebuilds.** The `tailscale` service runs a published image, so
+  `--build` leaves it alone unless its own config changed.
+- **Rebuild after editing `public/`.** The frontend has no build step, but it's
+  copied into the image, so a browser refresh alone won't show server-side
+  changes until you rebuild.
+- **Live-editing on the server:** `docker compose watch` syncs `public/` into the
+  running container and restarts the backend on `server.js` / `routes.js` /
+  `db.js` edits. Good for poking at something, but changes live only in that
+  container until you commit and rebuild.
+
+## Deploy automatically on push
+
+A systemd timer on the server checks GitHub once an hour and deploys `main`
+whenever it has moved, so a merged PR is live within about an hour without you
+logging in. It only ever pulls: nothing on the internet reaches the server,
+and `main` only changes through PRs that passed the required checks.
+
+The timer runs `scripts/autodeploy.sh`, which wraps `scripts/deploy.sh` (same
+backup, rebuild and health check as a manual deploy) and adds:
+
+- **No overlapping runs.** A run that finds the previous one still building
+  skips itself.
+- **A broken commit is tried once.** If a deploy fails, that commit is written
+  to `.autodeploy-failed` and skipped until a newer commit lands on `main`, so
+  a bad build isn't rebuilt (and backed up) every hour. The app keeps running
+  the last version that started.
+- **Optional phone notification** after each deploy or failure (below).
+
+### One-time setup on the server
+
+1. The user that owns the checkout must be able to run Docker without sudo:
+   `sudo usermod -aG docker $USER`, then log out and back in.
+2. The checkout must be on `main` with no edits to tracked files
+   (`git status` clean), as for `scripts/deploy.sh`.
+3. `git fetch` must work without a password. A public repo needs nothing; if
+   the repo is private, add a read-only
+   [deploy key](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/managing-deploy-keys)
+   and use the SSH remote.
+4. Install the units, replacing `YOUR_USERNAME` and the path with yours:
+
+   ```bash
+   sudo cp deploy/systemd/milaclone-deploy.service deploy/systemd/milaclone-deploy.timer /etc/systemd/system/
+   sudo nano /etc/systemd/system/milaclone-deploy.service   # User=, WorkingDirectory=, ExecStart=, EnvironmentFile=
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now milaclone-deploy.timer
+   ```
+
+5. Try it straight away instead of waiting for the hour:
+
+   ```bash
+   sudo systemctl start milaclone-deploy      # runs one check now
+   journalctl -u milaclone-deploy -n 50       # what it did
+   ```
+
+### Day to day
+
+```bash
+systemctl list-timers milaclone-deploy.timer   # when the next check runs
+journalctl -u milaclone-deploy -f              # follow deploy output
+sudo systemctl start milaclone-deploy          # deploy now, don't wait for the hour
+```
+
+- **Something urgent:** `sudo systemctl start milaclone-deploy` (or
+  `scripts/deploy.sh`) deploys right away.
+- **A deploy failed:** `journalctl -u milaclone-deploy` shows why. Push a fix
+  to `main` and the next check deploys it. To retry the same commit (say the
+  failure was a full disk you've since cleared), run `scripts/deploy.sh` by
+  hand; a successful deploy clears the skip.
+- **Working on the server by hand** (editing files, deploying a branch, rolling
+  back): pause the timer first. Otherwise the next check refuses to run off
+  `main` or on a dirty tree, and marks the current `main` commit as failed
+  until a newer one lands (run `scripts/deploy.sh` once you're back on a clean
+  `main` to clear that).
+
+  ```bash
+  sudo systemctl stop milaclone-deploy.timer    # pause
+  sudo systemctl start milaclone-deploy.timer   # resume
+  ```
+
+- **Rollback:** pause the timer, check out the older commit and rebuild as in
+  [Deploying to the server](#deploying-to-the-server). The cleaner fix is a
+  revert PR to `main`, which the timer then deploys.
+- **Turn it off:** `sudo systemctl disable --now milaclone-deploy.timer`.
+
+### Optional: a notification on your phone
+
+Put a webhook URL in `.env.autodeploy` next to `docker-compose.yml` (it is
+gitignored):
+
+```bash
+AUTODEPLOY_NOTIFY_URL=http://127.0.0.1:8123/api/webhook/milaclone-deploy
+```
+
+After each real deploy or failure the script POSTs
+`{"status":"deployed"|"failed","commit":"<sha>","host":"<name>"}`. In Home
+Assistant, make an automation with a **Webhook** trigger (ID
+`milaclone-deploy`, local only) and a **Notify** action to your phone, for
+example `milaclone {{ trigger.json.status }} ({{ trigger.json.commit[:7] }})`.
+A check that finds nothing new sends nothing.
+
+## Run it as a service (auto-start on boot)
+
+Create `/etc/systemd/system/milaclone.service` (adjust the paths and user):
+
+```ini
+[Unit]
+Description=milaclone
+After=network.target
+
+[Service]
+Type=simple
+User=YOUR_USERNAME
+WorkingDirectory=/home/YOUR_USERNAME/milaclone
+ExecStart=/usr/bin/node server.js
+Environment=PORT=4321
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Then:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now milaclone
+sudo systemctl status milaclone
+```

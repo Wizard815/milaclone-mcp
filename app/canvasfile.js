@@ -16,7 +16,7 @@
 // a nested board holding the nodes that sit inside it. Edges become lines
 // when both ends land on the same board.
 
-const { db, stmt, id, STAGES, LINE_KINDS, rowToItem } = require('./db');
+const { db, stmt, id, STAGES, LINE_KINDS, rowToItem, RICH_TYPES, toRich, richParts } = require('./db');
 
 // Milaclone palette -> JSON Canvas preset colours ("1".."6" = red, orange,
 // yellow, green, cyan, purple); the rest go out as their hex value.
@@ -65,9 +65,9 @@ const stripHtml = (h) => String(h || '').replace(/<br\s*\/?>/gi, '\n').replace(/
 function textFor(it, title) {
   const d = it.data || {};
   switch (it.type) {
-    case 'note': return [d.title ? '# ' + d.title : '', d.body || ''].filter(Boolean).join('\n\n');
+    case 'note': { const p = richParts(d); return [p.title ? '# ' + p.title : '', p.body].filter(Boolean).join('\n\n'); }
     case 'heading': return '# ' + (d.text || '');
-    case 'comment': return d.body || '';
+    case 'comment': return richParts(d).body;
     case 'todo': {
       const tasks = (d.tasks || []).filter(t => t.text).map(t => `- [${t.done ? 'x' : ' '}] ${t.text}`);
       return [d.title ? '## ' + d.title : '', tasks.join('\n')].filter(Boolean).join('\n\n');
@@ -188,8 +188,10 @@ function buildCanvas(canvasId, nested, seen) {
 
   for (const line of items.filter(i => i.type === 'line')) {
     const d = line.data || {};
-    if (!emitted.has(d.fromId) || !emitted.has(d.toId)) continue;
-    const e = { id: line.id, fromNode: d.fromId, toNode: d.toId, toEnd: 'arrow' };
+    const from = d.from && d.from.id, to = d.to && d.to.id; // free-ended lines aren't edges
+    if (!emitted.has(from) || !emitted.has(to)) continue;
+    const e = { id: line.id, fromNode: from, toNode: to, toEnd: d.arrow === 'none' ? 'none' : 'arrow' };
+    if (d.arrow === 'both') e.fromEnd = 'arrow';
     if (d.label) e.label = d.label;
     const color = toCanvasColor(line.color);
     if (color && line.color !== 'slate') e.color = color;
@@ -292,7 +294,9 @@ function importCanvas(doc, { parentCanvasId, title = 'Imported board', x = 60, y
     const item = Object.assign({
       id: id('i_'), parentItemId: null, h: null, color: null, stage: null, createdAt: now, z: ++z
     }, row);
+    if (RICH_TYPES.has(item.type)) item.data = toRich(item.data || {});
     stmt.insertItem.run(Object.assign({}, item, { data: JSON.stringify(item.data || {}) }));
+    if (item.stage) stmt.setStage.run({ id: item.id, stage: item.stage, updatedAt: now });
     return item;
   };
   const stageOf = (n) => (n.miladash && STAGES.includes(n.miladash.stage)) ? n.miladash.stage : null;
@@ -346,8 +350,11 @@ function importCanvas(doc, { parentCanvasId, title = 'Imported board', x = 60, y
       const a = placed.get(e.fromNode), b = placed.get(e.toNode);
       if (!a || !b || a.canvasId !== b.canvasId) continue;
       const kind = e.miladash && LINE_KINDS.includes(e.miladash.kind) ? e.miladash.kind : 'relates';
-      const data = { fromId: a.itemId, toId: b.itemId, kind };
-      if (e.label) data.label = String(e.label);
+      const data = { from: { id: a.itemId }, to: { id: b.itemId }, kind };
+      if (kind === 'depends') data.dashed = true;
+      if (e.toEnd === 'none') data.arrow = e.fromEnd === 'arrow' ? 'both' : 'none';
+      else if (e.fromEnd === 'arrow') data.arrow = 'both';
+      if (e.label) { data.label = String(e.label); data.text = data.label; }
       insert({ canvasId: a.canvasId, type: 'line', x: 0, y: 0, w: 0, color: fromCanvasColor(e.color) || 'slate', data });
     }
   })();

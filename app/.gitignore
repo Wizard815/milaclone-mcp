@@ -11,3 +11,35 @@ playwright-report/
 
 # Tailscale sidecar auth key
 .env
+
+# test coverage output
+coverage/
+
+# esbuild output (server.js builds it at boot)
+public/vendor/
+
+# Local tooling and private notes
+.claude/*
+!.claude/skills/
+.lavish/
+.impeccable/
+.private/
+
+# Database snapshots and the deployed commit, written by scripts/deploy.sh
+backups/
+.deployed
+
+# Voice pipeline (Python)
+__pycache__/
+.pytest_cache/
+.venv/
+
+# Auto-deploy (scripts/autodeploy.sh): lock, last failed commit, local settings
+.autodeploy.lock
+.autodeploy-failed
+.env.autodeploy
+
+# Alexa Worker (addons/voice/alexa/): wrangler's local state and secrets
+.wrangler/
+.dev.vars
+.coverage

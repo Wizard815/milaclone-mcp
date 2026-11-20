@@ -9,15 +9,23 @@ const PORT = 4322;
 module.exports = defineConfig({
   testDir: './e2e',
   fullyParallel: true,
+  // CI: a stray test.only fails the run, and flakes fail instead of being retried away.
+  forbidOnly: !!process.env.CI,
+  retries: 0,
   // `list` for readable console output plus `html` so a report is always
   // written to playwright-report/ (the CI job uploads it as an artifact).
   // open: 'never' keeps it from auto-launching a browser during local runs.
   reporter: [['list'], ['html', { open: 'never' }]],
-  use: { baseURL: `http://127.0.0.1:${PORT}`, trace: 'on-first-retry' },
+  // The offline service worker would cache API reads under other tests; pwa.spec.js opts back in.
+  use: { baseURL: `http://127.0.0.1:${PORT}`, trace: 'on-first-retry', serviceWorkers: 'block' },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] }, testIgnore: '**/mobile-board.spec.js' },
     // Mobile Safari path: touch double-tap must open boards without dblclick.
-    { name: 'mobile-webkit', use: { ...devices['iPhone 13'], browserName: 'webkit' }, testMatch: '**/mobile-board.spec.js' },
+    {
+      name: 'mobile-webkit',
+      use: { ...devices['iPhone 13'], browserName: 'webkit' },
+      testMatch: '**/mobile-board.spec.js',
+    },
   ],
   webServer: {
     command: `rm -rf .e2e-data && DATA_DIR=.e2e-data PORT=${PORT} node server.js`,

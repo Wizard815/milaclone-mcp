@@ -29,6 +29,7 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'miladash-test-'));
 }
 process.env.DATA_DIR = TMP;
 
+const { richParts } = require('../db');
 const express = require('express');
 const app = express();
 app.use(express.json({ limit: '5mb' }));
@@ -62,7 +63,8 @@ const send = (m, p, b) => fetch(base + p, {
 
 test('TestStage_migration keeps existing data and adds stage/updatedAt', async () => {
   const { body } = await get('/api/item/i_old');
-  assert.equal(body.data.title, 'Old idea');
+  assert.equal(richParts(body.data).title, 'Old idea');
+  assert.equal(richParts(body.data).body, 'kept');
   assert.equal(body.color, 'blue');
   assert.equal(body.stage, null);
   assert.equal(body.updatedAt, 1234);
@@ -103,10 +105,10 @@ test('TestPipeline_lists staged cards newest first', async () => {
 test('TestLines_kind is stored and validated', async () => {
   const a = (await send('POST', '/api/item', { canvasId: 'c_old', type: 'note', data: {} })).body;
   const b = (await send('POST', '/api/item', { canvasId: 'c_old', type: 'note', data: {} })).body;
-  const l = await send('POST', '/api/item', { canvasId: 'c_old', type: 'line', data: { fromId: a.id, toId: b.id, kind: 'depends', label: 'needs' } });
+  const l = await send('POST', '/api/item', { canvasId: 'c_old', type: 'line', data: { from: { id: a.id }, to: { id: b.id }, kind: 'depends', label: 'needs' } });
   assert.equal(l.status, 200);
   assert.equal(l.body.data.kind, 'depends');
-  assert.equal((await send('POST', '/api/item', { canvasId: 'c_old', type: 'line', data: { fromId: a.id, toId: b.id, kind: 'hates' } })).status, 400);
+  assert.equal((await send('POST', '/api/item', { canvasId: 'c_old', type: 'line', data: { from: { id: a.id }, to: { id: b.id }, kind: 'hates' } })).status, 400);
   const p = await send('PATCH', '/api/item/' + l.body.id, { data: { kind: 'became' } });
   assert.equal(p.body.data.kind, 'became');
   assert.equal(p.body.data.label, 'needs');
@@ -161,7 +163,7 @@ test('TestJsonCanvas_export/import round trip with nested boards', async () => {
   await mk({ type: 'comment', parentItemId: col.id, y: 2, data: { body: 'hmm' } });
   const sub = await mk({ type: 'board', x: 800, y: 400, data: { title: 'Inner' } });
   await send('POST', '/api/item', { canvasId: sub.data.childCanvasId, type: 'note', x: 30, y: 40, data: { title: 'Deep', body: '' } });
-  await mk({ type: 'line', data: { fromId: note.id, toId: link.id, kind: 'depends', label: 'needs spec' } });
+  await mk({ type: 'line', data: { from: { id: note.id }, to: { id: link.id }, kind: 'depends', label: 'needs spec' } });
 
   // Flat export: the nested board is a text node, not a group.
   const flat = await get(`/api/canvas/${src}/export`);
@@ -195,7 +197,7 @@ test('TestJsonCanvas_export/import round trip with nested boards', async () => {
   const copy = (await get('/api/canvas/' + imp.body.data.childCanvasId)).body.items;
   const byType = (t) => copy.filter(i => i.type === t);
   const cNote = byType('note')[0];
-  assert.deepEqual([cNote.data.title, cNote.data.body, cNote.color, cNote.stage, cNote.x, cNote.y], ['Idea', 'Pitch line', 'red', 'design', 100, 100]);
+  assert.deepEqual([richParts(cNote.data).title, richParts(cNote.data).body, cNote.color, cNote.stage, cNote.x, cNote.y], ['Idea', 'Pitch line', 'red', 'design', 100, 100]);
   assert.equal(byType('link')[0].data.url, 'https://jsoncanvas.org');
   const cCol = byType('column')[0];
   assert.equal(cCol.data.title, 'Box');
@@ -203,13 +205,13 @@ test('TestJsonCanvas_export/import round trip with nested boards', async () => {
   assert.deepEqual(kids.map(k => k.type), ['todo', 'comment']);
   assert.deepEqual(kids[0].data.tasks.map(t => [t.text, t.done]), [['one', true], ['two', false]]);
   const cLine = byType('line')[0];
-  assert.deepEqual([cLine.data.kind, cLine.data.label, cLine.data.fromId, cLine.data.toId], ['depends', 'needs spec', cNote.id, byType('link')[0].id]);
+  assert.deepEqual([cLine.data.kind, cLine.data.label, cLine.data.from.id, cLine.data.to.id], ['depends', 'needs spec', cNote.id, byType('link')[0].id]);
   const cSub = byType('board')[0];
   assert.equal(cSub._childTitle, 'Inner');
   assert.deepEqual([cSub.x, cSub.y], [800, 400]);
   const deepCopy = (await get('/api/canvas/' + cSub.data.childCanvasId)).body.items;
   assert.equal(deepCopy.length, 1);
-  assert.deepEqual([deepCopy[0].data.title, deepCopy[0].x, deepCopy[0].y], ['Deep', 30, 40]);
+  assert.deepEqual([richParts(deepCopy[0].data).title, deepCopy[0].x, deepCopy[0].y], ['Deep', 30, 40]);
 });
 
 test('TestJsonCanvas_imports a plain Obsidian canvas', async () => {
@@ -228,8 +230,8 @@ test('TestJsonCanvas_imports a plain Obsidian canvas', async () => {
   const group = items.find(i => i.type === 'board');
   assert.equal(group._childTitle, 'Homelab');
   const inside = (await get('/api/canvas/' + group.data.childCanvasId)).body.items;
-  assert.deepEqual([inside[0].data.body, inside[0].color], ['Just text', 'green']);
-  assert.equal(items.find(i => i.type === 'note' && i.data.title === 'Outside').data.body, 'body');
+  assert.deepEqual([richParts(inside[0].data).body, inside[0].color], ['Just text', 'green']);
+  assert.equal(richParts(items.find(i => i.type === 'note' && richParts(i.data).title === 'Outside').data).body, 'body');
   assert.equal(items.filter(i => i.type === 'line').length, 1);
 });
 

@@ -25,6 +25,8 @@ const call = (m, p, b) => fetch(base + p, { method: m, headers: { 'Content-Type'
 const root = async () => (await call('GET', '/api/root')).body.rootCanvasId;
 const mk = async (canvasId, type, x, y, extra = {}) =>
   (await call('POST', '/api/item', { canvasId, type, x, y, data: {}, ...extra })).body;
+// Notes are rich text now: a title/body write comes back as data.text (title on the first line).
+const ttl = (i) => i.data.title ?? String(i.data.text || '').split('\n')[0];
 const board = async (c) => (await call('GET', '/api/canvas/' + c)).body.items;
 
 test('panel defaults, any size, shape validation', async () => {
@@ -127,7 +129,7 @@ test('group edge cases: empty, unknown, other board, column child, line', async 
   const other = (await call('POST', '/api/item', { canvasId: await root(), type: 'board', data: { title: 'T6b' } })).body.data.childCanvasId;
   const col = await mk(c, 'column', 10, 10), child = await mk(c, 'note', 0, 0, { parentItemId: col.id });
   const foreign = await mk(other, 'note', 0, 0), a = await mk(c, 'note', 400, 10), b = await mk(c, 'note', 700, 10);
-  const line = await mk(c, 'line', 0, 0, { data: { fromId: a.id, toId: b.id } });
+  const line = await mk(c, 'line', 0, 0, { data: { from: { id: a.id }, to: { id: b.id } } });
   const grp = (ids) => call('POST', `/api/canvas/${c}/panels/group`, { itemIds: ids, title: 'x' });
   assert.equal((await grp([])).status, 400);
   assert.equal((await grp(['nope'])).status, 404);
@@ -212,7 +214,7 @@ test('duplicate deep-copies a column with its cards, and a board with its subtre
   const c = (await newBoard('D1')).data.childCanvasId;
   const col = await mk(c, 'column', 10, 10, { data: { title: 'Col' } });
   await mk(c, 'note', 0, 0, { parentItemId: col.id, data: { title: 'in col' } });
-  const d = (await call('POST', `/api/item/${col.id}/duplicate`, {})).body;
+  const d = (await call('POST', `/api/item/${col.id}/copy`, { canvasId: c, x: 40, y: 40 })).body;
   assert.notEqual(d.id, col.id);
   assert.deepEqual([d.x, d.y], [40, 40]);
   const items = await board(c);
@@ -222,17 +224,15 @@ test('duplicate deep-copies a column with its cards, and a board with its subtre
   const sub = await newBoard('Outer');
   const inner = (await call('POST', '/api/item', { canvasId: sub.data.childCanvasId, type: 'board', data: { title: 'Inner' } })).body;
   await mk(inner.data.childCanvasId, 'note', 5, 5, { data: { title: 'deep' } });
-  const dup = (await call('POST', `/api/item/${sub.id}/duplicate`, { canvasId: c, x: 500, y: 500 })).body;
-  assert.equal(dup._childTitle, 'Outer');
+  const dup = (await call('POST', `/api/item/${sub.id}/copy`, { canvasId: c, x: 500, y: 500 })).body;
+  assert.equal((await call('GET', '/api/item/' + dup.id)).body._childTitle, 'Outer');
   assert.notEqual(dup.data.childCanvasId, sub.data.childCanvasId);
   const innerCopy = (await board(dup.data.childCanvasId)).find(i => i.type === 'board');
   assert.notEqual(innerCopy.data.childCanvasId, inner.data.childCanvasId);
-  assert.equal((await board(innerCopy.data.childCanvasId))[0].data.title, 'deep');
+  assert.equal(ttl((await board(innerCopy.data.childCanvasId))[0]), 'deep');
   // errors
-  assert.equal((await call('POST', '/api/item/nope/duplicate', {})).status, 404);
-  const ln = await mk(c, 'line', 0, 0, { data: { fromId: col.id, toId: d.id } });
-  assert.equal((await call('POST', `/api/item/${ln.id}/duplicate`, {})).status, 400);
-  assert.equal((await call('POST', `/api/item/${col.id}/duplicate`, { canvasId: 'nope' })).status, 400);
+  assert.equal((await call('POST', '/api/item/nope/copy', { canvasId: c })).status, 404);
+  assert.equal((await call('POST', `/api/item/${col.id}/copy`, { canvasId: 'nope' })).status, 400);
 });
 
 test('templates: save a board with panels + lines, list, use it twice independently', async () => {
@@ -241,7 +241,7 @@ test('templates: save a board with panels + lines, list, use it twice independen
   await mk(src, 'panel', 0, 0, { w: 400, h: 300, data: { title: 'Goals' } });
   const a = await mk(src, 'note', 40, 80, { data: { title: 'North star' } });
   const b = await mk(src, 'note', 700, 80, { data: { title: 'Far away' } });
-  await mk(src, 'line', 0, 0, { data: { fromId: a.id, toId: b.id, label: 'leads to' } });
+  await mk(src, 'line', 0, 0, { data: { from: { id: a.id }, to: { id: b.id }, label: 'leads to' } });
   const t = await call('POST', '/api/templates', { fromCanvasId: src, name: 'Kickoff kit' });
   assert.equal(t.status, 200);
   assert.deepEqual([t.body.name, t.body.itemCount, t.body.panels], ['Kickoff kit', 4, ['Goals']]);
@@ -255,14 +255,14 @@ test('templates: save a board with panels + lines, list, use it twice independen
   assert.equal(u1._childTitle, 'Plan A');
   const items = await board(u1.data.childCanvasId);
   assert.equal(items.length, 4);
-  assert.equal(items.find(i => i.type === 'note' && i.data.title === 'North star')._panelTitle, 'Goals');
+  assert.equal(items.find(i => i.type === 'note' && ttl(i) === 'North star')._panelTitle, 'Goals');
   const ln = items.find(i => i.type === 'line');
-  assert.ok(items.some(i => i.id === ln.data.fromId) && items.some(i => i.id === ln.data.toId), 'line remapped to the copies');
+  assert.ok(items.some(i => i.id === ln.data.from.id) && items.some(i => i.id === ln.data.to.id), 'line remapped to the copies');
   // independence: editing the use leaves the template and the other use alone
-  const nid = items.find(i => i.data.title === 'North star').id;
-  await call('PATCH', '/api/item/' + nid, { data: { title: 'changed' } });
-  assert.equal((await board(u2.data.childCanvasId)).find(i => i.type === 'note').data.title, 'North star');
-  assert.equal((await board(t.body.id)).find(i => i.type === 'note').data.title, 'North star');
+  const nid = items.find(i => ttl(i) === 'North star').id;
+  await call('PATCH', '/api/item/' + nid, { data: { text: 'changed' } });
+  assert.equal(ttl((await board(u2.data.childCanvasId)).find(i => i.type === 'note')), 'North star');
+  assert.equal(ttl((await board(t.body.id)).find(i => i.type === 'note')), 'North star');
   assert.equal((await call('POST', '/api/templates/c_nope/use', {})).status, 404);
   assert.equal((await call('POST', `/api/templates/${src}/use`, {})).status, 404, 'only boards inside Templates are templates');
 });

@@ -9,7 +9,7 @@ const { test, expect } = require('@playwright/test');
 const { freshCanvas, place, leaveEdit } = require('./helpers');
 
 const PATCH = r => r.url().includes('/api/item/') && r.request().method() === 'PATCH';
-const CREATE = r => r.url().endsWith('/api/item') && r.request().method() === 'POST';
+const PASTED = r => /\/api\/item\/[^/]+\/(copy|move)$/.test(r.url());
 
 test('context menu: copy then paste yields a second note', async ({ page }) => {
   await freshCanvas(page);
@@ -21,7 +21,7 @@ test('context menu: copy then paste yields a second note', async ({ page }) => {
   await page.locator('#ctxmenu .ctx-item', { hasText: 'Copy' }).click();
 
   await note.first().click({ button: 'right' });
-  const created = page.waitForResponse(CREATE);
+  const created = page.waitForResponse(PASTED);
   await page.locator('#ctxmenu .ctx-item', { hasText: 'Paste' }).click();
   await created;
 
@@ -38,11 +38,11 @@ test('context menu: cut then paste keeps a single note (moves it)', async ({ pag
   await page.locator('#ctxmenu .ctx-item', { hasText: 'Cut' }).click();
 
   await note.click({ button: 'right' });
-  const created = page.waitForResponse(CREATE);
+  const moved = page.waitForResponse(PASTED);
   await page.locator('#ctxmenu .ctx-item', { hasText: 'Paste' }).click();
-  await created;
+  await moved;
 
-  // cut removes the original as part of the paste, so the count stays at 1
+  // cut + paste moves the original, so the count stays at 1
   await expect(note).toHaveCount(1);
 });
 
@@ -57,7 +57,7 @@ test('color palette recolors a note and the color survives reload', async ({ pag
   await note.locator('.card-tools .swatch').click();
   await expect(page.locator('#palette.open')).toBeVisible();
   const saved = page.waitForResponse(PATCH);
-  await page.locator('#palette .sw').nth(7).click();   // 8th swatch (red)
+  await page.locator('#palette .sw').nth(7).click(); // 8th swatch (red)
   await saved;
 
   await page.goto('/#' + id);
@@ -82,7 +82,8 @@ test('free-dragging a note persists its new position across reload', async ({ pa
   const note = page.locator('.item.type-note');
   const before = await note.boundingBox();
 
-  const moved = page.waitForResponse(PATCH);
+  // drops are saved in one bulk PATCH (the card plus any group it moved with)
+  const moved = page.waitForResponse(r => r.url().endsWith('/api/items') && r.request().method() === 'PATCH');
   await page.mouse.move(before.x + before.width / 2, before.y + 16);
   await page.mouse.down();
   await page.mouse.move(before.x + before.width / 2 + 180, before.y + 16 + 70, { steps: 10 });
@@ -120,9 +121,9 @@ test('Enter renames the selected board and the name persists', async ({ page }) 
   const id = await freshCanvas(page);
   await place(page, 'board');
   await page.keyboard.press('Escape');
-  await page.locator('.item.type-board .btitle').click(); // select without editing (the tile opens color & icon)
+  await page.locator('.item.type-board .tile').click(); // select without editing
 
-  await page.keyboard.press('Enter');                     // renameSelected -> edit title
+  await page.keyboard.press('Enter'); // renameSelected -> edit title
   // focus lands on the title input a frame later (rAF); wait for it before
   // typing so keystrokes aren't dropped on the way in.
   await expect(page.locator('.item.type-board .btitle')).toBeFocused();
@@ -135,17 +136,29 @@ test('Enter renames the selected board and the name persists', async ({ page }) 
   await expect(page.locator('.item.type-board .btitle')).toHaveValue('Renamed');
 });
 
-test('dragging empty canvas pans the world', async ({ page }) => {
+// Decision D2: left-drag on empty canvas selects; space-drag and middle-drag pan.
+test('space-drag and middle-drag pan the world; plain left-drag does not', async ({ page }) => {
   await freshCanvas(page);
-  const transformBefore = await page.locator('#world').evaluate(el => el.style.transform);
+  const transform = () => page.locator('#world').evaluate(el => el.style.transform);
+  const drag = async (button = 'left') => {
+    await page.mouse.move(700, 300);
+    await page.mouse.down({ button });
+    await page.mouse.move(500, 500, { steps: 10 });
+    await page.mouse.up({ button });
+  };
 
-  await page.mouse.move(700, 300);
-  await page.mouse.down();
-  await page.mouse.move(500, 500, { steps: 10 });
-  await page.mouse.up();
+  const t0 = await transform();
+  await drag();
+  expect(await transform()).toBe(t0);
 
-  const transformAfter = await page.locator('#world').evaluate(el => el.style.transform);
-  expect(transformAfter).not.toBe(transformBefore);
+  await page.keyboard.down('Space');
+  await drag();
+  await page.keyboard.up('Space');
+  const t1 = await transform();
+  expect(t1).not.toBe(t0);
+
+  await drag('middle');
+  expect(await transform()).not.toBe(t1);
 });
 
 test('board selection chrome replaces the badge with rail actions', async ({ page }) => {
@@ -153,14 +166,13 @@ test('board selection chrome replaces the badge with rail actions', async ({ pag
   await place(page, 'board');
   await page.keyboard.press('Escape');
   const card = page.locator('.item.type-board');
-  await card.locator('.btitle').click();             // the first click on the name selects
+  await card.locator('.tile').click();
 
   await expect(card.locator('.card-tools')).toHaveCount(0);
   await expect(page.locator('#railBoard')).toBeVisible();
   await expect(page.locator('#railCreate')).toBeHidden();
 
-  // color & icon live on the board's tile now, not the rail
-  await card.locator('.tile').click();
+  await page.locator('#railBoardColor').click();
   await expect(page.locator('#palette.open')).toBeVisible();
   await page.locator('#palette .sw').nth(7).click(); // red
   await expect(card.locator('.tile')).toHaveCSS('background-color', 'rgb(239, 75, 75)');
@@ -171,10 +183,8 @@ test('board selection chrome replaces the badge with rail actions', async ({ pag
   await page.locator('#stage').click({ position: { x: 40, y: 40 } }); // blur / deselect
   await expect(page.locator('.item.type-board .btitle')).toHaveValue('Sidebar');
 
-  await card.locator('.btitle').click();
+  await card.locator('.tile').click();
   await page.locator('#railBoardDelete').click();
-  await expect(page.locator('#cmMessage')).toContainText('everything inside it');
-  await page.click('#cmOk');                          // a board deletes its contents too, so it asks
   await expect(page.locator('.item.type-board')).toHaveCount(0);
   await expect(page.locator('#railCreate')).toBeVisible();
 });

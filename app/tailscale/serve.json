@@ -1,0 +1,19 @@
+{
+  "TCP": {
+    "443": {
+      "HTTPS": true
+    }
+  },
+  "Web": {
+    "${TS_CERT_DOMAIN}:443": {
+      "Handlers": {
+        "/": {
+          "Proxy": "http://app:4321"
+        },
+        "/ingest/": {
+          "Proxy": "http://pipeline:8000/ingest/"
+        }
+      }
+    }
+  }
+}

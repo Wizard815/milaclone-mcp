@@ -1,390 +1,222 @@
 'use strict';
 
 import { state, dom, elMap } from './state.js';
-import { api } from './api.js';
-import { colorVar, toast, lucideEl, refreshIcons } from './util.js';
-import { select, deleteItem, saveData } from './editing.js';
-import { disarm } from './tools.js';
+import { colorVar, toast } from './util.js';
 import { screenToWorld } from './viewport.js';
+import { api } from './api.js';
+import { select, toggleSelect, saveData } from './editing.js';
+import { openCtx } from './menus.js';
 
+// Lines (F6.1): straight connectors in one SVG layer at the back of #world.
+// Each end is `{ id }` (attached to a card: the line runs between the cards'
+// edges and follows them) or a free `{ x, y }` world point. A line whose card
+// is gone (trashed, or not on this board) is simply not drawn. data: from, to,
+// arrow ('end' | 'both' | 'none'), dashed, label (+ text = label, for search).
 
-// Connector lines between two cards. Unlike every other item type, a line
-// has no box of its own on the canvas — it's just a fromId/toId pair drawn
-// into an SVG layer that lives inside #world so it inherits the same
-// pan/zoom transform as everything else, no extra math required.
+const NS = 'http://www.w3.org/2000/svg';
+let layer = null;
 
-const SVG_NS = 'http://www.w3.org/2000/svg';
+const svg = (tag, attrs) => {
+  const n = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  return n;
+};
 
-// Miladash arrow kinds (stored in data.kind; missing means "relates").
-export const LINE_KINDS = { relates: 'Relates to', depends: 'Depends on', became: 'Became' };
-
-// Reused across calls rather than recreated, since renderLines() runs on
-// every drag/resize tick (not just on a full render()) — recreating it each
-// time would pile up stale detached-looking duplicates as the drag proceeds.
-// Appended last (and z-indexed above cards in CSS) so connectors read as
-// free-floating over the board instead of tucked behind every card.
-function ensureLayer() {
-  let svg = document.getElementById('linesLayer');
-  if (!svg || svg.parentNode !== dom.world) {
-    svg = document.createElementNS(SVG_NS, 'svg');
-    svg.id = 'linesLayer';
-    dom.world.appendChild(svg);
-  }
-  svg.innerHTML = '';
-  const defs = document.createElementNS(SVG_NS, 'defs');
-  svg.appendChild(defs);
-  return { svg, defs };
-}
-
-// Label pills are plain HTML (easier to make editable than SVG <text>), so
-// they live as siblings of the SVG layer rather than inside it. Tracked here
-// so a mid-drag renderLines() call can clear the previous batch instead of
-// piling up duplicates the same way the old ensureLayer() bug did for paths.
-let labelEls = [];
-function clearLabels() { labelEls.forEach(el => el.remove()); labelEls = []; }
-
-// Markers can't reference a CSS var per-instance, so each line gets its own
-// arrowhead def sized to its own color instead of sharing one global marker.
-function addArrowMarker(defs, id, color) {
-  const marker = document.createElementNS(SVG_NS, 'marker');
-  marker.setAttribute('id', id);
-  marker.setAttribute('viewBox', '0 0 10 10');
-  marker.setAttribute('refX', '8'); marker.setAttribute('refY', '5');
-  marker.setAttribute('markerWidth', '7'); marker.setAttribute('markerHeight', '7');
-  marker.setAttribute('orient', 'auto-start-reverse');
-  const path = document.createElementNS(SVG_NS, 'path');
-  path.setAttribute('d', 'M0,0 L10,5 L0,10 z');
-  path.setAttribute('fill', color);
-  marker.appendChild(path);
-  defs.appendChild(marker);
-}
-
-// Reads the *live* DOM position rather than it.x/it.y so a line dragged
-// mid-move (which only updates el.style.left/top until the drag finishes)
-// still tracks the card instead of snapping into place after the drop.
+// World-space box of a rendered card (cards in columns included).
 function rectOf(id) {
   const el = elMap.get(id);
-  if (!el) return null;
-  if (el.style.left) {
-    const x = parseFloat(el.style.left) || 0, y = parseFloat(el.style.top) || 0;
-    const w = el.offsetWidth, h = el.offsetHeight;
-    return { x, y, w, h, cx: x + w / 2, cy: y + h / 2 };
+  if (!el || !el.isConnected || el instanceof SVGElement) return null;
+  let r = el.getBoundingClientRect();
+  // A card in a collapsed column has no box (display: none): end at the column.
+  if (!r.width && !r.height) {
+    const col = el.parentElement?.closest('.item');
+    if (!col) return null;
+    r = col.getBoundingClientRect();
   }
-  // Column children never get an inline left/top (they're positioned by
-  // normal document flow inside the column body, not absolute placement --
-  // see renderItem in cards.js) -- without this fallback, a line to/from a
-  // card in a column silently anchored at world (0,0) instead of the card's
-  // actual position, whether the line was drawn to it directly or it was
-  // dragged into a column after the line already existed. Read the real
-  // rendered screen rect and convert to world space instead.
-  const r = el.getBoundingClientRect();
-  const topLeft = screenToWorld(r.left, r.top);
-  const w = r.width / state.cam.scale, h = r.height / state.cam.scale;
-  return { x: topLeft.x, y: topLeft.y, w, h, cx: topLeft.x + w / 2, cy: topLeft.y + h / 2 };
+  const p = screenToWorld(r.left, r.top);
+  return { x: p.x, y: p.y, w: r.width / state.cam.scale, h: r.height / state.cam.scale };
 }
 
-// Where a ray from the rect's center in direction (dx,dy) exits the
-// rectangle — dx/dy don't need to be normalized, only their ratio matters.
-function edgeAlongDir(rect, dx, dy) {
-  if (!dx && !dy) return { x: rect.cx, y: rect.cy };
-  const hw = rect.w / 2, hh = rect.h / 2;
-  const scale = Math.min(dx ? Math.abs(hw / dx) : Infinity, dy ? Math.abs(hh / dy) : Infinity);
-  return { x: rect.cx + dx * scale, y: rect.cy + dy * scale };
+const centre = r => ({ x: r.x + r.w / 2, y: r.y + r.h / 2 });
+
+// Where the ray from the box's centre towards `to` leaves the box.
+export function edgePoint(r, to) {
+  const c = centre(r);
+  const dx = to.x - c.x,
+    dy = to.y - c.y;
+  const t = Math.min(1, dx ? r.w / 2 / Math.abs(dx) : Infinity, dy ? r.h / 2 / Math.abs(dy) : Infinity);
+  return { x: c.x + dx * t, y: c.y + dy * t };
 }
 
-// Where a ray from the rect's center toward (tx,ty) exits the rectangle —
-// the default, automatic attach point (always the side facing the other
-// card) used whenever there's no manual override.
-function edgePoint(rect, tx, ty) {
-  return edgeAlongDir(rect, tx - rect.cx, ty - rect.cy);
+function ends(it) {
+  const a = it.data.from || {},
+    b = it.data.to || {};
+  const ra = a.id ? rectOf(a.id) : null,
+    rb = b.id ? rectOf(b.id) : null;
+  if ((a.id && !ra) || (b.id && !rb)) return null;
+  const ca = ra ? centre(ra) : a,
+    cb = rb ? centre(rb) : b;
+  return [ra ? edgePoint(ra, cb) : a, rb ? edgePoint(rb, ca) : b];
 }
 
-// Direct connection: the dot (and the line itself) sits right on the card
-// edge, no offset — this used to sit a fixed gap outside the card, bridged
-// by a separate dashed stub, but that read as a gap in the connection
-// rather than a direct one.
-//
-// anchorDir (optional): a stored {x,y} direction from the card's center,
-// set by dragging the endpoint dot around on its own card (see
-// grabArea's pointerdown below) — overrides the automatic side-facing-the-
-// other-card placement so a line can point at a specific corner/edge
-// instead of always the geometrically closest point.
-function attachPoint(rect, tx, ty, anchorDir) {
-  const edge = anchorDir ? edgeAlongDir(rect, anchorDir.x, anchorDir.y) : edgePoint(rect, tx, ty);
-  return { edge, dot: edge };
+function arrowHead(tip, from) {
+  const ang = Math.atan2(tip.y - from.y, tip.x - from.x);
+  const pt = d => `${tip.x - 12 * Math.cos(ang + d)},${tip.y - 12 * Math.sin(ang + d)}`;
+  return svg('polygon', { class: 'line-head', points: `${tip.x},${tip.y} ${pt(0.45)} ${pt(-0.45)}` });
 }
 
-export function renderLines() {
-  const { svg: layer, defs } = ensureLayer();
-  clearLabels();
-  const lines = state.view.items.filter(it => it.type === 'line');
-  for (const line of lines) {
-    const fromRect = elMap.has(line.data.fromId) && rectOf(line.data.fromId);
-    const toRect = elMap.has(line.data.toId) && rectOf(line.data.toId);
-    if (!fromRect || !toRect) {
-      // Endpoint no longer exists on this board (deleted card) — the line
-      // is meaningless now, so clean it up rather than leaving it stuck.
-      deleteItem(line.id, { trackUndo: false });
-      continue;
-    }
-    const fromAttach = attachPoint(fromRect, toRect.cx, toRect.cy, line.data.fromAnchorDir);
-    const toAttach = attachPoint(toRect, fromRect.cx, fromRect.cy, line.data.toAnchorDir);
-    const from = fromAttach.dot, to = toAttach.dot;
-    const mx = (from.x + to.x) / 2, my = (from.y + to.y) / 2;
-    const ddx = to.x - from.x, ddy = to.y - from.y;
-    const len = Math.hypot(ddx, ddy) || 1;
-    const ax = ddx / len, ay = ddy / len;   // unit vector along the line
-    const px = -ay, py = ax;                // unit vector perpendicular to it
-    // Two independent offsets from the straight midpoint: "bend" (how far
-    // off the line, perpendicular) and "along" (where the bulge sits along
-    // the line's own length) — dragging the handle sets both freely, so it
-    // can move up/down the line as well as bow it out.
-    const bend = line.data.bend || 0;
-    const along = line.data.along || 0;
-    const ctrl = { x: mx + px * bend + ax * along, y: my + py * bend + ay * along };
-    // Point at t=0.5 on the quadratic curve itself (not the control point,
-    // which sits off the curve once bent) — used for the label position.
-    const curveMid = { x: 0.25 * from.x + 0.5 * ctrl.x + 0.25 * to.x, y: 0.25 * from.y + 0.5 * ctrl.y + 0.25 * to.y };
+function drawOne(it) {
+  const pts = ends(it);
+  if (!pts) return null;
+  const [a, b] = pts;
+  const g = svg('g', { class: 'line', 'data-id': it.id });
+  g.classList.toggle('selected', state.selection.has(it.id));
+  g.style.color = it.color ? colorVar(it.color) : 'var(--ink-soft)';
+  const seg = { x1: a.x, y1: a.y, x2: b.x, y2: b.y };
+  g.appendChild(svg('line', { class: 'line-hit', ...seg }));
+  const stroke = svg('line', { class: 'line-stroke', ...seg });
+  if (it.data.dashed) stroke.setAttribute('stroke-dasharray', '7 6');
+  g.appendChild(stroke);
+  const arrow = it.data.arrow || 'end';
+  if (arrow !== 'none') g.appendChild(arrowHead(b, a));
+  if (arrow === 'both') g.appendChild(arrowHead(a, b));
+  if (it.data.label) {
+    const t = svg('text', { class: 'line-label', x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 - 6 });
+    t.textContent = it.data.label;
+    g.appendChild(t);
+  }
+  g.addEventListener('pointerdown', e => {
+    if (e.button !== 0 || state.armed) return;
+    e.stopPropagation(); // not a selection box
+    if (e.shiftKey) toggleSelect(it.id);
+    else select(it.id);
+  });
+  g.addEventListener('contextmenu', e => openCtx(e, it));
+  g.addEventListener('dblclick', e => {
+    e.stopPropagation();
+    editLabel(it);
+  });
+  return g;
+}
 
-    const color = colorVar(line.color || 'slate');
-    const markerId = 'arrow-' + line.id;
-    addArrowMarker(defs, markerId, color);
-
-    const kind = LINE_KINDS[line.data.kind] ? line.data.kind : 'relates';
-    const g = document.createElementNS(SVG_NS, 'g');
-    g.classList.add('cline', 'kind-' + kind);
-    g.dataset.id = line.id;
-    g.dataset.kind = kind;
-    const selected = line.id === state.selectedId;
-    if (selected) g.classList.add('selected');
-    const d = `M ${from.x},${from.y} Q ${ctrl.x},${ctrl.y} ${to.x},${to.y}`;
-    const hit = document.createElementNS(SVG_NS, 'path');
-    hit.setAttribute('d', d); hit.setAttribute('class', 'chit');
-    const vis = document.createElementNS(SVG_NS, 'path');
-    vis.setAttribute('d', d); vis.setAttribute('class', 'cvis');
-    vis.setAttribute('stroke', color);
-    vis.setAttribute('marker-end', `url(#${markerId})`);
-    // depends on: dashed. became: heavier. relates to: plain.
-    if (kind === 'depends') vis.setAttribute('stroke-dasharray', '7 5');
-    g.appendChild(hit); g.appendChild(vis);
-    // A dot marker sits right on the card edge, decorative (pointer-
-    // events:none in CSS) — a much bigger invisible circle underneath it is
-    // the actual, easy-to-grab drag target, same trick as the wide
-    // invisible .chit under the visible line.
-    for (const attach of [fromAttach, toAttach]) {
-      const isFrom = attach === fromAttach;
-      const grabArea = document.createElementNS(SVG_NS, 'circle');
-      grabArea.setAttribute('cx', attach.edge.x); grabArea.setAttribute('cy', attach.edge.y); grabArea.setAttribute('r', 14);
-      grabArea.setAttribute('class', 'cdot-grab');
-      const dot = document.createElementNS(SVG_NS, 'circle');
-      dot.setAttribute('cx', attach.edge.x); dot.setAttribute('cy', attach.edge.y); dot.setAttribute('r', 4);
-      dot.setAttribute('class', 'cdot');
-      dot.setAttribute('fill', color);
-      g.appendChild(grabArea); g.appendChild(dot);
-
-      // Drag an endpoint dot onto a *different* card to re-point the
-      // connector at it. Drag it around while staying off any other card
-      // (over its own card, or empty space) to instead slide where on its
-      // own card's edge it attaches — a live preview follows the cursor via
-      // the same anchorDir attachPoint() reads, reverted if you drop on
-      // empty canvas, kept if you drop back on the own card, replaced with
-      // the default automatic placement if you retarget to a new card.
-      grabArea.addEventListener('pointerdown', (e) => {
-        e.stopPropagation();
-        if (e.button === 2) return; // right-click: the line's context menu
-        e.preventDefault();
-        select(line.id);
-        const ownId = isFrom ? line.data.fromId : line.data.toId;
-        const otherId = isFrom ? line.data.toId : line.data.fromId;
-        const origDir = isFrom ? line.data.fromAnchorDir : line.data.toAnchorDir;
-        const setDir = (dir) => { if (isFrom) line.data.fromAnchorDir = dir; else line.data.toAnchorDir = dir; };
-        const move = (ev) => {
-          document.querySelectorAll('.item.line-target').forEach(el => el.classList.remove('line-target'));
-          const overEl = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.item');
-          if (overEl && overEl.dataset.id !== otherId && overEl.dataset.id !== ownId) {
-            overEl.classList.add('line-target');
-            return;
-          }
-          // Not hovering a valid retarget candidate — slide the attach
-          // point toward the cursor along the own card's own edge instead.
-          const rect = rectOf(ownId);
-          if (!rect) return;
-          const w = screenToWorld(ev.clientX, ev.clientY);
-          const dx = w.x - rect.cx, dy = w.y - rect.cy;
-          const len = Math.hypot(dx, dy) || 1;
-          setDir({ x: dx / len, y: dy / len });
-          renderLines();
-        };
-        const up = (ev) => {
-          document.removeEventListener('pointermove', move);
-          document.removeEventListener('pointerup', up);
-          document.querySelectorAll('.item.line-target').forEach(el => el.classList.remove('line-target'));
-          const overEl = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.item');
-          const newId = overEl && overEl.dataset.id;
-          if (newId && newId !== otherId && newId !== ownId) {
-            // Retargeted to a different card — the old custom anchor was
-            // relative to the card that's no longer this endpoint, so drop
-            // it in favor of the new target's automatic placement.
-            setDir(null);
-            saveData(line, isFrom ? { fromId: newId, fromAnchorDir: null } : { toId: newId, toAnchorDir: null });
-          } else if (newId === ownId) {
-            saveData(line, isFrom ? { fromAnchorDir: line.data.fromAnchorDir } : { toAnchorDir: line.data.toAnchorDir });
-          } else {
-            // Dropped on empty canvas — cancel, revert the live preview.
-            setDir(origDir);
-          }
-          renderLines();
-        };
-        document.addEventListener('pointermove', move);
-        document.addEventListener('pointerup', up);
-      });
-    }
-    g.addEventListener('pointerdown', (e) => {
-      e.stopPropagation();
-      // Right button: leave the DOM alone so the contextmenu event still
-      // reaches this element (re-rendering here would detach it first).
-      if (e.button === 2) return;
-      e.preventDefault(); select(line.id); renderLines();
-    });
-    g.addEventListener('contextmenu', (e) => openLineCtx(e, line));
+// (Re)draws every line on this board. Cheap enough to run on any change.
+export function drawLines() {
+  if (!layer || layer.parentNode !== dom.world) {
+    layer = svg('svg', { id: 'lines' });
+    dom.world.prepend(layer);
+  }
+  layer.replaceChildren();
+  for (const it of state.view.items) {
+    if (it.type !== 'line') continue;
+    elMap.delete(it.id);
+    const g = drawOne(it);
+    if (!g) continue;
     layer.appendChild(g);
-
-    if (selected) {
-      const bendGrab = document.createElementNS(SVG_NS, 'circle');
-      bendGrab.setAttribute('cx', ctrl.x); bendGrab.setAttribute('cy', ctrl.y); bendGrab.setAttribute('r', 14);
-      bendGrab.setAttribute('class', 'cbend-grab');
-      const handle = document.createElementNS(SVG_NS, 'circle');
-      handle.setAttribute('cx', ctrl.x); handle.setAttribute('cy', ctrl.y); handle.setAttribute('r', 5);
-      handle.setAttribute('class', 'cbend');
-      bendGrab.addEventListener('contextmenu', (e) => openLineCtx(e, line));
-      bendGrab.addEventListener('pointerdown', (e) => {
-        e.stopPropagation();
-        if (e.button === 2) return;
-        e.preventDefault();
-        const move = (ev) => {
-          const w = screenToWorld(ev.clientX, ev.clientY);
-          const vx = w.x - mx, vy = w.y - my;
-          line.data.bend = vx * px + vy * py;
-          line.data.along = vx * ax + vy * ay;
-          renderLines();
-        };
-        const up = () => {
-          document.removeEventListener('pointermove', move);
-          document.removeEventListener('pointerup', up);
-          saveData(line, { bend: line.data.bend, along: line.data.along });
-        };
-        document.addEventListener('pointermove', move);
-        document.addEventListener('pointerup', up);
-      });
-      layer.appendChild(bendGrab);
-      layer.appendChild(handle);
-    }
-
-    if (selected || line.data.label) {
-      const label = document.createElement('div');
-      label.className = 'cline-label';
-      label.dataset.lineId = line.id;
-      label.contentEditable = 'true';
-      label.dataset.placeholder = 'Add label';
-      label.textContent = line.data.label || '';
-      // Offset below the curve so it doesn't sit exactly on top of (and
-      // completely hide, since it paints above the SVG layer) the bend
-      // handle, which lives right at the curve's midpoint when unselected
-      // labels aren't shown and at the control point once selected.
-      label.style.left = curveMid.x + 'px';
-      label.style.top = (curveMid.y + (selected ? 20 : 0)) + 'px';
-      label.addEventListener('pointerdown', (e) => e.stopPropagation());
-      label.addEventListener('input', () => saveData(line, { label: label.textContent.trim() }));
-      label.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); label.blur(); } });
-      dom.world.appendChild(label);
-      labelEls.push(label);
-    }
-
-    if (selected) {
-      const del = document.createElement('button');
-      del.className = 'cline-del';
-      del.title = 'Delete connector';
-      del.appendChild(lucideEl('trash-2'));
-      del.style.left = ctrl.x + 'px';
-      del.style.top = (ctrl.y - 26) + 'px';
-      del.addEventListener('pointerdown', (e) => e.stopPropagation());
-      del.addEventListener('click', (e) => { e.stopPropagation(); deleteItem(line.id); });
-      dom.world.appendChild(del);
-      labelEls.push(del);
-      refreshIcons(del);
-    }
+    elMap.set(it.id, g);
   }
 }
 
-// Right-click menu on a connector: its kind, its label, delete.
-function openLineCtx(e, line) {
-  e.preventDefault(); e.stopPropagation();
-  select(line.id);
-  renderLines();
-  const menu = dom.ctxmenu;
-  menu.innerHTML = '';
-  const add = (label, fn, opts = {}) => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'ctx-item' + (opts.danger ? ' danger' : '') + (opts.on ? ' on' : '');
-    if (opts.act) b.dataset.act = opts.act;
-    const lab = document.createElement('span'); lab.textContent = label; b.appendChild(lab);
-    if (opts.on) { const k = document.createElement('kbd'); k.textContent = '✓'; b.appendChild(k); }
-    b.onclick = () => { menu.classList.remove('open'); menu.innerHTML = ''; fn(); };
-    menu.appendChild(b);
+// Cards move (drag, nudge, column reflow), resize and grow while typing: redraw
+// once per frame after any change inside #world that isn't the layer itself or
+// the camera transform.
+// ponytail: rebuilds every line per frame of activity — fine for tens of lines;
+// update x1/y1/x2/y2 in place if boards grow hundreds.
+let frame = 0;
+export function initLines() {
+  new MutationObserver(muts => {
+    if (frame || !state.view.items?.some(i => i.type === 'line')) return;
+    if (muts.every(m => m.target === dom.world || (layer && layer.contains(m.target)))) return;
+    frame = requestAnimationFrame(() => {
+      frame = 0;
+      drawLines();
+    });
+  }).observe(dom.world, { attributes: true, attributeFilter: ['style'], childList: true, subtree: true });
+}
+
+// A free point, or the card under the pointer.
+function endAt(e) {
+  const card = document.elementFromPoint(e.clientX, e.clientY)?.closest('.item[data-id]');
+  if (card) return { id: card.dataset.id };
+  const p = screenToWorld(e.clientX, e.clientY);
+  return { x: Math.round(p.x), y: Math.round(p.y) };
+}
+
+// The armed Line tool: press, drag, release. Either end snaps to the card under it.
+export function startLine(e) {
+  const from = endAt(e);
+  const p0 = screenToWorld(e.clientX, e.clientY);
+  if (!layer) drawLines();
+  const ghost = svg('line', { class: 'line-ghost', x1: p0.x, y1: p0.y, x2: p0.x, y2: p0.y });
+  layer.appendChild(ghost);
+  dom.stage.setPointerCapture(e.pointerId);
+  const move = ev => {
+    const p = screenToWorld(ev.clientX, ev.clientY);
+    ghost.setAttribute('x2', p.x);
+    ghost.setAttribute('y2', p.y);
   };
-  const sep = () => { const s = document.createElement('div'); s.className = 'ctx-sep'; menu.appendChild(s); };
-  const cur = LINE_KINDS[line.data.kind] ? line.data.kind : 'relates';
-  for (const [k, text] of Object.entries(LINE_KINDS)) {
-    add(text, () => { saveData(line, { kind: k }); renderLines(); }, { on: k === cur, act: 'kind-' + k });
-  }
-  sep();
-  add(line.data.label ? 'Edit label' : 'Add label', () => editLineLabel(line.id), { act: 'label' });
-  sep();
-  add('Delete line', () => deleteItem(line.id), { danger: true, act: 'delete' });
-  menu.classList.add('open');
-  const mw = 220, mh = menu.offsetHeight || 200;
-  let left = e.clientX, top = e.clientY;
-  if (left + mw > window.innerWidth) left = window.innerWidth - mw - 8;
-  if (top + mh > window.innerHeight) top = window.innerHeight - mh - 8;
-  menu.style.left = left + 'px'; menu.style.top = top + 'px';
+  const stop = () => {
+    dom.stage.removeEventListener('pointermove', move);
+    dom.stage.removeEventListener('pointerup', up);
+    dom.stage.removeEventListener('pointercancel', stop);
+    ghost.remove();
+  };
+  const up = async ev => {
+    stop();
+    const to = endAt(ev);
+    const p = screenToWorld(ev.clientX, ev.clientY);
+    if ((from.id && from.id === to.id) || Math.hypot(p.x - p0.x, p.y - p0.y) < 8) {
+      toast('Drag from one card or point to another to draw a line');
+      return;
+    }
+    const it = await api.create({
+      canvasId: state.view.canvas.id,
+      type: 'line',
+      x: Math.round(p0.x),
+      y: Math.round(p0.y),
+      w: 0,
+      data: { from, to, arrow: 'end', dashed: false, label: '', text: '' },
+    });
+    if (!it || it.error) return;
+    state.view.items.push(it);
+    drawLines();
+    select(it.id);
+  };
+  dom.stage.addEventListener('pointermove', move);
+  dom.stage.addEventListener('pointerup', up);
+  dom.stage.addEventListener('pointercancel', stop); // touch gesture, OS interruption: no line
 }
 
-function editLineLabel(lineId) {
-  select(lineId);
-  renderLines();
-  const label = labelEls.find(el => el.dataset.lineId === lineId);
-  if (!label) return;
-  label.focus();
-  const range = document.createRange(); range.selectNodeContents(label);
-  const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+export function setLine(it, patch) {
+  saveData(it, patch);
+  drawLines();
 }
 
-// Called from onItemPointerDown while the Line tool is armed, instead of
-// the normal select/drag flow: first card clicked becomes "from", second
-// becomes "to". Clicking the same card twice, or empty canvas, cancels.
-export function pickLineEndpoint(it) {
-  if (it.type === 'line') return;
-  if (!state.lineFrom) {
-    state.lineFrom = it.id;
-    toast('Click another card to connect');
-    return;
-  }
-  if (state.lineFrom === it.id) { cancelLine(); return; }
-  const fromId = state.lineFrom;
-  cancelLine();
-  createLine(fromId, it.id);
-}
-
-export function cancelLine() {
-  state.lineFrom = null;
-  disarm();
-}
-
-async function createLine(fromId, toId) {
-  const body = { canvasId: state.view.canvas.id, type: 'line', x: 0, y: 0, w: 0, color: 'slate', data: { fromId, toId, kind: 'relates' } };
-  const it = await api.create(body);
-  state.view.items.push(it);
-  renderLines();
-  toast('Connected');
+// An inline field over the line's midpoint; Enter or blur saves, Escape cancels.
+export function editLabel(it) {
+  const pts = ends(it);
+  if (!pts) return;
+  const [a, b] = pts;
+  const f = document.createElement('input');
+  f.className = 'line-label-edit';
+  f.value = it.data.label || '';
+  f.placeholder = 'Label';
+  f.style.left = (a.x + b.x) / 2 + 'px';
+  f.style.top = (a.y + b.y) / 2 + 'px';
+  let done = false;
+  const finish = keep => {
+    if (done) return;
+    done = true;
+    const label = f.value.trim();
+    f.remove();
+    if (keep && label !== (it.data.label || '')) setLine(it, { label, text: label });
+  };
+  f.addEventListener('keydown', e => {
+    e.stopPropagation();
+    if (e.key === 'Enter') finish(true);
+    if (e.key === 'Escape') finish(false);
+  });
+  f.addEventListener('blur', () => finish(true));
+  f.addEventListener('pointerdown', e => e.stopPropagation());
+  dom.world.appendChild(f);
+  f.focus();
 }

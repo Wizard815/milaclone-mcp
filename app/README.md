@@ -1,218 +1,198 @@
-# Milaclone / Miladash: a self-hosted Milanote-style canvas board
+# Milaclone
 
-An infinite visual canvas for notes, to-do lists, links, images, columns, and
-nested boards. Runs as a small Node.js app with **no frontend build step** —
-clone, `npm install`, `node server.js`. Your data lives in a single SQLite file
-on disk, so it's trivial to back up and fully yours.
+A self-hosted, Milanote-style visual board for notes, tasks, links, images and
+nested boards. It's a small Node.js app, and everything lives in one SQLite
+file you own.
+
+![A board with a column, notes joined by lines, a nested to-do list, colour swatches, a table, a document, a video and an audio clip](docs/screenshots/board-light.png)
 
 ## Features
 
-- Infinite pan/zoom canvas with a dotted grid
-- Cards: **Note**, **To-do**, **Link**, **Comment**, **Image**, **Upload** (files),
-  **Column**, **Board** (nested sub-canvas with Lucide icons)
-- Nested boards with clickable breadcrumb navigation (Home / … / …)
-- Drag cards freely, drag them in and out of columns, resize, recolor
-- Customizable board icons (Lucide) + 12-color palette
-- Right-click menu: copy, cut, paste, duplicate, rename, lock position, trash
-- Everything autosaves to SQLite under `data/`
-- Per-board camera position remembered in your browser
+- **Infinite canvas.** Pan, zoom, drag-select, snap to grid, plus undo (⌘Z).
+- **Card types:**
+  - rich-text notes and full-screen documents
+  - to-do lists with nesting, drag-to-reorder, due dates and tags
+  - links, with YouTube, Vimeo and Spotify embeds
+  - images and files
+  - columns that collapse
+  - nested boards with colours and icons, and shortcuts to them
+  - comments, colour swatches, simple tables and freehand sketches
+- **Lines and arrows** between cards, with labels and dashed styles.
+- **Organising:** labels with a board filter, templates, and search across
+  every board with ⌘K.
+- **Trash and undo:** deleting moves a card to Trash, so it can always be
+  restored.
+- **Export:** a board to Markdown, or a full database backup.
+- **Mobile layout,** including [Quick notes](#quick-notes-every-to-do-list-in-one-place),
+  a task view of every to-do list.
+- **Dark mode** that follows your system setting.
 
-## Miladash
+|                   Dark mode                   |                          Mobile                          |                      Quick notes                       |
+| :-------------------------------------------: | :------------------------------------------------------: | :----------------------------------------------------: |
+| ![Dark mode](docs/screenshots/board-dark.png) | ![A board on a phone](docs/screenshots/mobile-board.png) | ![Quick notes](docs/screenshots/mobile-quicknotes.png) |
 
-This branch is **Miladash**, Milaclone trimmed and extended to be the ideas
-board for the Pondering Orb homelab dashboard.
+## Quick notes: every to-do list in one place
 
-What's new:
+Quick notes turns all your to-do cards into a task app. Every to-do card on
+every board, however deep it's nested, shows up here as a list. It's the same
+data, not a copy: tick a task on your phone and it's ticked on the board.
 
-- **Stage on cards.** Right-click a card and pick *Thought*, *Design* or
-  *Code* (or *None*). The stage shows as a chip on the card. It is a field,
-  not a position: moving a card on the board never changes it. Stored in a
-  new `items.stage` column (added by a migration that keeps existing data),
-  returned and accepted as `stage` by `POST/PATCH /api/item`, and by the MCP
-  `create_item`/`update_item` tools.
-- **Pipeline view** (the kanban button in the top bar): every staged card
-  in the workspace in Thought / Design / Code columns, newest change first
-  (`items.updatedAt`, bumped by content and stage edits, not by moves).
-  Drag a card to another column to change its stage; click it to open it on
-  its board. `GET /api/pipeline`, MCP `list_pipeline`.
-- **Panels** (the Panel tool): a named background region of any size, drawn
-  behind other cards, shaped rect / rounded / ellipse (click the icon in its
-  header). Drag a card onto it and the card is logged as in that panel
-  (positional: card centre + 24px down); drag the header and everything inside
-  moves with it; resize from the corner handle. The body is click-through so you
-  can still pan and box-select across it. `GET /api/canvas/:id/panels`,
-  `POST /api/canvas/:id/panels/group`, `POST /api/panel/:id/members`; MCP
-  `create_panel`, `group_into_panel`, `add_to_panel`, `list_panels`.
-  `node scripts/seed-demo.js <url>` fills a board with demo data.
-- **Arrow kinds and labels.** Right-click a connector line: *Relates to*,
-  *Depends on* (drawn dashed) or *Became* (drawn heavier), and *Add/Edit
-  label*. Stored as `data.kind` / `data.label` on the line.
-- **Box-select.** Shift+drag on empty canvas (or use the Select tool) to
-  select several cards, then drag one of them to move them all.
-- **Promote to a project.** On a Code-stage card, *Promote to a project*
-  asks this server to `POST {ORB_URL}/api/c/projects` with
-  `{name, next, status: "next"}` and `Authorization: Bearer {ORB_TOKEN}`
-  (`POST /api/item/:id/promote`, MCP `promote_item`). The name is the card's
-  title, `next` its first body line. The card is then marked promoted
-  (`data.promoted`), dimmed, and gets a *Project* chip. The browser never
-  sees `ORB_TOKEN`. Without `ORB_URL` the menu item is disabled and says so.
-- **JSON Canvas export/import** (the *Export* button). Exports the board as
-  [JSON Canvas 1.0](https://jsoncanvas.org) (`.canvas`, which Obsidian
-  opens): text, link and group nodes with x, y, width, height and colour,
-  and edges with fromNode/toNode/label. Columns become groups; *Export with
-  nested boards* turns each board card into a group holding that board's
-  cards. Each node/edge also carries a small `miladash` object (type, stage,
-  arrow kind) so a Miladash round trip keeps them; other apps ignore it.
-  *Import a .canvas file* creates a new board card holding the file's
-  contents: groups become nested boards (or columns, if they were exported
-  as columns). `GET /api/canvas/:id/export[?nested=1]`,
-  `POST /api/canvas/:id/import`.
-- **Looks.** Colours that used to be hard-coded are CSS custom properties
-  now. Settings → *Look* picks *Classic* (Milaclone's palette, the default),
-  *Night* or *Parchment* (Pondering Orb's presets and fonts). In Night or
-  Parchment the sun/moon button swaps between the two.
+|                              Overview                              |                     A list                      |                        A task                        |
+| :----------------------------------------------------------------: | :---------------------------------------------: | :--------------------------------------------------: |
+| ![Smart views and lists](docs/screenshots/quicknotes-overview.png) | ![A list](docs/screenshots/quicknotes-list.png) | ![Task detail](docs/screenshots/quicknotes-task.png) |
 
-Removed: task starring (on board cards, to-do rows and the Quick notes
-*Starred* view, plus the "Starred color" setting) and the workspace-wide
-due-date calendar (`/api/calendar` and its view). Tasks belong to CalDAV in
-Orb. Due dates on cards and in Quick notes stay.
+- **Smart views.** _Today_, _Starred_, _All_ and _Completed_ collect tasks
+  from every list, so you can see what's due without opening boards one by
+  one. Each task in a smart view names the list it came from, newest first.
+- **One list at a time.** Tap a list to see only its tasks. Finished tasks fold
+  into a _Completed_ group you can collapse, and **Add a task** stays at the
+  bottom of the screen.
+- **Task details.** Each task can have a star, a due date, tags and a note
+  (with bullets, numbering, bold, italic and underline).
+- **Tags and search.** Search matches task text and notes. Tap a tag chip to
+  see every task with that tag, across all your lists. Turn on _Tag filters_
+  in the overview's **···** menu to narrow the lists to those with a tagged
+  task.
+- **Back to the board.** A list's **···** menu has _Show on board_, which opens
+  the board the card lives on. It also has _Rename list_ and _Delete list_.
+  Delete can be undone.
+- **On the board too.** Due dates and tags you set in Quick notes show up on
+  the to-do card. Edits made on two devices at once are merged task by task,
+  so neither one overwrites the other.
 
-Known limits: the Pipeline lists staged cards from every board, not just
-the open one. Promoting marks the idea but doesn't yet draw a *became* arrow
-to a project card. Exported heights are estimates for cards that size
-themselves to their content.
+|                          Today                           |                          Search by tag                           |
+| :------------------------------------------------------: | :--------------------------------------------------------------: |
+| ![The Today view](docs/screenshots/quicknotes-today.png) | ![Tasks tagged #errands](docs/screenshots/quicknotes-search.png) |
 
-## Requirements
+**Opening it:** on a phone, tap **Quick notes** in the bottom bar. On a
+computer, click the phone icon in the top bar. Quick notes opens as a panel
+next to your board, so you can see a list and its card side by side:
 
-- Node.js 18 or newer (`node --version` to check)
-- No database server and no Python needed. The only native dependency is
-  [`better-sqlite3`](https://github.com/WiseLibs/better-sqlite3), which ships
-  prebuilt binaries for common platforms; on other platforms `npm install`
-  compiles it, which needs a C++ toolchain (`build-essential` on Debian/Ubuntu).
+![Quick notes open next to the board on a computer](docs/screenshots/quicknotes-desktop.png)
+
+To make a new list, tap **+** in Quick notes and pick _Todo list_, or add a
+to-do card to any board.
+The **···** menu on the overview can hide the smart views.
 
 ## Run it
 
+You need Node.js 18 or newer. If you use [Claude Code](https://claude.com/claude-code),
+run `/setup` in this folder and it walks you through the steps below.
+
 ```bash
 npm install
-npm start
+npm start          # http://localhost:4321
 ```
 
-Then open <http://localhost:4321>.
-
-To use a different port:
+Or with Docker:
 
 ```bash
-PORT=8080 node server.js
+docker compose up -d --build
 ```
 
-## Run it with Docker
+The Compose file also runs a Tailscale sidecar that serves the app over HTTPS
+on your tailnet. Put `TS_AUTHKEY=…` in `.env` first. For setup, deploys and
+running without Docker, see [docs/self-hosting.md](docs/self-hosting.md).
 
-This app is meant to be deployed together with its MCP server from the repo
-root — see the [top-level README](../README.md) for the combined
-`docker compose up`, networking, backups, and deploy/rollback instructions.
-This section only covers running `app/` standalone (no MCP) for local dev.
+## Put it on your phone
+
+Milaclone works as a home-screen app. Your computer runs the server and your
+phone connects to it, so the computer has to be on and reachable from the
+phone.
+
+**On the same Wi-Fi as the computer running `npm start`:**
+
+1. Find the computer's local IP address:
+   - macOS: `ipconfig getifaddr en0`
+   - Linux: `hostname -I`
+   - Windows: `ipconfig` (the "IPv4 Address" line)
+2. On your phone, open `http://<that-address>:4321`, for example
+   `http://192.168.1.20:4321`. If the page doesn't load, allow incoming
+   connections for Node in the computer's firewall. macOS asks you about this
+   the first time.
+3. Add it to the home screen:
+   - **iPhone/iPad (Safari):** tap Share → **Add to Home Screen**. It opens
+     fullscreen with its own icon, like any other app.
+   - **Android (Chrome):** tap ⋮ → **Add to Home screen**. Over plain
+     `http://` Chrome adds a shortcut that opens in the browser. For a full
+     app install, serve it over HTTPS (see below).
+4. Open it and tap **Quick notes** in the bottom bar.
+
+**From anywhere, over HTTPS:** put the app on your
+[Tailscale](https://tailscale.com) tailnet. The Docker setup does this for you,
+or run `sudo tailscale serve --bg 4321` next to `npm start`. Then open
+`https://<machine>.<your-tailnet>.ts.net` on the phone and add it to the home
+screen as above. Over HTTPS the app also keeps a copy of what it last loaded,
+so it still opens if the connection drops. You need a connection to make
+edits. The
+details are in [docs/self-hosting.md](docs/self-hosting.md#access-over-tailscale).
+
+> [!NOTE]
+> Milaclone has no login. Anyone who can reach the address can read and edit
+> your boards, so only open it up on networks you trust. The Docker setup
+> listens on `127.0.0.1` only, so the Wi-Fi steps above apply to `npm start`.
+> With Docker, use Tailscale instead.
+>
+> The one exception is the [task API](docs/task-api.md) (`/api/tasks`), which
+> needs a bearer token because it is built for other programs to call.
+
+## Add tasks from outside the app
+
+`POST /api/tasks` adds a to-do from a script, a shortcut or another program.
+Set `TASK_API_TOKEN` in `.env` (`openssl rand -hex 32`) first; without it the
+API stays switched off. New tasks land in an **Inbox** list on Home, which the
+server creates the first time it needs one.
 
 ```bash
-docker build -t milaclone:local .
-docker run -p 4321:4321 -v milaclone_data:/data milaclone:local
+curl -sS https://mila.your-tailnet.ts.net/api/tasks \
+  -H "Authorization: Bearer $TASK_API_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"title":"Buy printer ink","tags":["errands"],"dueDate":"2026-12-01"}'
 ```
 
-## Run it as a service (auto-start on boot)
+Listing, marking done and every field are in [docs/task-api.md](docs/task-api.md).
 
-Create `/etc/systemd/system/canvas-board.service` (adjust the paths and user):
+## Optional add-ons
 
-```ini
-[Unit]
-Description=Canvas Board
-After=network.target
+Add-ons live in `addons/` and stay switched off unless you enable them; the
+board works the same without them.
 
-[Service]
-Type=simple
-User=YOUR_USERNAME
-WorkingDirectory=/home/YOUR_USERNAME/canvas-board
-ExecStart=/usr/bin/node server.js
-Environment=PORT=4321
-Restart=on-failure
+- **Voice capture** ([addons/voice](addons/voice/README.md)): speak a note on
+  your phone or to an Echo and the to-dos in it land in your Inbox. Uses
+  third-party services (Deepgram for speech-to-text, an LLM provider, and
+  Cloudflare for the Alexa skill, or Home Assistant for the private Alexa
+  route), so read its page before turning it on.
 
-[Install]
-WantedBy=multi-user.target
-```
+## Your data
 
-Then:
+| What    | Where                                                       |
+| ------- | ----------------------------------------------------------- |
+| Boards  | `data/board.db` (SQLite, or the `milaclone_data` volume)    |
+| Uploads | `public/uploads/` (or the `milaclone_uploads` volume)       |
+| Backup  | **Export → Download database backup**, or `GET /api/backup` |
 
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now canvas-board
-sudo systemctl status canvas-board
-```
-
-## Your data & backups
-
-- Board content: `data/board.db` (SQLite; WAL mode also writes
-  `board.db-wal` and `board.db-shm` alongside it)
-- Uploaded images/files: `public/uploads/`
-
-Back up those paths and you've backed up everything. To reset to a blank
-canvas, stop the server and delete `data/board.db` (it'll be recreated on next
-start).
-
-## Configuration
-
-All optional, via environment variables:
-
-| Variable     | Default              | Purpose                          |
-|--------------|----------------------|----------------------------------|
-| `PORT`       | `4321`               | Port to listen on                |
-| `HOST`       | `0.0.0.0`            | Bind address                     |
-| `DATA_DIR`   | `./data`             | Where the SQLite DB is written   |
-| `ORB_URL`    | *(unset = promote off)* | Miladash: Pondering Orb's base URL, for **Promote to a project**. |
-| `ORB_TOKEN`  | *(unset)*            | Miladash: an Orb API token, sent as `Authorization: Bearer` by the server only. |
-| `API_KEY`    | *(unset = open API)* | If set, every `/api/*` request (except `/api/health`) must send it via `X-API-Key: <key>` or `Authorization: Bearer <key>`. The browser UI picks the key up automatically (it's rendered into `index.html`). The bundled [mcp/](../mcp) server picks it up automatically too when run via the root `docker-compose.yml`. |
-
-Uploads always go to `public/uploads/` (they're served as static files from
-there, so the path isn't configurable).
-
-## Tech stack
-
-- **Backend:** [Express](https://expressjs.com/) with
-  [`better-sqlite3`](https://github.com/WiseLibs/better-sqlite3) for storage and
-  [`multer`](https://github.com/expressjs/multer) for uploads
-- **Frontend:** vanilla JavaScript, HTML, and CSS in `public/` — no bundler, no
-  framework
+You can set these environment variables: `PORT` (default 4321), `HOST`
+(default `0.0.0.0`), `DATA_DIR` (default `./data`), and for the task API
+`TASK_API_TOKEN` (unset = off) and `TASK_TZ` (default `UTC`).
+`.env.example` lists them.
 
 ## Development
 
 ```bash
-npm test        # unit/API tests (node --test)
-npm run test:e2e   # Playwright end-to-end tests
+npm test             # API tests (80% coverage floor)
+npm run test:ui      # front-end unit tests (Vitest)
+npm run test:e2e     # Playwright (run `npx playwright install` once first)
+npm run lint && npm run format
+cd addons/voice/pipeline && pip install -r requirements-dev.txt && python -m pytest   # voice add-on
 ```
 
-The Playwright tests drive a real browser, so run
-`npx playwright install` once beforehand to fetch the browser binaries.
-
-## MCP server
-
-[`mcp/`](../mcp) is an MCP server bundled in this same repo that gives AI
-assistants (Claude Code, Claude Desktop, etc.) full read/write access to this
-board over `/api/*` — listing boards, searching, and creating/editing/deleting
-cards. It runs alongside this app by default — see the
-[top-level README](../README.md).
-
-## Not included (yet)
-
-These were left out to keep the first version small and focused; they're
-natural next additions: line/arrow connectors between cards, freehand
-drawing/sketch cards, multi-select, and real-time multi-user sync (the current
-model is single-document, last-write-wins — great for one person across their
-own devices).
-
-## Keyboard shortcuts
-
-- `N` note · `L` link · `T` to-do · `B` board · `C` column · `M` comment
-- `⌘/Ctrl+C` copy · `⌘/Ctrl+X` cut · `⌘/Ctrl+V` paste · `⌘/Ctrl+D` duplicate
-- `Enter` rename selected card · `Esc` deselect / cancel armed tool
-- `Delete` / `Backspace` remove the selected card (when not typing)
+The backend is Express with `better-sqlite3`. The frontend is vanilla ES modules
+with no framework, and the only build step is the rich-text editor, which the
+server bundles at boot. [CLAUDE.md](CLAUDE.md) explains the architecture.
 
 ## License
 
 [MIT](LICENSE)
+
+Milaclone is an independent project. It isn't affiliated with or endorsed by
+Milanote. Milanote is a trademark of its owner and is named here only for
+comparison.

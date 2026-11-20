@@ -61,7 +61,8 @@ test('util.isLocked reflects the data.locked flag', async ({ page }) => {
 test('util.rid produces distinct short ids', async ({ page }) => {
   const out = await page.evaluate(async () => {
     const { rid } = await import('/js/util.js');
-    const a = rid(), b = rid();
+    const a = rid(),
+      b = rid();
     return { a, b, len: a.length };
   });
   expect(out.len).toBeGreaterThan(0);
@@ -84,7 +85,7 @@ test('create.defaultsFor returns the right shape per card type', async ({ page }
       unknown: d('mystery'),
     };
   });
-  expect(out.note).toEqual({ w: 240, data: { title: '', body: '' } });
+  expect(out.note).toEqual({ w: 240, data: {} }); // the server fills in doc + text
   expect(out.todo.w).toBe(240);
   expect(out.todo.data.tasks).toHaveLength(1);
   expect(out.todo.data.tasks[0]).toMatchObject({ text: '', done: false });

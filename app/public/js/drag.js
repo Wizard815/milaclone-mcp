@@ -2,166 +2,103 @@
 
 import { state, dom, elMap } from './state.js';
 import { api } from './api.js';
-import { isLocked } from './util.js';
-import { screenToWorld, cancelCamAnimation } from './viewport.js';
-import { select, toggleSelect, enterEdit } from './editing.js';
+import { isLocked, zRange, snap } from './util.js';
+import { screenToWorld } from './viewport.js';
+import { select, enterEdit, toggleSelect, selectedItems } from './editing.js';
 import { render } from './cards.js';
-import { renderLines, pickLineEndpoint } from './lines.js';
-import { membersOf, refreshPanels, highlightDropPanel, clearDropPanel } from './panels.js';
 
-// Dragging cards (free-move + in/out of columns) and resizing.
+// Dragging cards (free-move + in/out of columns, several at once) and resizing.
 
 export function onItemPointerDown(e, it, el) {
-  if (e.button !== 0) return;
-  cancelCamAnimation();
-  if (state.armed === 'line') { e.stopPropagation(); pickLineEndpoint(it); return; }
-  if (state.armed && state.armed !== 'select') return;
-  if (e.target.closest('[data-nodrag]')) { e.stopPropagation(); return; }
-  if (el.classList.contains('editing') && e.target.closest('[data-edit]')) { e.stopPropagation(); return; }
-  e.stopPropagation();
-
-  // Ctrl/Cmd+click only toggles this card in/out of the selection — never
-  // starts a drag, so you can build up a multi-selection one click at a
-  // time without accidentally moving anything.
-  if (e.ctrlKey || e.metaKey) { toggleSelect(it.id); return; }
-
-  // Clicking a card that's already part of a multi-selection keeps the
-  // whole group selected (so you can drag it as one unit) instead of
-  // collapsing down to just this card — that's what a plain click on an
-  // *unselected* card still does.
-  const isGroup = state.selectedIds.has(it.id) && state.selectedIds.size > 1;
-  if (!isGroup) select(it.id);
+  if (e.button !== 0) return; // middle-drag falls through to the stage and pans
+  if (state.armed || state.spaceDown) return; // space-drag pans too
+  if (e.target.closest('[data-nodrag]')) {
+    e.stopPropagation();
+    return;
+  }
+  e.stopPropagation(); // else the stage starts a selection box, which ends the edit
+  if (el.classList.contains('editing') && e.target.closest('[data-edit]')) return;
+  if (e.shiftKey) {
+    // Shift-click would also extend the page's text selection, and a text
+    // selection makes cmd+C copy that text instead of the cards.
+    e.preventDefault();
+    window.getSelection()?.removeAllRanges();
+    toggleSelect(it.id);
+    return;
+  }
+  // Pressing a card that's part of a multi-selection keeps the group for a drag;
+  // a plain click (no move) narrows the selection to this card on release.
+  const inGroup = state.selection.has(it.id) && state.selection.size > 1;
+  if (!inGroup) select(it.id);
   if (isLocked(it)) return;
 
-  if (isGroup) { startGroupDrag(e, it, el); return; }
-
-  // Shapes have no dedicated resize handle (see cards.js) — holding Shift
-  // while dragging the shape itself stretches it (independent width/height)
-  // instead of moving it. Locked in at drag start so it can't flip mid-drag
-  // if Shift is pressed/released partway through.
-  const stretching = it.type === 'shape' && e.shiftKey;
   const start = { sx: e.clientX, sy: e.clientY };
   const fromColumn = !!it.parentItemId;
   let moved = false;
   const rect = el.getBoundingClientRect();
   const startWorld = screenToWorld(rect.left, rect.top);
-  const startSize = { w: rect.width, h: rect.height };
-  // Dragging a panel carries every card inside it (the server does the same
-  // when the panel's x/y is PATCHed, so API and UI agree).
-  const carried = it.type === 'panel'
-    ? membersOf(it).map(m => ({ it: m, el: elMap.get(m.id), x: m.x, y: m.y })).filter(m => m.el)
+  // Free, unlocked companions move by the same delta; cards in columns stay put.
+  const others = inGroup
+    ? selectedItems()
+        .filter(o => o.id !== it.id && o.type !== 'line' && !o.parentItemId && !isLocked(o) && elMap.get(o.id))
+        .map(o => ({ it: o, el: elMap.get(o.id), x: o.x, y: o.y }))
     : [];
-  state.drag = { it, el, start, startWorld, fromColumn, moved: false, dropCol: null, carried };
+  state.drag = { it, el, start, startWorld, fromColumn, moved: false, dropCol: null, others };
   el.setPointerCapture(e.pointerId);
 
-  const move = (ev) => {
-    const dx = ev.clientX - start.sx, dy = ev.clientY - start.sy;
+  const move = ev => {
+    const dx = ev.clientX - start.sx,
+      dy = ev.clientY - start.sy;
     if (!moved && Math.hypot(dx, dy) < 4) return;
     if (!moved) {
-      moved = true; state.drag.moved = true;
+      moved = true;
+      state.drag.moved = true;
       el.classList.add('dragging');
+      // Dragging raises the cards above everything else, keeping their own order.
+      let z = zRange(state.view.items)[1];
+      for (const c of [...others.map(o => o.it), it].sort((a, b) => (a.z || 0) - (b.z || 0))) c.z = ++z;
+      for (const o of others) o.el.style.zIndex = o.it.z;
+      el.style.zIndex = fromColumn ? 99999 : it.z;
       if (fromColumn) {
         dom.world.appendChild(el);
         el.classList.remove('in-column');
         el.style.width = (it.w || 240) + 'px';
-        el.style.zIndex = 99999;
       }
     }
-    if (stretching) {
-      const w = Math.max(40, startSize.w + dx / state.cam.scale);
-      const h = Math.max(40, startSize.h + dy / state.cam.scale);
-      el.style.width = w + 'px'; el.style.height = h + 'px';
-      it.w = Math.round(w); it.h = Math.round(h);
-    } else {
-      const wx = startWorld.x + dx / state.cam.scale;
-      const wy = startWorld.y + dy / state.cam.scale;
-      el.style.left = wx + 'px'; el.style.top = wy + 'px';
-      const cdx = dx / state.cam.scale, cdy = dy / state.cam.scale;
-      carried.forEach(m => { m.el.style.left = (m.x + cdx) + 'px'; m.el.style.top = (m.y + cdy) + 'px'; });
-      highlightColumn(ev, it);
-      highlightDropPanel(it, wx, wy);
+    // The dragged card lands on the grid; the rest of the group keeps its offsets.
+    const wx = snap(startWorld.x + dx / state.cam.scale, ev.shiftKey);
+    const wy = snap(startWorld.y + dy / state.cam.scale, ev.shiftKey);
+    el.style.left = wx + 'px';
+    el.style.top = wy + 'px';
+    for (const o of others) {
+      o.el.style.left = o.x + wx - startWorld.x + 'px';
+      o.el.style.top = o.y + wy - startWorld.y + 'px';
     }
-    renderLines();
+    if (!others.length) highlightColumn(ev, it);
   };
 
-  const up = (ev) => {
+  const up = ev => {
     el.releasePointerCapture(e.pointerId);
     document.removeEventListener('pointermove', move);
     document.removeEventListener('pointerup', up);
     el.classList.remove('dragging');
     if (!moved) {
+      if (inGroup) select(it.id);
       if (it.type !== 'board') maybeEdit(el, ev);
-      state.drag = null; return;
-    }
-    if (stretching) {
-      api.patch(it.id, { w: it.w, h: it.h });
       state.drag = null;
-    } else {
-      finishDrag(ev);
+      return;
     }
+    finishDrag(ev);
   };
-  document.addEventListener('pointermove', move);
-  document.addEventListener('pointerup', up);
-}
-
-// Moves every free-floating (not in a column), unlocked card in the current
-// multi-selection by the same delta. Deliberately simpler than the single-
-// card drag above: no column drop-target detection — a group only ever
-// free-moves, never nests into or out of a column. Persists with one bulk
-// PATCH /api/items call instead of one request per card.
-function startGroupDrag(e, primaryIt, primaryEl) {
-  const members = [...state.selectedIds]
-    .map(id => ({ it: state.view.items.find(x => x.id === id), el: elMap.get(id) }))
-    .filter(m => m.it && m.el && !m.it.parentItemId && !isLocked(m.it));
-  if (!members.length) return;
-  // A selected panel brings along the cards inside it, unless they're
-  // already selected themselves.
-  const have = new Set(members.map(m => m.it.id));
-  for (const pm of [...members].filter(m => m.it.type === 'panel')) {
-    for (const c of membersOf(pm.it)) {
-      if (have.has(c.id) || !elMap.get(c.id) || isLocked(c)) continue;
-      have.add(c.id); members.push({ it: c, el: elMap.get(c.id) });
-    }
-  }
-
-  const start = { sx: e.clientX, sy: e.clientY };
-  members.forEach(m => { m.startX = m.it.x || 0; m.startY = m.it.y || 0; });
-  let moved = false;
-  primaryEl.setPointerCapture(e.pointerId);
-
-  const move = (ev) => {
-    const dx = ev.clientX - start.sx, dy = ev.clientY - start.sy;
-    if (!moved && Math.hypot(dx, dy) < 4) return;
-    moved = true;
-    const wx = dx / state.cam.scale, wy = dy / state.cam.scale;
-    members.forEach(m => {
-      m.el.style.left = (m.startX + wx) + 'px';
-      m.el.style.top = (m.startY + wy) + 'px';
-    });
-    renderLines();
-  };
-
-  const up = async (ev) => {
-    primaryEl.releasePointerCapture(e.pointerId);
-    document.removeEventListener('pointermove', move);
-    document.removeEventListener('pointerup', up);
-    if (!moved) return;
-    const dx = (ev.clientX - start.sx) / state.cam.scale, dy = (ev.clientY - start.sy) / state.cam.scale;
-    const updates = members.map(m => {
-      m.it.x = Math.round(m.startX + dx);
-      m.it.y = Math.round(m.startY + dy);
-      return { id: m.it.id, x: m.it.x, y: m.it.y };
-    });
-    await api.patchMany(updates);
-    refreshPanels();
-  };
-
   document.addEventListener('pointermove', move);
   document.addEventListener('pointerup', up);
 }
 
 function maybeEdit(el, ev) {
   if (!el.querySelector('[data-edit]')) return;
+  // An image's only field is its caption: clicking the picture just selects it
+  // (so Delete / copy still act on the card); Enter or a click on the caption edits.
+  if (el.classList.contains('image') && !ev.target.closest('[data-edit]')) return;
   if (!el.classList.contains('editing')) {
     enterEdit(el);
     const f = ev.target.closest('[data-edit]') || el.querySelector('[data-edit]');
@@ -172,7 +109,7 @@ function maybeEdit(el, ev) {
 function columnBodyUnder(clientX, clientY, excludeId) {
   const bodies = dom.world.querySelectorAll('.col-body');
   for (const b of bodies) {
-    if (b.dataset.colbody === excludeId) continue;
+    if (b.dataset.colbody === excludeId || b.closest('.collapsed')) continue; // hidden: a 0×0 rect at the origin
     const r = b.getBoundingClientRect();
     if (clientX >= r.left - 6 && clientX <= r.right + 6 && clientY >= r.top - 6 && clientY <= r.bottom + 30) return b;
   }
@@ -181,7 +118,10 @@ function columnBodyUnder(clientX, clientY, excludeId) {
 
 function highlightColumn(ev, it) {
   dom.world.querySelectorAll('.column.drop-target').forEach(c => c.classList.remove('drop-target'));
-  if (it.type === 'column') { state.drag.dropCol = null; return; }
+  if (it.type === 'column') {
+    state.drag.dropCol = null;
+    return;
+  }
   const body = columnBodyUnder(ev.clientX, ev.clientY, it.id);
   state.drag.dropCol = body ? body.dataset.colbody : null;
   if (body) body.closest('.column').classList.add('drop-target');
@@ -189,34 +129,41 @@ function highlightColumn(ev, it) {
 
 async function finishDrag(ev) {
   const { it, el } = state.drag;
-  clearDropPanel();
   dom.world.querySelectorAll('.column.drop-target').forEach(c => c.classList.remove('drop-target'));
   if (state.drag.dropCol) {
     const order = insertOrder(state.drag.dropCol, ev.clientY, it.id);
     it.parentItemId = state.drag.dropCol;
     it.y = order;
     const sibs = state.view.items.filter(k => k.parentItemId === state.drag.dropCol).sort((a, b) => a.y - b.y);
-    sibs.forEach((s, i) => s.y = i);
-    await api.patch(it.id, { parentItemId: it.parentItemId, canvasId: state.view.canvas.id });
+    sibs.forEach((s, i) => (s.y = i));
+    await api.patch(it.id, { parentItemId: it.parentItemId, canvasId: state.view.canvas.id, z: it.z });
     await api.patchMany(sibs.map(s => ({ id: s.id, y: s.y })));
     render();
   } else {
     const wx = Math.round(parseFloat(el.style.left));
     const wy = Math.round(parseFloat(el.style.top));
     const wasChild = state.drag.fromColumn;
-    const dx = wx - it.x, dy = wy - it.y;
-    it.x = wx; it.y = wy; it.parentItemId = null;
-    state.drag.carried.forEach(m => { m.it.x += dx; m.it.y += dy; });
-    await api.patch(it.id, { x: wx, y: wy, parentItemId: null });
+    it.x = wx;
+    it.y = wy;
+    it.parentItemId = null;
+    const { others } = state.drag;
+    for (const o of others) {
+      o.it.x = Math.round(parseFloat(o.el.style.left));
+      o.it.y = Math.round(parseFloat(o.el.style.top));
+    }
+    await api.patchMany([
+      { id: it.id, x: wx, y: wy, z: it.z, parentItemId: null },
+      ...others.map(o => ({ id: o.it.id, x: o.it.x, y: o.it.y, z: o.it.z })),
+    ]);
     if (wasChild) render();
-    clearDropPanel();
-    refreshPanels();
   }
   state.drag = null;
 }
 
 function insertOrder(colId, clientY, selfId) {
-  const rows = [...dom.world.querySelectorAll(`[data-colbody="${colId}"] > .item`)].filter(r => r.dataset.id !== selfId);
+  const rows = [...dom.world.querySelectorAll(`[data-colbody="${colId}"] > .item`)].filter(
+    r => r.dataset.id !== selfId
+  );
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i].getBoundingClientRect();
     if (clientY < r.top + r.height / 2) return i;
@@ -224,15 +171,41 @@ function insertOrder(colId, clientY, selfId) {
   return rows.length;
 }
 
+// Arrow keys: move the free, unlocked selected cards by (dx, dy), onto the grid.
+// Key-repeat fires fast, so moves are saved in one bulk PATCH once the keys rest
+// (parallel requests could land out of order and keep an older position).
+const nudged = new Map();
+let nudgeTimer = 0;
+export function nudgeSelection(dx, dy) {
+  // ponytail: lines are drawn from their ends, not x/y, so free-ended ones stay put
+  const items = selectedItems().filter(i => i.type !== 'line' && !i.parentItemId && !isLocked(i));
+  for (const it of items) {
+    it.x = snap(it.x + dx);
+    it.y = snap(it.y + dy);
+    const el = elMap.get(it.id);
+    el.style.left = it.x + 'px';
+    el.style.top = it.y + 'px';
+    nudged.set(it.id, it);
+  }
+  clearTimeout(nudgeTimer);
+  nudgeTimer = setTimeout(() => {
+    const updates = [...nudged.values()].map(i => ({ id: i.id, x: i.x, y: i.y }));
+    nudged.clear();
+    if (updates.length) api.patchMany(updates);
+  }, 300);
+}
+
 export function startResize(e, it, el) {
-  e.preventDefault(); e.stopPropagation();
-  const startX = e.clientX, startW = it.w || el.offsetWidth;
+  e.preventDefault();
+  e.stopPropagation();
+  const startX = e.clientX,
+    startW = it.w || el.offsetWidth;
   el.setPointerCapture(e.pointerId);
-  const move = (ev) => {
+  const move = ev => {
     let w = startW + (ev.clientX - startX) / state.cam.scale;
     w = Math.max(120, Math.min(900, w));
-    el.style.width = w + 'px'; it.w = Math.round(w);
-    renderLines();
+    el.style.width = w + 'px';
+    it.w = Math.round(w);
   };
   const up = () => {
     el.releasePointerCapture(e.pointerId);

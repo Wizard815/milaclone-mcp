@@ -4,66 +4,71 @@ const express = require('express');
 const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
+const os = require('os');
 
 const {
-  db, stmt, id, rootCanvasId, getSettings, setSettings, STAGES, LINE_KINDS,
-  rowToItem, rowToCanvas, breadcrumb, itemsForCanvas, deleteItemDeep, likeEscape
+  db,
+  stmt,
+  id,
+  rootCanvasId,
+  rowToItem,
+  breadcrumb,
+  itemsForCanvas,
+  trashItemDeep,
+  restoreItem,
+  emptyTrash,
+  copyItemDeep,
+  moveItemDeep,
+  RICH_TYPES,
+  STAGES,
+  LINE_KINDS,
+  toRich,
 } = require('./db');
-const canvasFile = require('./canvasfile');
+const { exportMarkdown } = require('./export-md');
 const panels = require('./panels');
-const { copyItem, copyCanvasContents } = require('./copy');
+const canvasFile = require('./canvasfile');
 
-// stage: one of STAGES, or null for "not in the pipeline".
-const badStage = (v) => v !== undefined && v !== null && !STAGES.includes(v);
-// A connector line's kind lives in data.kind (relates | depends | became).
+// stage: one of STAGES, or null for "not in the pipeline". A connector line's
+// kind lives in data.kind (relates | depends | became).
+const badStage = v => v !== undefined && v !== null && !STAGES.includes(v);
 const badLineKind = (type, data) => type === 'line' && data && data.kind !== undefined && !LINE_KINDS.includes(data.kind);
 
 const UPLOAD_DIR = path.join(__dirname, 'public', 'uploads');
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const BOARD_ICONS = [
-  'layout-grid', 'book-open', 'monitor', 'clock', 'heart', 'house', 'lightbulb',
-  'palette', 'briefcase', 'sparkles', 'glasses', 'landmark', 'compass', 'camera',
-  'music', 'pen-tool', 'layers', 'folder', 'star', 'zap', 'globe', 'cpu', 'leaf', 'target'
+  'layout-grid',
+  'book-open',
+  'monitor',
+  'clock',
+  'heart',
+  'house',
+  'lightbulb',
+  'palette',
+  'briefcase',
+  'sparkles',
+  'glasses',
+  'landmark',
+  'compass',
+  'camera',
+  'music',
+  'pen-tool',
+  'layers',
+  'folder',
+  'star',
+  'zap',
+  'globe',
+  'cpu',
+  'leaf',
+  'target',
 ];
 const randomBoardIcon = () => BOARD_ICONS[Math.floor(Math.random() * BOARD_ICONS.length)];
 
-// Same preview-text rule the client uses (connect.js/mindmap.js) -- kept in
-// sync by hand since there's no shared module between server and client code.
-function previewTextFor(it) {
-  const d = it.data || {};
-  return d.title || d.text || (d.body && d.body.slice(0, 40)) || d.url || it.type;
-}
-
-// A connect badge's label used to be frozen at creation time (whatever the
-// source/target were called then), so renaming either side left it stale --
-// same class of problem `_childTitle` below already solves for board tiles
-// by resolving the live canvas on every read instead of storing a copy.
-// Resolves the *current* source/target names the same way; falls back to
-// the originally-stored label if either side has since been deleted, so a
-// dangling badge still shows something instead of "undefined".
-function liveConnectLabel(it) {
-  const source = it.data.sourceItemId ? stmt.getItem.get(it.data.sourceItemId) : null;
-  const sourcePreview = source ? previewTextFor(rowToItem(source)) : null;
-
-  const targetCanvas = it.data.targetCanvasId ? stmt.getCanvas.get(it.data.targetCanvasId) : null;
-  if (!targetCanvas) return it.data.targetLabel;
-
-  let targetSide = targetCanvas.title;
-  if (it.data.targetItemId) {
-    const target = stmt.getItem.get(it.data.targetItemId);
-    if (!target) return it.data.targetLabel;
-    targetSide = previewTextFor(rowToItem(target));
-  }
-
-  if (sourcePreview) return `${sourcePreview} → ${targetSide}`;
-  return it.data.targetItemId ? `${targetCanvas.title} → ${targetSide}` : targetSide;
-}
-
-const ALLOWED_UPLOAD = (mime) =>
-  /^image\//.test(mime) ||
-  /^text\//.test(mime) ||
+const ALLOWED_UPLOAD = mime =>
+  mime.startsWith('image/') ||
+  mime.startsWith('text/') ||
+  mime.startsWith('audio/') ||
+  mime.startsWith('video/') ||
   mime === 'application/pdf' ||
   mime === 'application/msword' ||
   mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
@@ -75,76 +80,97 @@ const ALLOWED_UPLOAD = (mime) =>
   mime === 'application/json';
 
 const router = express.Router();
+// No client sends compressed bodies, so refuse them (415) rather than inflate:
+// the gzip path is where body-parser < 1.20.9 can be stalled (GHSA-27r3-jxmh-p828).
+router.use(express.json({ limit: '5mb', inflate: false }));
 
-// ---- API key auth -----------------------------------------------------------
-// Set API_KEY in the environment to require every /api/* request (except the
-// unauthenticated health check) to present it via the `X-API-Key` header or an
-// `Authorization: Bearer <key>` header. Leave API_KEY unset to keep the API
-// open, as before (fine when the app is only reachable over Tailscale).
-const API_KEY = (process.env.API_KEY || '').trim();
-
-function timingSafeEqual(a, b) {
-  const bufA = Buffer.from(a);
-  const bufB = Buffer.from(b);
-  if (bufA.length !== bufB.length) return false;
-  return crypto.timingSafeEqual(bufA, bufB);
+// Uploads are served from the app's own origin, so anything a browser could run
+// (HTML, SVG, XML, …) is forced to download instead of rendering. Only file types
+// that are inert as documents are shown inline. <img> ignores Content-Disposition,
+// so SVG images still display on the canvas.
+// This keys off the file express.static actually resolved, not the request URL:
+// an encoded or re-cased URL (/%75ploads/x.html, /Uploads/… on a case-insensitive
+// disk) can miss the route mount yet still reach an upload through the generic
+// public/ handler, so server.js passes this same function to that handler too.
+// Whether a file is an upload is decided by directory identity (device + inode),
+// not by comparing path strings, so case folding, Unicode or symlinks can't dodge it.
+const INLINE_UPLOAD =
+  /\.(png|jpe?g|gif|webp|avif|bmp|pdf|txt|csv|json|mp3|m4a|wav|ogg|oga|opus|flac|mp4|m4v|webm|mov)$/i;
+function isUpload(filePath) {
+  try {
+    const up = fs.statSync(UPLOAD_DIR);
+    for (let d = path.dirname(filePath), prev; d !== prev; prev = d, d = path.dirname(d)) {
+      const s = fs.statSync(d);
+      if (s.ino === up.ino && s.dev === up.dev) return true;
+    }
+    return false;
+  } catch {
+    return true;
+  } // can't tell: treat as untrusted
 }
+function setUploadHeaders(res, filePath) {
+  if (!isUpload(filePath)) return;
+  res.set('X-Content-Type-Options', 'nosniff');
+  if (!INLINE_UPLOAD.test(filePath)) res.set('Content-Disposition', 'attachment');
+}
+router.use('/uploads', express.static(UPLOAD_DIR, { setHeaders: setUploadHeaders }));
 
-router.use((req, res, next) => {
-  if (!API_KEY || req.path === '/api/health') return next();
-  const header = req.get('Authorization') || '';
-  const bearer = header.toLowerCase().startsWith('bearer ') ? header.slice(7).trim() : '';
-  const provided = req.get('X-API-Key') || bearer;
-  if (provided && timingSafeEqual(provided, API_KEY)) return next();
-  res.status(401).json({ error: 'unauthorized' });
-});
+// Three-way merge of a todo's task array. `base` is the list the client last got
+// from the server, `mine` its edited copy, `server` what is stored now (another
+// device or the Quick notes screen may have written since). Fields the client
+// changed win; everything else keeps the server's value, and tasks added or
+// deleted on either side stay added or deleted.
+function mergeTasks(base, server, mine) {
+  const byId = list => new Map(list.map(t => [t.id, t]));
+  const B = byId(base),
+    S = byId(server),
+    M = byId(mine);
+  const out = [];
+  for (const t of mine) {
+    const b = B.get(t.id),
+      s = S.get(t.id);
+    if (b && !s) continue; // deleted elsewhere
+    if (!b || !s) {
+      out.push(t);
+      continue;
+    } // added here
+    const merged = Object.assign({}, s);
+    // Only keys this client sent count: one it doesn't know (e.g. `indent` from
+    // the canvas, edited in an older Quick notes) isn't a deletion.
+    for (const k of Object.keys(t)) {
+      if (JSON.stringify(t[k]) !== JSON.stringify(b[k])) merged[k] = t[k];
+    }
+    out.push(merged);
+  }
+  for (const t of server) if (!B.has(t.id) && !M.has(t.id)) out.push(t); // added elsewhere
+  return out;
+}
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, UPLOAD_DIR),
   filename: (req, file, cb) => {
     const ext = (path.extname(file.originalname) || '').toLowerCase().replace(/[^.a-z0-9]/g, '');
     cb(null, id('img_') + ext);
-  }
+  },
 });
 const upload = multer({
   storage,
   limits: { fileSize: 25 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => cb(null, ALLOWED_UPLOAD(file.mimetype))
+  fileFilter: (req, file, cb) => {
+    if (ALLOWED_UPLOAD(file.mimetype)) return cb(null, true);
+    req.rejectedType = file.mimetype || 'unknown';
+    cb(null, false);
+  },
 });
 
-// ---- Settings ----------------------------------------------------------------
-// One JSON blob for the whole app (theme default, accent color, CalDAV sync).
-// The CalDAV password is never echoed back over GET -- callers see
-// `passwordSet` instead and can PATCH a new caldav.password to replace it;
-// omitting it (or sending '') on PATCH leaves the stored password untouched.
-router.get('/api/settings', (req, res) => {
-  const settings = getSettings();
-  const caldav = settings.caldav
-    ? { ...settings.caldav, password: undefined, passwordSet: !!settings.caldav.password }
-    : null;
-  res.json({ ...settings, caldav });
-});
-
-router.patch('/api/settings', (req, res) => {
-  const { theme, look, accent, caldav } = req.body || {};
-  const patch = {};
-  if (theme !== undefined) patch.theme = theme;
-  if (look !== undefined) patch.look = ['classic', 'night', 'parchment'].includes(look) ? look : 'classic';
-  if (accent !== undefined) patch.accent = accent;
-  if (caldav !== undefined) {
-    const prev = getSettings().caldav || {};
-    patch.caldav = caldav === null ? null : {
-      url: caldav.url ?? prev.url ?? '',
-      username: caldav.username ?? prev.username ?? '',
-      password: caldav.password || prev.password || ''
-    };
-  }
-  const settings = setSettings(patch);
-  const outCaldav = settings.caldav
-    ? { ...settings.caldav, password: undefined, passwordSet: !!settings.caldav.password }
-    : null;
-  res.json({ ...settings, caldav: outCaldav });
-});
+// A card may only sit inside a live column on its own canvas, and columns
+// never nest (two columns parenting each other would both vanish).
+function badParent(parentItemId, canvasId, selfId, selfType) {
+  if (parentItemId == null) return false;
+  if (selfType === 'column') return true;
+  const p = stmt.getItem.get(parentItemId);
+  return !p || p.type !== 'column' || p.canvasId !== canvasId || p.id === selfId;
+}
 
 // ---- Canvas ----------------------------------------------------------------
 router.get('/api/root', (req, res) => res.json({ rootCanvasId: rootCanvasId() }));
@@ -160,16 +186,20 @@ router.get('/api/canvas/:id', (req, res) => {
         _childTitle: child ? child.title : 'Board',
         _childCount: count,
         _childColor: child ? child.color : 'slate',
-        _childIcon: child ? (child.icon || 'layout-grid') : 'layout-grid'
+        _childIcon: child ? child.icon || 'layout-grid' : 'layout-grid',
       });
     }
-    if (it.type === 'connect') {
-      return Object.assign({}, it, { _liveLabel: liveConnectLabel(it) });
+    // A shortcut shows its target board, or null once that board is trashed.
+    if (it.type === 'shortcut') {
+      const t = it.data && stmt.getCanvas.get(it.data.targetCanvasId);
+      return Object.assign({}, it, {
+        _target: t ? { title: t.title, color: t.color, icon: t.icon || 'layout-grid' } : null,
+      });
     }
     return it;
   });
   panels.annotate(items);
-  res.json({ canvas: rowToCanvas(canvas), items, breadcrumb: breadcrumb(canvas.id) });
+  res.json({ canvas, items, breadcrumb: breadcrumb(canvas.id) });
 });
 
 router.patch('/api/canvas/:id', (req, res) => {
@@ -180,19 +210,27 @@ router.patch('/api/canvas/:id', (req, res) => {
   if (typeof color === 'string') canvas.color = color;
   if (typeof icon === 'string') canvas.icon = icon;
   stmt.updateCanvas.run(canvas);
-  res.json(rowToCanvas(canvas));
+  res.json(canvas);
 });
 
 // ---- Items -----------------------------------------------------------------
 router.post('/api/item', (req, res) => {
   const b = req.body || {};
   if (!stmt.getCanvas.get(b.canvasId)) return res.status(400).json({ error: 'bad canvasId' });
+  if (badParent(b.parentItemId, b.canvasId, null, b.type || 'note')) {
+    return res.status(400).json({ error: 'bad parentItemId' });
+  }
   if (badStage(b.stage)) return res.status(400).json({ error: 'stage must be one of ' + STAGES.join(', ') + ' or null' });
   if (badLineKind(b.type, b.data)) return res.status(400).json({ error: 'line kind must be one of ' + LINE_KINDS.join(', ') });
+  if (b.type === 'shortcut' && !stmt.getCanvas.get(b.data && b.data.targetCanvasId)) {
+    return res.status(400).json({ error: 'bad targetCanvasId' });
+  }
 
   if (b.type === 'panel') {
     b.data = Object.assign({ title: 'Panel', shape: 'rounded' }, b.data || {});
-    if (!panels.SHAPES.includes(b.data.shape)) return res.status(400).json({ error: 'panel shape must be one of ' + panels.SHAPES.join(', ') });
+    if (!panels.SHAPES.includes(b.data.shape)) {
+      return res.status(400).json({ error: 'panel shape must be one of ' + panels.SHAPES.join(', ') });
+    }
     b.w = b.w || panels.DEFAULT_PANEL.w;
     b.h = b.h || panels.DEFAULT_PANEL.h;
   }
@@ -202,6 +240,7 @@ router.post('/api/item', (req, res) => {
     canvasId: b.canvasId,
     parentItemId: b.parentItemId || null,
     type: b.type || 'note',
+    // 0 is a real coordinate; only a missing one falls back to the default.
     x: Math.round(Number.isFinite(b.x) ? b.x : 60),
     y: Math.round(Number.isFinite(b.y) ? b.y : 60),
     w: Math.round(b.w || 240),
@@ -209,10 +248,9 @@ router.post('/api/item', (req, res) => {
     z: b.type === 'panel' ? 0 : Math.max(0, stmt.maxZ.get().m || 0) + 1,
     color: b.color || null,
     data: b.data || {},
-    stage: b.stage || null,
-    createdAt: Date.now()
+    createdAt: Date.now(),
   };
-  item.updatedAt = item.createdAt;
+  if (RICH_TYPES.has(item.type)) item.data = toRich(item.data);
 
   db.transaction(() => {
     // A board item owns a freshly created child canvas.
@@ -225,12 +263,15 @@ router.post('/api/item', (req, res) => {
         parentCanvasId: item.canvasId,
         color: item.color || 'slate',
         icon,
-        createdAt: Date.now()
+        createdAt: Date.now(),
       });
       item.data = { childCanvasId: childId };
     }
     stmt.insertItem.run(Object.assign({}, item, { data: JSON.stringify(item.data) }));
+    if (b.stage) stmt.setStage.run({ id: item.id, stage: b.stage, updatedAt: item.createdAt });
   })();
+  item.stage = b.stage || null;
+  item.updatedAt = item.createdAt;
 
   if (item.type === 'board' && item.data.childCanvasId) {
     const child = stmt.getCanvas.get(item.data.childCanvasId);
@@ -238,16 +279,16 @@ router.post('/api/item', (req, res) => {
       _childTitle: child ? child.title : 'Board',
       _childCount: 0,
       _childColor: child ? child.color : 'slate',
-      _childIcon: child ? (child.icon || 'layout-grid') : 'layout-grid'
+      _childIcon: child ? child.icon || 'layout-grid' : 'layout-grid',
     });
   }
 
   res.json(item.type === 'panel' ? annotateOne(item) : item);
 });
 
-// Panel/member annotations for a single item (needs its whole canvas to know).
+// Panel/member annotations for one item (membership needs the whole canvas).
 function annotateOne(item) {
-  const all = itemsForCanvas(item.canvasId).map(x => x.id === item.id ? item : x);
+  const all = itemsForCanvas(item.canvasId).map(x => (x.id === item.id ? item : x));
   if (!all.includes(item)) all.push(item);
   panels.annotate(all);
   return item;
@@ -257,14 +298,13 @@ router.get('/api/item/:id', (req, res) => {
   const row = stmt.getItem.get(req.params.id);
   if (!row) return res.status(404).json({ error: 'not found' });
   const it = rowToItem(row);
-  if (it.type === 'board' && it.data && it.data.childCanvasId) {
+  if (it.type === 'board' && it.data.childCanvasId) {
     const child = stmt.getCanvas.get(it.data.childCanvasId);
-    const count = stmt.childCount.get(it.data.childCanvasId).c;
     Object.assign(it, {
       _childTitle: child ? child.title : 'Board',
-      _childCount: count,
+      _childCount: stmt.childCount.get(it.data.childCanvasId).c,
       _childColor: child ? child.color : 'slate',
-      _childIcon: child ? (child.icon || 'layout-grid') : 'layout-grid'
+      _childIcon: child ? child.icon || 'layout-grid' : 'layout-grid',
     });
   }
   res.json(annotateOne(it));
@@ -292,18 +332,40 @@ router.patch('/api/item/:id', (req, res) => {
   for (const k of ['x', 'y', 'w', 'h', 'z']) {
     if (b[k] != null) it[k] = Math.round(b[k]);
   }
-  if (b.stage !== undefined) it.stage = b.stage || null;
-  if (b.data !== undefined || b.stage !== undefined || b.color !== undefined) it.updatedAt = Date.now();
   if (b.color !== undefined) it.color = b.color;
+  // The one type change: a note whose text is a hex colour becomes a swatch.
+  if (b.type === 'swatch' && it.type === 'note') it.type = 'swatch';
   if (b.parentItemId !== undefined) it.parentItemId = b.parentItemId;
   if (b.canvasId && stmt.getCanvas.get(b.canvasId)) it.canvasId = b.canvasId;
-  if (b.data && typeof b.data === 'object') it.data = Object.assign({}, it.data, b.data);
+  // Checked only when the parent or canvas changes, so an old row with an odd
+  // parent can still be edited.
+  const moved = b.parentItemId !== undefined || it.canvasId !== row.canvasId;
+  if (moved && badParent(it.parentItemId, it.canvasId, it.id, it.type)) {
+    return res.status(400).json({ error: 'bad parentItemId' });
+  }
+  if (b.data && typeof b.data === 'object') {
+    const stored = it.data.tasks;
+    it.data = Object.assign({}, it.data, b.data);
+    if (Array.isArray(b.baseTasks) && Array.isArray(b.data.tasks) && Array.isArray(stored)) {
+      it.data.tasks = mergeTasks(b.baseTasks, stored, b.data.tasks);
+    }
+  }
+
+  // A client from before rich text may still send title/body: rebuild the body
+  // from them so the edit isn't stored somewhere nothing renders.
+  if (RICH_TYPES.has(it.type) && b.data && (b.data.title != null || b.data.body != null)) {
+    const { doc, text, ...rest } = it.data; // oxlint-disable-line no-unused-vars -- dropped on purpose
+    it.data = toRich(rest);
+  }
 
   const isBoard = it.type === 'board' && it.data && it.data.childCanvasId;
   db.transaction(() => {
     if (b.color !== undefined && isBoard) {
       const c = stmt.getCanvas.get(it.data.childCanvasId);
-      if (c) { c.color = b.color; stmt.updateCanvas.run(c); }
+      if (c) {
+        c.color = b.color;
+        stmt.updateCanvas.run(c);
+      }
     }
     // keep nested board canvas title/icon in sync with the card
     if (isBoard && b.data && (b.data.title != null || b.data.icon != null)) {
@@ -317,21 +379,28 @@ router.patch('/api/item/:id', (req, res) => {
       delete it.data.title;
       delete it.data.icon;
     }
-    stmt.updateItemContent.run({
+    stmt.updateItem.run({
       id: it.id,
       canvasId: it.canvasId,
       parentItemId: it.parentItemId ?? null,
-      x: it.x, y: it.y, w: it.w, h: it.h ?? null, z: it.z,
+      type: it.type,
+      x: it.x,
+      y: it.y,
+      w: it.w,
+      h: it.h ?? null,
+      z: it.z,
       color: it.color ?? null,
       data: JSON.stringify(it.data),
-      stage: it.stage,
-      updatedAt: it.updatedAt ?? it.createdAt
     });
+    if (b.stage !== undefined || b.data !== undefined || b.color !== undefined) {
+      it.updatedAt = Date.now();
+      if (b.stage !== undefined) it.stage = b.stage || null;
+      stmt.setStage.run({ id: it.id, stage: it.stage ?? null, updatedAt: it.updatedAt });
+    }
     for (const m of carried) {
       stmt.updateItem.run({
-        id: m.id, canvasId: m.canvasId, parentItemId: m.parentItemId ?? null,
-        x: m.x + dx, y: m.y + dy, w: m.w, h: m.h ?? null, z: m.z,
-        color: m.color ?? null, data: JSON.stringify(m.data)
+        id: m.id, canvasId: m.canvasId, parentItemId: m.parentItemId ?? null, type: m.type,
+        x: m.x + dx, y: m.y + dy, w: m.w, h: m.h ?? null, z: m.z, color: m.color ?? null, data: JSON.stringify(m.data),
       });
     }
   })();
@@ -341,9 +410,10 @@ router.patch('/api/item/:id', (req, res) => {
   // After a move/resize, cards that weren't in the panel before but lie inside
   // it now (it slid over a neighbour) are members too -- flag that.
   if (it.type === 'panel' && (dx || dy || b.w != null || b.h != null)) {
-    const before = new Set(carried.map(m => m.id));
-    const fresh = (out._memberIds || []).filter(m => !before.has(m) && !priorMembers.has(m));
-    if (fresh.length) out._warning = `${fresh.length} card(s) not previously in this panel now lie inside its area and count as members: ${fresh.join(', ')}. Move the panel elsewhere or move those cards out if that's unintended.`;
+    const fresh = (out._memberIds || []).filter(m => !priorMembers.has(m));
+    if (fresh.length) {
+      out._warning = `${fresh.length} card(s) not previously in this panel now lie inside its area and count as members: ${fresh.join(', ')}. Move the panel elsewhere or move those cards out if that's unintended.`;
+    }
   }
   res.json(out);
 });
@@ -351,6 +421,12 @@ router.patch('/api/item/:id', (req, res) => {
 // Bulk position update (used after multi-select drags / reflows)
 router.patch('/api/items', (req, res) => {
   const updates = (req.body && req.body.updates) || [];
+  for (const u of updates) {
+    const row = u.parentItemId !== undefined && stmt.getItem.get(u.id);
+    if (row && badParent(u.parentItemId, row.canvasId, row.id, row.type)) {
+      return res.status(400).json({ error: 'bad parentItemId', id: u.id });
+    }
+  }
   db.transaction(() => {
     for (const u of updates) {
       const row = stmt.getItem.get(u.id);
@@ -362,245 +438,65 @@ router.patch('/api/items', (req, res) => {
         id: it.id,
         canvasId: it.canvasId,
         parentItemId: it.parentItemId ?? null,
-        x: it.x, y: it.y, w: it.w, h: it.h ?? null, z: it.z,
+        type: it.type,
+        x: it.x,
+        y: it.y,
+        w: it.w,
+        h: it.h ?? null,
+        z: it.z,
         color: it.color ?? null,
-        data: JSON.stringify(it.data)
+        data: JSON.stringify(it.data),
       });
     }
   })();
   res.json({ ok: true });
 });
 
+// "Delete" moves the item and its whole subtree to the trash; restore undoes it.
 router.delete('/api/item/:id', (req, res) => {
   if (!stmt.getItem.get(req.params.id)) return res.status(404).json({ error: 'not found' });
-  const batchTs = id('del_');
-  db.transaction(() => deleteItemDeep(req.params.id, new Set(), batchTs))();
+  db.transaction(() => trashItemDeep(req.params.id))();
   res.json({ ok: true });
 });
 
-// Undoes a board deletion: a board (and everything nested under it, however
-// deep) was soft-deleted as one batch keyed by its own item id's deletedAt
-// marker, so restoring is just clearing deletedAt everywhere that marker was
-// stamped. Non-board deletions don't go through here — those are undone
-// client-side via plain recreate, since they're actually gone from the DB.
 router.post('/api/item/:id/restore', (req, res) => {
-  const row = stmt.getItemAny.get(req.params.id);
-  if (!row || row.deletedAt == null) return res.status(404).json({ error: 'not found' });
-  const batchTs = row.deletedAt;
-  db.transaction(() => {
-    stmt.restoreItemsByBatch.run(batchTs);
-    stmt.restoreCanvasesByBatch.run(batchTs);
-  })();
-  const restored = rowToItem(stmt.getItem.get(req.params.id));
-  if (restored.type === 'board' && restored.data.childCanvasId) {
-    const child = stmt.getCanvas.get(restored.data.childCanvasId);
-    const count = stmt.childCount.get(restored.data.childCanvasId).c;
-    Object.assign(restored, {
-      _childTitle: child ? child.title : 'Board',
-      _childCount: count,
-      _childColor: child ? child.color : 'slate',
-      _childIcon: child ? (child.icon || 'layout-grid') : 'layout-grid'
-    });
+  const row = stmt.anyItem.get(req.params.id);
+  if (row && row.trashedBy === row.id && !stmt.getCanvas.get(row.canvasId)) {
+    return res.status(409).json({ error: 'its board is in the trash — restore that first' });
   }
-  res.json(restored);
+  const restored = db.transaction(() => restoreItem(req.params.id))();
+  if (!restored) return res.status(404).json({ error: 'not in trash' });
+  res.json(rowToItem(stmt.getItem.get(req.params.id)));
 });
 
-// ---- Panels ------------------------------------------------------------
-// Panels are background regions that group the cards inside them -- see
-// panels.js. These routes are the convenient way to work with them in bulk.
-const previewOf = (it) => ({ id: it.id, type: it.type, preview: String(previewTextFor(it)).slice(0, 60) });
-
-// Every panel on a board with its members (any depth of nesting is flattened
-// to direct membership: a card lists under the smallest panel holding it).
-router.get('/api/canvas/:id/panels', (req, res) => {
-  const canvas = stmt.getCanvas.get(req.params.id);
-  if (!canvas) return res.status(404).json({ error: 'not found' });
-  const items = panels.annotate(itemsForCanvas(canvas.id));
-  const byId = new Map(items.map(i => [i.id, i]));
-  const list = items.filter(panels.isPanel).map(p => ({
-    id: p.id, title: p.data.title || 'Panel', shape: p.data.shape || 'rounded', color: p.color,
-    x: p.x, y: p.y, w: p.w, h: p.h, parentPanelId: p._panelId || null,
-    members: p._memberIds.map(mid => previewOf(byId.get(mid)))
-  }));
-  const ungrouped = items.filter(i => !panels.isPanel(i) && i.type !== 'line' && !i.parentItemId && !i._panelId).map(previewOf);
-  res.json({ canvasId: canvas.id, panels: list, ungrouped });
-});
-
-// Wraps existing cards in a new panel sized to fit them. Nothing moves.
-router.post('/api/canvas/:id/panels/group', (req, res) => {
-  const canvas = stmt.getCanvas.get(req.params.id);
-  if (!canvas) return res.status(404).json({ error: 'not found' });
+// Copy (deep: column cards, nested boards and everything on them) or move an
+// item to { canvasId, x, y }. Used by paste, cut/paste and duplicate.
+function placeTarget(req, res) {
   const b = req.body || {};
-  const ids = Array.isArray(b.itemIds) ? b.itemIds : [];
-  if (!ids.length) return res.status(400).json({ error: 'itemIds is required' });
-  const items = ids.map(i => stmt.getItem.get(i)).filter(Boolean).map(rowToItem);
-  if (items.length !== ids.length) return res.status(404).json({ error: 'some itemIds were not found' });
-  const bad = items.find(i => i.canvasId !== canvas.id || i.parentItemId || i.type === 'line');
-  if (bad) return res.status(400).json({ error: `item ${bad.id} must be a free card on this board (not a line, and not inside a column -- pass the column instead)` });
-  const box = panels.boundsFor(items, { padding: Number.isFinite(b.padding) ? b.padding : 40 });
-  const shape = panels.SHAPES.includes(b.shape) ? b.shape : 'rounded';
-  const panel = {
-    id: id('i_'), canvasId: canvas.id, parentItemId: null, type: 'panel',
-    x: box.x, y: box.y, w: box.w, h: box.h, z: 0, color: b.color || 'slate',
-    data: { title: String(b.title || 'Panel').slice(0, 200), shape }, stage: null, createdAt: Date.now()
-  };
-  panel.updatedAt = panel.createdAt;
-  stmt.insertItem.run(Object.assign({}, panel, { data: JSON.stringify(panel.data) }));
-  const all = itemsForCanvas(canvas.id);
-  panels.annotate(all);
-  const out = all.find(i => i.id === panel.id);
-  // The box wraps a rectangle, so unrelated cards lying between the chosen
-  // ones end up inside it too -- say so rather than grouping them silently.
-  const extra = out._memberIds.filter(m => !ids.includes(m));
-  if (extra.length) out._warning = `${extra.length} other card(s) also lie inside this panel's area and are now members: ${extra.join(', ')}. Move them out or use a tighter selection.`;
-  res.json(out);
-});
-
-// Puts cards inside a panel. Cards already inside stay put; others are laid
-// out in rows in the panel's free space (below the header), without resizing.
-router.post('/api/panel/:id/members', (req, res) => {
-  const row = stmt.getItem.get(req.params.id);
-  if (!row || row.type !== 'panel') return res.status(404).json({ error: 'panel not found' });
-  const panel = rowToItem(row);
-  const ids = Array.isArray(req.body && req.body.itemIds) ? req.body.itemIds : [];
-  if (!ids.length) return res.status(400).json({ error: 'itemIds is required' });
-  const items = ids.map(i => stmt.getItem.get(i)).filter(Boolean).map(rowToItem);
-  if (items.length !== ids.length) return res.status(404).json({ error: 'some itemIds were not found' });
-  const bad = items.find(i => i.canvasId !== panel.canvasId || i.parentItemId || i.type === 'line' || i.id === panel.id);
-  if (bad) return res.status(400).json({ error: `item ${bad.id} must be a free card on the same board as the panel` });
-  const GAP = 20, pad = 20, rowH = 150;
-  let cx = panel.x + pad, cy = panel.y + panels.HEADER_H + pad, rowBottom = cy;
-  const moves = [];
-  for (const it of items) {
-    if (panels.isMemberOf(panel, it)) continue;
-    const w = it.w || 240;
-    if (cx + w > panel.x + panel.w - pad && cx > panel.x + pad) { cx = panel.x + pad; cy = rowBottom + GAP; }
-    moves.push({ it, x: cx, y: cy });
-    cx += w + GAP; rowBottom = Math.max(cy + (it.h || rowH), rowBottom);
+  if (!stmt.getItem.get(req.params.id)) {
+    res.status(404).json({ error: 'not found' });
+    return null;
   }
-  db.transaction(() => {
-    for (const m of moves) {
-      stmt.updateItem.run({ id: m.it.id, canvasId: m.it.canvasId, parentItemId: null, x: Math.round(m.x), y: Math.round(m.y),
-        w: m.it.w, h: m.it.h ?? null, z: m.it.z, color: m.it.color ?? null, data: JSON.stringify(m.it.data) });
-    }
-  })();
-  const all = itemsForCanvas(panel.canvasId);
-  panels.annotate(all);
-  const out = all.find(i => i.id === panel.id);
-  const overflow = moves.length && moves[moves.length - 1].y + rowH > panel.y + panel.h;
-  res.json({ panel: out, moved: moves.map(m => m.it.id), ...(overflow ? { warning: 'panel is too small for everything; some cards extend past its edge -- resize the panel' } : {}) });
-});
-
-// ---- Duplicate & templates ------------------------------------------------
-// duplicate: deep-copies a card (a column with its cards, a board with its
-// whole subtree) onto the same or another board.
-router.post('/api/item/:id/duplicate', (req, res) => {
-  const row = stmt.getItem.get(req.params.id);
-  if (!row) return res.status(404).json({ error: 'not found' });
-  const src = rowToItem(row);
-  if (src.type === 'line') return res.status(400).json({ error: 'a line cannot be duplicated on its own; duplicate the cards it joins' });
-  const b = req.body || {};
-  const target = b.canvasId || src.canvasId;
-  if (!stmt.getCanvas.get(target)) return res.status(400).json({ error: 'bad canvasId' });
-  let newId;
-  db.transaction(() => {
-    newId = copyItem(src, target, {
-      x: Number.isFinite(b.x) ? b.x : src.x + (target === src.canvasId ? 30 : 0),
-      y: Number.isFinite(b.y) ? b.y : src.y + (target === src.canvasId ? 30 : 0),
-      parentItemId: src.parentItemId && target === src.canvasId ? src.parentItemId : null
-    });
-  })();
-  res.json(boardInfo(rowToItem(stmt.getItem.get(newId))));
-});
-
-// Templates are boards inside a board titled "Templates" on Home (created on
-// first save). Saving copies a board's contents in; using one copies it out as
-// a fresh board card, so a template is never edited by being used.
-const TEMPLATES_TITLE = 'Templates';
-function templatesCanvas(create) {
-  const rootId = rootCanvasId();
-  const hit = stmt.boardItemsOnCanvas.all(rootId).map(rowToItem)
-    .find(i => i.data.childCanvasId && (stmt.getCanvas.get(i.data.childCanvasId) || {}).title === TEMPLATES_TITLE);
-  if (hit) return hit.data.childCanvasId;
-  if (!create) return null;
-  const cid = id('c_');
-  db.transaction(() => {
-    stmt.insertCanvas.run({ id: cid, title: TEMPLATES_TITLE, parentCanvasId: rootId, color: 'indigo', icon: 'layers', createdAt: Date.now() });
-    stmt.insertItem.run({ id: id('i_'), canvasId: rootId, parentItemId: null, type: 'board', x: 80, y: 900, w: 152, h: null,
-      z: Math.max(0, stmt.maxZ.get().m || 0) + 1, color: 'indigo', data: JSON.stringify({ childCanvasId: cid }), stage: null, createdAt: Date.now() });
-  })();
-  return cid;
+  if (!stmt.getCanvas.get(b.canvasId)) {
+    res.status(400).json({ error: 'bad canvasId' });
+    return null;
+  }
+  return { canvasId: b.canvasId, x: Math.round(b.x || 0), y: Math.round(b.y || 0) };
 }
 
-function listTemplates() {
-  const tc = templatesCanvas(false);
-  if (!tc) return [];
-  return stmt.boardItemsOnCanvas.all(tc).map(rowToItem).filter(i => i.data.childCanvasId).map(i => {
-    const c = stmt.getCanvas.get(i.data.childCanvasId);
-    if (!c) return null;
-    const its = itemsForCanvas(c.id);
-    const counts = {};
-    for (const t of its) counts[t.type] = (counts[t.type] || 0) + 1;
-    return { id: c.id, name: c.title, itemCount: its.length, panels: its.filter(panels.isPanel).map(p => p.data.title || 'Panel'), types: counts };
-  }).filter(Boolean);
-}
-
-router.get('/api/templates', (req, res) => res.json({ templates: listTemplates() }));
-
-router.post('/api/templates', (req, res) => {
-  const b = req.body || {};
-  const src = stmt.getCanvas.get(b.fromCanvasId);
-  if (!src) return res.status(404).json({ error: 'fromCanvasId: board not found' });
-  const name = String(b.name || src.title || 'Template').trim().slice(0, 200) || 'Template';
-  if (listTemplates().some(t => t.name.toLowerCase() === name.toLowerCase())) return res.status(409).json({ error: `a template named "${name}" already exists` });
-  const tc = templatesCanvas(true);
-  if (src.id === tc) return res.status(400).json({ error: 'cannot template the Templates board itself' });
-  const cid = id('c_');
-  db.transaction(() => {
-    stmt.insertCanvas.run({ id: cid, title: name, parentCanvasId: tc, color: src.color || 'slate', icon: src.icon, createdAt: Date.now() });
-    stmt.insertItem.run({ id: id('i_'), canvasId: tc, parentItemId: null, type: 'board', x: 60 + (stmt.childCount.get(tc).c % 5) * 190, y: 60 + Math.floor(stmt.childCount.get(tc).c / 5) * 190, w: 152, h: null,
-      z: Math.max(0, stmt.maxZ.get().m || 0) + 1, color: src.color || 'slate', data: JSON.stringify({ childCanvasId: cid }), stage: null, createdAt: Date.now() });
-    copyCanvasContents(src.id, cid);
-  })();
-  res.json(listTemplates().find(t => t.id === cid));
+router.post('/api/item/:id/copy', (req, res) => {
+  const t = placeTarget(req, res);
+  if (!t) return;
+  const newId = db.transaction(() => copyItemDeep(req.params.id, t.canvasId, t.x, t.y))();
+  res.json(rowToItem(stmt.getItem.get(newId)));
 });
 
-// Copies board `src` out as a new board card on `target`.
-function copyBoardOut(src, target, b) {
-  const title = String(b.title || src.title).slice(0, 200);
-  const itemId = id('i_'), cid = id('c_');
-  db.transaction(() => {
-    stmt.insertCanvas.run({ id: cid, title, parentCanvasId: target, color: src.color || 'slate', icon: src.icon, createdAt: Date.now() });
-    copyCanvasContents(src.id, cid);
-    stmt.insertItem.run({ id: itemId, canvasId: target, parentItemId: null, type: 'board',
-      x: Math.round(Number.isFinite(b.x) ? b.x : 60), y: Math.round(Number.isFinite(b.y) ? b.y : 60), w: 152, h: null,
-      z: Math.max(0, stmt.maxZ.get().m || 0) + 1, color: src.color || 'slate', data: JSON.stringify({ childCanvasId: cid }), stage: null, createdAt: Date.now() });
-  })();
-  return boardInfo(rowToItem(stmt.getItem.get(itemId)));
-}
-
-router.post('/api/templates/:id/use', (req, res) => {
-  const tc = templatesCanvas(false);
-  const tpl = stmt.getCanvas.get(req.params.id);
-  if (!tc || !tpl || tpl.parentCanvasId !== tc) return res.status(404).json({ error: 'template not found (see GET /api/templates)' });
-  const b = req.body || {};
-  const target = b.canvasId || rootCanvasId();
-  if (!stmt.getCanvas.get(target)) return res.status(400).json({ error: 'bad canvasId' });
-  res.json(copyBoardOut(tpl, target, b));
-});
-
-// Copy any board (by its canvas id) as a new board card on another board.
-router.post('/api/canvas/:id/copy', (req, res) => {
-  const src = stmt.getCanvas.get(req.params.id);
-  if (!src) return res.status(404).json({ error: 'board not found' });
-  const b = req.body || {};
-  const target = b.canvasId || rootCanvasId();
-  if (!stmt.getCanvas.get(target)) return res.status(400).json({ error: 'bad canvasId' });
-  // Copying a board into itself (or its own descendants) would recurse into the copy.
-  for (let c = stmt.getCanvas.get(target); c; c = c.parentCanvasId ? stmt.getCanvas.get(c.parentCanvasId) : null) {
-    if (c.id === src.id) return res.status(400).json({ error: 'cannot copy a board into itself or one of its own sub-boards' });
-  }
-  res.json(copyBoardOut(src, target, { title: b.title || src.title + ' (copy)', x: b.x, y: b.y }));
+router.post('/api/item/:id/move', (req, res) => {
+  const t = placeTarget(req, res);
+  if (!t) return;
+  const ok = db.transaction(() => moveItemDeep(req.params.id, t.canvasId, t.x, t.y))();
+  if (!ok) return res.status(400).json({ error: 'cannot move a board inside itself' });
+  res.json(rowToItem(stmt.getItem.get(req.params.id)));
 });
 
 // ---- Quick notes -----------------------------------------------------------
@@ -608,220 +504,191 @@ router.post('/api/canvas/:id/copy', (req, res) => {
 // board. The mobile Quick-notes screens read them all in one go instead of
 // walking canvases; writes go back through the normal PATCH /api/item route.
 router.get('/api/todos', (req, res) => {
-  const lists = stmt.todoItems.all().map(rowToItem).map(it => {
-    const canvas = stmt.getCanvas.get(it.canvasId);
-    return {
-      id: it.id,
-      canvasId: it.canvasId,
-      canvasTitle: canvas ? canvas.title : '',
-      title: it.data.title || 'To-do',
-      color: it.color || null,
-      tags: Array.isArray(it.data.tags) ? it.data.tags : [],
-      tasks: Array.isArray(it.data.tasks) ? it.data.tasks : [],
-      createdAt: it.createdAt
-    };
-  });
+  const lists = stmt.todoItems
+    .all()
+    .map(rowToItem)
+    .map(it => {
+      const canvas = stmt.getCanvas.get(it.canvasId);
+      return {
+        id: it.id,
+        canvasId: it.canvasId,
+        canvasTitle: canvas ? canvas.title : '',
+        title: it.data.title || 'To-do',
+        color: it.color || null,
+        tags: Array.isArray(it.data.tags) ? it.data.tags : [],
+        tasks: Array.isArray(it.data.tasks) ? it.data.tasks : [],
+        createdAt: it.createdAt,
+      };
+    });
   res.json({ rootCanvasId: rootCanvasId(), lists });
 });
 
+// ---- Search ----------------------------------------------------------------
+// Board titles and card text: rich bodies (`data.text`), titles, link URLs, file
+// names and to-do tasks. Trashed rows are tagged, so `trashedBy IS NULL` skips
+// them and everything inside a trashed board.
+const searchItems = db.prepare(`
+  SELECT id, canvasId, type, data FROM items
+  WHERE trashedBy IS NULL AND type != 'board' AND (
+    json_extract(data, '$.text') LIKE @q ESCAPE '\\' OR json_extract(data, '$.title') LIKE @q ESCAPE '\\'
+    OR json_extract(data, '$.url') LIKE @q ESCAPE '\\' OR json_extract(data, '$.name') LIKE @q ESCAPE '\\'
+    OR json_extract(data, '$.caption') LIKE @q ESCAPE '\\'
+    OR EXISTS (SELECT 1 FROM json_each(items.data, '$.tasks') WHERE json_extract(value, '$.text') LIKE @q ESCAPE '\\')
+  ) ORDER BY createdAt DESC LIMIT 50`);
+const searchBoards = db.prepare(
+  `SELECT id, title FROM canvases WHERE trashedBy IS NULL AND title LIKE @q ESCAPE '\\' ORDER BY createdAt DESC LIMIT 25`
+);
+
+// The first line of the card that contains the query (or its first line).
+function snippet(data, q) {
+  const lines = [data.title, data.text, data.caption, data.name, data.url, ...(data.tasks || []).map(t => t.text)]
+    .filter(Boolean)
+    .flatMap(s => String(s).split('\n'))
+    .map(l => l.trim())
+    .filter(Boolean);
+  const hit = lines.find(l => l.toLowerCase().includes(q.toLowerCase())) || lines[0] || '';
+  return hit.slice(0, 140);
+}
+
+router.get('/api/search', (req, res) => {
+  const q = String(req.query.q || '')
+    .trim()
+    .slice(0, 100);
+  if (!q) return res.json({ results: [] });
+  const like = { q: '%' + q.replace(/[\\%_]/g, c => '\\' + c) + '%' };
+  const trails = new Map(); // many results share a board
+  const trail = id =>
+    trails.get(id) ||
+    trails
+      .set(
+        id,
+        breadcrumb(id).map(c => c.title)
+      )
+      .get(id);
+  const boards = searchBoards
+    .all(like)
+    .map(c => ({ kind: 'board', canvasId: c.id, title: c.title, path: trail(c.id) }));
+  const cards = searchItems.all(like).map(r => ({
+    kind: 'item',
+    id: r.id,
+    canvasId: r.canvasId,
+    type: r.type,
+    title: snippet(JSON.parse(r.data || '{}'), q),
+    path: trail(r.canvasId),
+  }));
+  res.json({ results: [...boards, ...cards] });
+});
+
+// ---- Export ----------------------------------------------------------------
+// res.attachment encodes any Unicode; only path separators and control characters go.
+const fileName = s =>
+  String(s || '')
+    // oxlint-disable-next-line no-control-regex -- stripping control characters is the point
+    .replace(/[\\/\x00-\x1f\x7f]+/g, '')
+    .trim() || 'board';
+
+router.get('/api/canvas/:id/export.md', (req, res) => {
+  // Upload links need an absolute URL. Behind Tailscale Serve the request looks
+  // like plain http, so the page passes its own origin.
+  const origin = /^https?:\/\/[^/?#\s]+$/.test(req.query.origin)
+    ? req.query.origin
+    : req.protocol + '://' + req.get('host');
+  const md = exportMarkdown(req.params.id, origin);
+  if (md == null) return res.status(404).json({ error: 'not found' });
+  const title = stmt.getCanvas.get(req.params.id).title;
+  res
+    .attachment(fileName(title) + '.md')
+    .type('text/markdown')
+    .send(md);
+});
+
+// A consistent snapshot of the whole database (better-sqlite3's online backup).
+router.get('/api/backup', async (req, res) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'milaclone-backup-')); // one per request
+  const tmp = path.join(dir, 'board.db');
+  try {
+    await db.backup(tmp);
+  } catch (e) {
+    fs.rmSync(dir, { recursive: true, force: true });
+    return res.status(500).json({ error: 'backup failed: ' + e.message });
+  }
+  const day = new Date().toISOString().slice(0, 10);
+  res.download(tmp, `milaclone-${day}.db`, () => fs.rmSync(dir, { recursive: true, force: true }));
+});
+
+// ---- Trash -----------------------------------------------------------------
+// One entry per delete (the item the user deleted, not everything inside it).
+const trashTitle = (row, data) => {
+  if (row.type === 'board' || row.type === 'shortcut') {
+    const cid = row.type === 'board' ? data.childCanvasId : data.targetCanvasId;
+    const c = cid && stmt.anyCanvas.get(cid);
+    return (row.type === 'shortcut' ? 'Shortcut to ' : '') + ((c && c.title) || 'Board');
+  }
+  const t = data.title || data.name || data.body || data.text || data.url || '';
+  return String(t).split('\n')[0].trim().slice(0, 80);
+};
+
+router.get('/api/trash', (req, res) => {
+  const items = stmt.trashRoots.all().map(row => {
+    const data = row.data ? JSON.parse(row.data) : {};
+    const canvas = stmt.anyCanvas.get(row.canvasId);
+    return {
+      id: row.id,
+      type: row.type,
+      title: trashTitle(row, data),
+      canvasId: row.canvasId,
+      canvasTitle: canvas ? canvas.title : '',
+      restorable: !!canvas && canvas.trashedBy == null,
+      trashedAt: row.trashedAt,
+    };
+  });
+  res.json({ items });
+});
+
+router.delete('/api/trash', (req, res) => {
+  const { items, orphanSrcs } = db.transaction(emptyTrash)();
+  let files = 0;
+  for (const src of orphanSrcs) {
+    if (!String(src).startsWith('/uploads/')) continue;
+    try {
+      fs.unlinkSync(path.join(UPLOAD_DIR, path.basename(src)));
+      files++;
+    } catch {
+      /* already gone */
+    }
+  }
+  res.json({ items, files });
+});
+
 // ---- Upload ----------------------------------------------------------------
-router.post('/api/upload', upload.single('file'), (req, res) => {
+// Rejections carry a reason the client can show: 415 for a disallowed type,
+// 413 over the size cap.
+const uploadOne = (req, res, next) =>
+  upload.single('file')(req, res, err => {
+    if (!err) return next();
+    if (err.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ error: 'File is larger than 25 MB' });
+    res.status(400).json({ error: err.message });
+  });
+
+router.post('/api/upload', uploadOne, (req, res) => {
+  if (req.rejectedType) {
+    return res.status(415).json({ error: `${req.rejectedType} files can't be uploaded` });
+  }
   if (!req.file) return res.status(400).json({ error: 'no file' });
   res.json({
     src: '/uploads/' + req.file.filename,
     name: req.file.originalname,
-    mime: req.file.mimetype
+    mime: req.file.mimetype,
   });
 });
 
-// ---- Search ------------------------------------------------------------------
-// Simple LIKE scan over item JSON blobs and board titles. Fine at
-// personal-notes scale; swap for FTS5 if the board grows large.
-router.get('/api/search', (req, res) => {
-  const q = String(req.query.q || '').trim();
-  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 25, 1), 100);
-  if (!q) return res.json({ items: [], boards: [] });
-
-  const pattern = '%' + likeEscape(q) + '%';
-
-  const items = stmt.searchItems.all(pattern, limit).map(rowToItem).map(it => {
-    const canvas = stmt.getCanvas.get(it.canvasId);
-    return {
-      id: it.id,
-      type: it.type,
-      canvasId: it.canvasId,
-      canvasTitle: canvas ? canvas.title : '',
-      color: it.color || null,
-      data: it.data,
-      createdAt: it.createdAt
-    };
-  });
-
-  const boards = stmt.searchCanvases.all(pattern, limit).map(c => ({
-    id: c.id,
-    title: c.title,
-    parentCanvasId: c.parentCanvasId,
-    breadcrumb: breadcrumb(c.id)
-  }));
-
-  res.json({ items, boards });
-});
-
-// ---- Graph (mind map) -------------------------------------------------------
-// Every board (for the nesting tree) and every cross-board `connect` badge
-// (for the links drawn over that tree), in one round trip. Board titles/
-// colors and connect targets only — full item data isn't needed for a graph
-// node.
-router.get('/api/graph', (req, res) => {
-  const canvases = stmt.allCanvases.all();
-  const connects = stmt.connectItems.all().map(rowToItem).map(it => ({
-    id: it.id,
-    canvasId: it.canvasId,
-    sourceItemId: it.data.sourceItemId || null,
-    targetCanvasId: it.data.targetCanvasId,
-    targetItemId: it.data.targetItemId || null,
-    label: liveConnectLabel(it) || '',
-    note: it.data.note || ''
-  })).filter(c => c.targetCanvasId);
-  res.json({ rootCanvasId: rootCanvasId(), canvases, connects });
-});
-
-// ---- Tags --------------------------------------------------------------
-// Union of every item's data.tags, for the tag picker's autocomplete list.
-router.get('/api/tags', (req, res) => {
-  const rows = db.prepare('SELECT data FROM items WHERE deletedAt IS NULL').all();
-  const seen = new Set();
-  for (const r of rows) {
-    try { for (const t of JSON.parse(r.data).tags || []) seen.add(t); } catch (e) { /* skip malformed row */ }
-  }
-  res.json({ tags: [...seen].sort() });
-});
-
-// ---- Pipeline ----------------------------------------------------------
-// Every card with a stage, anywhere in the tree, newest change first. The
-// Pipeline view groups them into Thought / Design / Code columns.
-function boardInfo(it) {
-  if (it.type !== 'board' || !it.data || !it.data.childCanvasId) return it;
-  const child = stmt.getCanvas.get(it.data.childCanvasId);
-  if (!child) return it;
-  return Object.assign(it, {
-    _childTitle: child.title,
-    _childCount: stmt.childCount.get(child.id).c,
-    _childColor: child.color,
-    _childIcon: child.icon || 'layout-grid'
-  });
-}
-
-function titleOf(it) {
-  if (it.type === 'board') return it._childTitle || 'Board';
-  return previewTextFor(it);
-}
-
-router.get('/api/pipeline', (req, res) => {
-  const canvasTitles = new Map(stmt.allCanvases.all().map(c => [c.id, c.title]));
-  const items = stmt.stagedItems.all().map(rowToItem)
-    .filter(it => canvasTitles.has(it.canvasId))
-    .map(boardInfo)
-    .map(it => Object.assign(it, { _title: titleOf(it), _canvasTitle: canvasTitles.get(it.canvasId) }));
-  res.json({ stages: STAGES, items });
-});
-
-// ---- Promote to Orb ------------------------------------------------------
-// A Code-stage idea becomes a project in Pondering Orb. The browser only
-// talks to this route; ORB_TOKEN stays on the server.
-function orbConfig() {
-  const url = (process.env.ORB_URL || '').trim().replace(/\/+$/, '');
-  const token = (process.env.ORB_TOKEN || '').trim();
-  return { url, token };
-}
-
-// Orb's project name is also its wiki note's file name and [[link]], so it
-// refuses / \ [ ] | # ^ : * ? " < > and line breaks. Turn them into
-// something readable instead of failing: "Argos: scheduler" -> "Argos - scheduler".
-function orbName(title) {
-  const n = String(title || '')
-    .replace(/\s*:\s*/g, ' - ')
-    .replace(/[\\/|]/g, '-')
-    .replace(/[\[\]#^*?"<>\x00-\x1f]/g, ' ')
-    .replace(/\s+/g, ' ').replace(/^[.\s-]+/, '').trim().slice(0, 200);
-  return n || 'Untitled idea';
-}
-
-router.get('/api/orb', (req, res) => {
-  const { url, token } = orbConfig();
-  res.json({ configured: !!url, url: url || null, tokenSet: !!token });
-});
-
-router.post('/api/item/:id/promote', async (req, res) => {
-  const row = stmt.getItem.get(req.params.id);
-  if (!row) return res.status(404).json({ error: 'not found' });
-  const it = boardInfo(rowToItem(row));
-  const { url, token } = orbConfig();
-  if (!url) return res.status(409).json({ error: 'ORB_URL is not set on the Miladash server, so there is no Orb to promote to.' });
-  if (it.stage !== 'code') return res.status(409).json({ error: 'Only ideas at the Code stage can be promoted.' });
-  if (it.data.promoted) return res.status(409).json({ error: 'Already promoted.', promoted: it.data.promoted });
-
-  const name = orbName(titleOf(it));
-  const body = it.type === 'note' ? (it.data.body || '') : (it.data.pitch || '');
-  const next = String((req.body && req.body.next) || body.split('\n').find(l => l.trim()) || '').trim().slice(0, 300);
-
-  let resp, doc;
-  try {
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) headers.Authorization = 'Bearer ' + token;
-    resp = await fetch(url + '/api/c/projects', {
-      method: 'POST', headers, body: JSON.stringify({ name, next, status: 'next' }),
-      signal: AbortSignal.timeout(10000)
-    });
-    doc = await resp.json().catch(() => ({}));
-  } catch (e) {
-    return res.status(502).json({ error: 'Could not reach Orb: ' + (e.message || e) });
-  }
-  if (!resp.ok) {
-    return res.status(502).json({ error: `Orb answered ${resp.status}: ${(doc && doc.error) || 'error'}` });
-  }
-
-  // Re-read in case the card changed while Orb was answering.
-  const fresh = rowToItem(stmt.getItem.get(it.id) || row);
-  fresh.data = Object.assign({}, fresh.data, {
-    promoted: { at: Date.now(), projectId: doc && doc.id ? String(doc.id) : null, name }
-  });
-  fresh.updatedAt = Date.now();
-  stmt.updateItemContent.run({
-    id: fresh.id, canvasId: fresh.canvasId, parentItemId: fresh.parentItemId ?? null,
-    x: fresh.x, y: fresh.y, w: fresh.w, h: fresh.h ?? null, z: fresh.z,
-    color: fresh.color ?? null, data: JSON.stringify(fresh.data), stage: fresh.stage, updatedAt: fresh.updatedAt
-  });
-  res.json({ item: boardInfo(fresh), project: doc });
-});
-
-// ---- JSON Canvas ---------------------------------------------------------
-router.get('/api/canvas/:id/export', (req, res) => {
-  const nested = req.query.nested === '1' || req.query.nested === 'true';
-  const out = canvasFile.exportCanvas(req.params.id, { nested });
-  if (!out) return res.status(404).json({ error: 'not found' });
-  const canvas = stmt.getCanvas.get(req.params.id);
-  const file = (canvas.title || 'board').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-') || 'board';
-  res.set('Content-Disposition', `attachment; filename="${file}.canvas"`);
-  res.json(out);
-});
-
-router.post('/api/canvas/:id/import', (req, res) => {
-  if (!stmt.getCanvas.get(req.params.id)) return res.status(404).json({ error: 'not found' });
-  const b = req.body || {};
-  const doc = b.canvas || b;
-  const problem = canvasFile.validate(doc);
-  if (problem) return res.status(400).json({ error: 'Not a JSON Canvas file: ' + problem });
-  const item = canvasFile.importCanvas(doc, {
-    parentCanvasId: req.params.id,
-    title: typeof b.title === 'string' && b.title.trim() ? b.title.trim().slice(0, 200) : 'Imported board',
-    x: Number.isFinite(b.x) ? b.x : 60,
-    y: Number.isFinite(b.y) ? b.y : 60
-  });
-  res.json(boardInfo(rowToItem(stmt.getItem.get(item.id))));
-});
+// Bearer-token task API for machine clients (voice pipeline, Alexa): tasks-api.js.
+router.use(require('./panels-routes'));
+router.use(require('./miladash-routes'));
+router.use(require('./tasks-api'));
 
 router.get('/api/health', (req, res) => res.json({ ok: true }));
 
 module.exports = router;
-module.exports.orbName = orbName;
+module.exports.orbName = require('./miladash-routes').orbName;
+module.exports.setUploadHeaders = setUploadHeaders;
