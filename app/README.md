@@ -35,6 +35,15 @@ What's new:
   (`items.updatedAt`, bumped by content and stage edits, not by moves).
   Drag a card to another column to change its stage; click it to open it on
   its board. `GET /api/pipeline`, MCP `list_pipeline`.
+- **Panels** (the Panel tool): a named background region of any size, drawn
+  behind other cards, shaped rect / rounded / ellipse (click the icon in its
+  header). Drag a card onto it and the card is logged as in that panel
+  (positional: card centre + 24px down); drag the header and everything inside
+  moves with it; resize from the corner handle. The body is click-through so you
+  can still pan and box-select across it. `GET /api/canvas/:id/panels`,
+  `POST /api/canvas/:id/panels/group`, `POST /api/panel/:id/members`; MCP
+  `create_panel`, `group_into_panel`, `add_to_panel`, `list_panels`.
+  `node scripts/seed-demo.js <url>` fills a board with demo data.
 - **Arrow kinds and labels.** Right-click a connector line: *Relates to*,
   *Depends on* (drawn dashed) or *Became* (drawn heavier), and *Add/Edit
   label*. Stored as `data.kind` / `data.label` on the line.

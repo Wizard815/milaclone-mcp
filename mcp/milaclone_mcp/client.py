@@ -83,6 +83,31 @@ class MilacloneClient:
         """POST /api/panel/{id}/members — place cards inside a panel."""
         return self._post(f"/api/panel/{panel_id}/members", {"itemIds": item_ids})
 
+    # ---- Duplicate / templates / JSON Canvas ----------------------------------
+    def duplicate_item(self, item_id: str, body: dict[str, Any]) -> dict[str, Any]:
+        """POST /api/item/{id}/duplicate — deep copy of a card (column, board subtree...)."""
+        return self._post(f"/api/item/{item_id}/duplicate", body)
+
+    def list_templates(self) -> dict[str, Any]:
+        """GET /api/templates."""
+        return self._get("/api/templates")
+
+    def save_template(self, body: dict[str, Any]) -> dict[str, Any]:
+        """POST /api/templates — copy a board into the Templates board."""
+        return self._post("/api/templates", body)
+
+    def use_template(self, template_id: str, body: dict[str, Any]) -> dict[str, Any]:
+        """POST /api/templates/{id}/use — copy a template out as a new board."""
+        return self._post(f"/api/templates/{template_id}/use", body)
+
+    def export_canvas(self, canvas_id: str, nested: bool) -> dict[str, Any]:
+        """GET /api/canvas/{id}/export — JSON Canvas document."""
+        return self._get(f"/api/canvas/{canvas_id}/export", nested="1" if nested else "0")
+
+    def import_canvas(self, canvas_id: str, body: dict[str, Any]) -> dict[str, Any]:
+        """POST /api/canvas/{id}/import — import a JSON Canvas as a new board."""
+        return self._post(f"/api/canvas/{canvas_id}/import", body)
+
     # ---- Items ----------------------------------------------------------------
     def get_item(self, item_id: str) -> dict[str, Any]:
         """GET /api/item/{id} — a single card, wherever it lives."""

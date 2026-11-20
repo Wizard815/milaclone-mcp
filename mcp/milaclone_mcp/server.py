@@ -323,9 +323,9 @@ def create_panel(
         w, h: any size; a panel is drawn behind all other cards. Leave the top
             44px free for its title bar when placing cards inside.
 
-    Moving a panel (`update_item` with new x/y) carries every card inside it;
-    pass nothing special — to move it alone use the web UI. Deleting a panel
-    keeps its cards. Panels can nest: a card belongs to the smallest panel
+    Moving a panel (`update_item` with new x/y) carries every card inside it
+    (pass move_members=False to move only the panel). Deleting a panel keeps
+    its cards. Panels can nest: a card belongs to the smallest panel
     containing it. Read membership from `get_board` (`_panelId`/`_panelTitle`
     on cards, `_memberIds` on panels) or `list_panels`.
     """
@@ -352,7 +352,9 @@ def group_into_panel(
     to organise a board: call once per cluster. Cards must be free cards on
     this board (not lines; a card inside a column is grouped via its column).
 
-    Returns the new panel including `_memberIds`.
+    Returns the new panel including `_memberIds`. The panel is a rectangle
+    around the cards, so unrelated cards lying between them also become
+    members — if that happens the result has a `_warning` naming them.
     """
     body: dict[str, Any] = {"itemIds": item_ids, "title": title, "shape": shape, "padding": padding}
     if color:
@@ -382,6 +384,146 @@ def list_panels(canvas_id: str) -> dict[str, Any]:
 
 
 @mcp.tool()
+def get_board_outline(board_id: str) -> dict[str, Any]:
+    """
+    Compact map of a board: one short line per card (id, type, label, x/y/w/h,
+    panel it is in, stage) instead of full card contents. Cheaper than
+    `get_board` for orienting yourself or finding ids — use `get_board`/
+    `get_item` only for the few cards whose full contents you need.
+    """
+    data = _get_client().get_canvas(board_id)
+    cards = []
+    for it in data["items"]:
+        d = it.get("data") or {}
+        label = (
+            it.get("_childTitle") if it["type"] == "board"
+            else d.get("title") or d.get("text") or (d.get("body") or "")[:60] or d.get("url") or ""
+        )
+        row: dict[str, Any] = {"id": it["id"], "type": it["type"], "label": label[:60],
+                               "x": it["x"], "y": it["y"], "w": it.get("w")}
+        if it.get("h"):
+            row["h"] = it["h"]
+        if it["type"] == "line":
+            row = {"id": it["id"], "type": "line", "from": d.get("fromId"), "to": d.get("toId"), "label": d.get("label", "")}
+        if it["type"] == "board":
+            row["board_id"] = (d or {}).get("childCanvasId")
+        if it.get("parentItemId"):
+            row["in_column"] = it["parentItemId"]
+        if it.get("_panelId"):
+            row["panel"] = it["_panelTitle"]
+        if it.get("stage"):
+            row["stage"] = it["stage"]
+        cards.append(row)
+    return {"board": data["canvas"]["title"], "board_id": board_id,
+            "breadcrumb": [b["title"] for b in data["breadcrumb"]], "cards": cards}
+
+
+@mcp.tool()
+def create_items(canvas_id: str, items: list[dict[str, Any]]) -> dict[str, Any]:
+    """
+    Create several cards on one board in a single call. Each entry takes the
+    same fields as `create_item` (item_type, data, x, y, w, color,
+    parent_item_id, stage). Cards are created in order, so a column can be
+    followed by cards whose parent_item_id is unknown until it exists — for
+    that, create the column first with `create_item`. Lines (item_type "line")
+    may reference earlier cards via data.fromId/toId only by real ids.
+
+    Returns {"created": [items...], "errors": [{"index": n, "error": str}]}.
+    One bad entry doesn't stop the rest.
+    """
+    created, errors = [], []
+    for i, spec in enumerate(items):
+        try:
+            created.append(create_item(
+                canvas_id=canvas_id, item_type=spec["item_type"], data=spec.get("data", {}),
+                x=spec.get("x", 60), y=spec.get("y", 60), w=spec.get("w"), color=spec.get("color"),
+                parent_item_id=spec.get("parent_item_id"), stage=spec.get("stage"),
+            ))
+        except Exception as e:  # noqa: BLE001 - report per-entry, keep going
+            errors.append({"index": i, "error": str(e)})
+    return {"created": created, "errors": errors}
+
+
+@mcp.tool()
+def duplicate_item(
+    item_id: str, canvas_id: str | None = None, x: int | None = None, y: int | None = None
+) -> dict[str, Any]:
+    """
+    Deep-copy a card. A column is copied with its cards; a `board` card is
+    copied with its entire nested subtree (new independent boards). Lines can't
+    be duplicated on their own. By default the copy lands 30 units down-right
+    of the original on the same board; pass canvas_id (and x/y) to copy it to
+    another board. To copy a whole board's *contents* as a reusable starting
+    point, use `save_as_template` instead.
+    """
+    body: dict[str, Any] = {}
+    if canvas_id is not None:
+        body["canvasId"] = canvas_id
+    if x is not None:
+        body["x"] = x
+    if y is not None:
+        body["y"] = y
+    return _get_client().duplicate_item(item_id, body)
+
+
+@mcp.tool()
+def list_templates() -> dict[str, Any]:
+    """
+    List saved templates. A template is a board (cards, panels, columns, nested
+    boards, lines) kept in a "Templates" board on Home, to be copied out again
+    and again. Each entry: id, name, itemCount, panel titles, card-type counts.
+    """
+    return _get_client().list_templates()
+
+
+@mcp.tool()
+def save_as_template(board_id: str, name: str) -> dict[str, Any]:
+    """
+    Save an existing board (its contents, panels and nested boards) as a named
+    template. The original board is untouched; later edits to it don't change
+    the template. Names must be unique (case-insensitive).
+    """
+    return _get_client().save_template({"fromCanvasId": board_id, "name": name})
+
+
+@mcp.tool()
+def create_from_template(
+    template_id: str, parent_board_id: str | None = None, title: str | None = None,
+    x: int = 60, y: int = 60,
+) -> dict[str, Any]:
+    """
+    Make a new board from a template: an independent copy placed as a board
+    card on `parent_board_id` (default: Home). Returns the new board card; its
+    `data.childCanvasId` is the new board's id for `get_board`/`list_panels`.
+    """
+    body: dict[str, Any] = {"x": x, "y": y}
+    if parent_board_id:
+        body["canvasId"] = parent_board_id
+    if title:
+        body["title"] = title
+    return _get_client().use_template(template_id, body)
+
+
+@mcp.tool()
+def export_board(board_id: str, include_nested: bool = False) -> dict[str, Any]:
+    """
+    Export a board as an open JSON Canvas document ({"nodes": [...], "edges":
+    [...]}), for backup or moving it elsewhere. include_nested also exports
+    boards nested inside it.
+    """
+    return _get_client().export_canvas(board_id, include_nested)
+
+
+@mcp.tool()
+def import_board(parent_board_id: str, canvas: dict[str, Any], title: str = "Imported board") -> dict[str, Any]:
+    """
+    Import a JSON Canvas document (e.g. from `export_board`, or Obsidian) as a
+    new board card on `parent_board_id`. Returns the new board card.
+    """
+    return _get_client().import_canvas(parent_board_id, {"canvas": canvas, "title": title})
+
+
+@mcp.tool()
 def update_item(
     item_id: str,
     data: dict[str, Any] | None = None,
@@ -393,6 +535,7 @@ def update_item(
     canvas_id: str | None = None,
     parent_item_id: str | None = None,
     stage: str | None = None,
+    move_members: bool = True,
 ) -> dict[str, Any]:
     """
     Partially update a card. Only pass the fields you want to change.
@@ -432,6 +575,8 @@ def update_item(
         body["parentItemId"] = parent_item_id
     if stage is not None:
         body["stage"] = None if stage in ("", "none") else stage
+    if not move_members:
+        body["moveMembers"] = False
     return _get_client().patch_item(item_id, body)
 
 

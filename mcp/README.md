@@ -16,8 +16,12 @@ and standalone dev setup.
 | `update_canvas` | Rename/recolor/re-icon a board by canvas id (mainly for Home) |
 | `search` | Search card contents and board titles |
 | `list_todo_lists` | List every to-do checklist across the whole tree |
-| `create_item` | Create a note/todo/link/column/comment/board/heading/document/table/color/draw/line/shape card (optional `stage`; lines take `kind`) |
+| `create_item` | Create a note/todo/link/column/comment/board/heading/document/table/color/draw/line/shape/panel card (optional `stage`; lines take `kind`) |
 | `update_item` | Edit a card's data/position/color/parent/stage |
+| `create_panel` | Create a named floating panel (any size; rect/rounded/ellipse) that groups the cards placed inside it |
+| `group_into_panel` | Wrap existing cards in a new panel sized to fit them (warns if bystander cards get swept in) |
+| `add_to_panel` | Put cards inside an existing panel (laid out in its free space; warns if it's too small) |
+| `list_panels` | Every panel on a board with its members, plus the cards not in any panel |
 | `list_pipeline` | Miladash: every staged idea (thought/design/code), newest change first |
 | `promote_item` | Miladash: turn a Code-stage idea into a Pondering Orb project |
 | `delete_item` | Delete a card (recursively, if it's a nested board) |
@@ -77,3 +81,17 @@ streamable-http is what the bundled Docker deployment uses (see root README).
   `set_todo_task_done` tools, which read-modify-write the full array for you.
 - `search` is a simple `LIKE` scan (see milaclone's `/api/search`), fine at
   personal-notes scale.
+
+## Panels
+
+A panel is a named, free-form background region. Membership is **positional**:
+a card is in a panel when its anchor (horizontal centre, 24px below its top
+edge) lies inside it, so "putting a card in a panel" is just placing it there.
+The API reports it on every read: `_panelId`/`_panelTitle` on cards and
+`_memberIds`/`_memberCount` on panels. Nested panels work — a card belongs to
+the *smallest* panel holding it. `update_item` on a panel's x/y carries
+everything inside it (`move_members=False` to move only the panel); deleting a
+panel keeps its cards.
+
+`scripts/agent_eval.py` drives these tools with a real model over OpenRouter and
+checks the board afterwards (`OPENROUTER_API_KEY`, `--budget` caps spend).

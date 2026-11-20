@@ -2,7 +2,7 @@
 
 import { state, dom, COLORS, BOARD_ICONS, SHAPES, SHAPE_ICONS } from './state.js';
 import { api } from './api.js';
-import { colorVar, lucideEl, refreshIcons, isLocked } from './util.js';
+import { colorVar, lucideEl, refreshIcons, isLocked, toast } from './util.js';
 import { refreshItem } from './cards.js';
 import { select, renameSelected, deleteItem, saveData } from './editing.js';
 import { copySelected, pasteClipboard, duplicateSelected, toggleLock } from './clipboard.js';
@@ -264,6 +264,23 @@ export function openCtx(e, it) {
     rows.push({ stages: stageable });
     if (!isGroup && it.stage === 'code') rows.push(promoteRow(it));
     rows.push({ sep: true });
+  }
+  if (!isGroup && it.type === 'board' && it.data.childCanvasId) {
+    if (state.view.canvas && state.view.canvas.title === 'Templates') {
+      rows.push({ label: 'New board from this template', fn: async () => {
+        closeCtx();
+        const r = await api.useTemplate(it.data.childCanvasId, { canvasId: state.rootCanvasId, title: it._childTitle });
+        toast(r.ok ? 'Created "' + (r.body._childTitle || 'board') + '" on Home' : (r.body.error || 'Could not use template'));
+      } });
+    } else {
+      rows.push({ label: 'Save as template…', fn: async () => {
+        closeCtx();
+        const name = window.prompt('Template name', it._childTitle || 'Template');
+        if (!name) return;
+        const r = await api.saveTemplate(it.data.childCanvasId, name);
+        toast(r.ok ? 'Saved template "' + r.body.name + '" (Home → Templates)' : (r.body.error || 'Could not save template'));
+      } });
+    }
   }
   rows.push({
     label: isGroup ? `Tag ${selectedItems.length} items` : 'Tags',

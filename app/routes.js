@@ -12,6 +12,7 @@ const {
 } = require('./db');
 const canvasFile = require('./canvasfile');
 const panels = require('./panels');
+const { copyItem, copyCanvasContents } = require('./copy');
 
 // stage: one of STAGES, or null for "not in the pipeline".
 const badStage = (v) => v !== undefined && v !== null && !STAGES.includes(v);
@@ -280,6 +281,7 @@ router.patch('/api/item/:id', (req, res) => {
   // Moving a panel carries everything inside it (unless moveMembers: false).
   // Membership is read from where things are *before* the move.
   let carried = [], dx = 0, dy = 0;
+  const priorMembers = it.type === 'panel' ? new Set(panels.allMembers(it, itemsForCanvas(it.canvasId)).map(m => m.id)) : new Set();
   if (it.type === 'panel' && b.moveMembers !== false && (b.x != null || b.y != null)) {
     dx = b.x != null ? Math.round(b.x) - it.x : 0;
     dy = b.y != null ? Math.round(b.y) - it.y : 0;
@@ -336,6 +338,13 @@ router.patch('/api/item/:id', (req, res) => {
 
   const out = it.type === 'panel' ? annotateOne(it) : it;
   if (carried.length) out._moved = carried.map(m => m.id);
+  // After a move/resize, cards that weren't in the panel before but lie inside
+  // it now (it slid over a neighbour) are members too -- flag that.
+  if (it.type === 'panel' && (dx || dy || b.w != null || b.h != null)) {
+    const before = new Set(carried.map(m => m.id));
+    const fresh = (out._memberIds || []).filter(m => !before.has(m) && !priorMembers.has(m));
+    if (fresh.length) out._warning = `${fresh.length} card(s) not previously in this panel now lie inside its area and count as members: ${fresh.join(', ')}. Move the panel elsewhere or move those cards out if that's unintended.`;
+  }
   res.json(out);
 });
 
@@ -439,7 +448,12 @@ router.post('/api/canvas/:id/panels/group', (req, res) => {
   stmt.insertItem.run(Object.assign({}, panel, { data: JSON.stringify(panel.data) }));
   const all = itemsForCanvas(canvas.id);
   panels.annotate(all);
-  res.json(all.find(i => i.id === panel.id));
+  const out = all.find(i => i.id === panel.id);
+  // The box wraps a rectangle, so unrelated cards lying between the chosen
+  // ones end up inside it too -- say so rather than grouping them silently.
+  const extra = out._memberIds.filter(m => !ids.includes(m));
+  if (extra.length) out._warning = `${extra.length} other card(s) also lie inside this panel's area and are now members: ${extra.join(', ')}. Move them out or use a tighter selection.`;
+  res.json(out);
 });
 
 // Puts cards inside a panel. Cards already inside stay put; others are laid
@@ -475,6 +489,99 @@ router.post('/api/panel/:id/members', (req, res) => {
   const out = all.find(i => i.id === panel.id);
   const overflow = moves.length && moves[moves.length - 1].y + rowH > panel.y + panel.h;
   res.json({ panel: out, moved: moves.map(m => m.it.id), ...(overflow ? { warning: 'panel is too small for everything; some cards extend past its edge -- resize the panel' } : {}) });
+});
+
+// ---- Duplicate & templates ------------------------------------------------
+// duplicate: deep-copies a card (a column with its cards, a board with its
+// whole subtree) onto the same or another board.
+router.post('/api/item/:id/duplicate', (req, res) => {
+  const row = stmt.getItem.get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'not found' });
+  const src = rowToItem(row);
+  if (src.type === 'line') return res.status(400).json({ error: 'a line cannot be duplicated on its own; duplicate the cards it joins' });
+  const b = req.body || {};
+  const target = b.canvasId || src.canvasId;
+  if (!stmt.getCanvas.get(target)) return res.status(400).json({ error: 'bad canvasId' });
+  let newId;
+  db.transaction(() => {
+    newId = copyItem(src, target, {
+      x: Number.isFinite(b.x) ? b.x : src.x + (target === src.canvasId ? 30 : 0),
+      y: Number.isFinite(b.y) ? b.y : src.y + (target === src.canvasId ? 30 : 0),
+      parentItemId: src.parentItemId && target === src.canvasId ? src.parentItemId : null
+    });
+  })();
+  res.json(boardInfo(rowToItem(stmt.getItem.get(newId))));
+});
+
+// Templates are boards inside a board titled "Templates" on Home (created on
+// first save). Saving copies a board's contents in; using one copies it out as
+// a fresh board card, so a template is never edited by being used.
+const TEMPLATES_TITLE = 'Templates';
+function templatesCanvas(create) {
+  const rootId = rootCanvasId();
+  const hit = stmt.boardItemsOnCanvas.all(rootId).map(rowToItem)
+    .find(i => i.data.childCanvasId && (stmt.getCanvas.get(i.data.childCanvasId) || {}).title === TEMPLATES_TITLE);
+  if (hit) return hit.data.childCanvasId;
+  if (!create) return null;
+  const cid = id('c_');
+  db.transaction(() => {
+    stmt.insertCanvas.run({ id: cid, title: TEMPLATES_TITLE, parentCanvasId: rootId, color: 'indigo', icon: 'layers', createdAt: Date.now() });
+    stmt.insertItem.run({ id: id('i_'), canvasId: rootId, parentItemId: null, type: 'board', x: 80, y: 900, w: 152, h: null,
+      z: Math.max(0, stmt.maxZ.get().m || 0) + 1, color: 'indigo', data: JSON.stringify({ childCanvasId: cid }), stage: null, createdAt: Date.now() });
+  })();
+  return cid;
+}
+
+function listTemplates() {
+  const tc = templatesCanvas(false);
+  if (!tc) return [];
+  return stmt.boardItemsOnCanvas.all(tc).map(rowToItem).filter(i => i.data.childCanvasId).map(i => {
+    const c = stmt.getCanvas.get(i.data.childCanvasId);
+    if (!c) return null;
+    const its = itemsForCanvas(c.id);
+    const counts = {};
+    for (const t of its) counts[t.type] = (counts[t.type] || 0) + 1;
+    return { id: c.id, name: c.title, itemCount: its.length, panels: its.filter(panels.isPanel).map(p => p.data.title || 'Panel'), types: counts };
+  }).filter(Boolean);
+}
+
+router.get('/api/templates', (req, res) => res.json({ templates: listTemplates() }));
+
+router.post('/api/templates', (req, res) => {
+  const b = req.body || {};
+  const src = stmt.getCanvas.get(b.fromCanvasId);
+  if (!src) return res.status(404).json({ error: 'fromCanvasId: board not found' });
+  const name = String(b.name || src.title || 'Template').trim().slice(0, 200) || 'Template';
+  if (listTemplates().some(t => t.name.toLowerCase() === name.toLowerCase())) return res.status(409).json({ error: `a template named "${name}" already exists` });
+  const tc = templatesCanvas(true);
+  if (src.id === tc) return res.status(400).json({ error: 'cannot template the Templates board itself' });
+  const cid = id('c_');
+  db.transaction(() => {
+    stmt.insertCanvas.run({ id: cid, title: name, parentCanvasId: tc, color: src.color || 'slate', icon: src.icon, createdAt: Date.now() });
+    stmt.insertItem.run({ id: id('i_'), canvasId: tc, parentItemId: null, type: 'board', x: 60 + (stmt.childCount.get(tc).c % 5) * 190, y: 60 + Math.floor(stmt.childCount.get(tc).c / 5) * 190, w: 152, h: null,
+      z: Math.max(0, stmt.maxZ.get().m || 0) + 1, color: src.color || 'slate', data: JSON.stringify({ childCanvasId: cid }), stage: null, createdAt: Date.now() });
+    copyCanvasContents(src.id, cid);
+  })();
+  res.json(listTemplates().find(t => t.id === cid));
+});
+
+router.post('/api/templates/:id/use', (req, res) => {
+  const tc = templatesCanvas(false);
+  const tpl = stmt.getCanvas.get(req.params.id);
+  if (!tc || !tpl || tpl.parentCanvasId !== tc) return res.status(404).json({ error: 'template not found (see GET /api/templates)' });
+  const b = req.body || {};
+  const target = b.canvasId || rootCanvasId();
+  if (!stmt.getCanvas.get(target)) return res.status(400).json({ error: 'bad canvasId' });
+  const title = String(b.title || tpl.title).slice(0, 200);
+  const itemId = id('i_'), cid = id('c_');
+  db.transaction(() => {
+    stmt.insertCanvas.run({ id: cid, title, parentCanvasId: target, color: tpl.color || 'slate', icon: tpl.icon, createdAt: Date.now() });
+    copyCanvasContents(tpl.id, cid);
+    stmt.insertItem.run({ id: itemId, canvasId: target, parentItemId: null, type: 'board',
+      x: Math.round(Number.isFinite(b.x) ? b.x : 60), y: Math.round(Number.isFinite(b.y) ? b.y : 60), w: 152, h: null,
+      z: Math.max(0, stmt.maxZ.get().m || 0) + 1, color: tpl.color || 'slate', data: JSON.stringify({ childCanvasId: cid }), stage: null, createdAt: Date.now() });
+  })();
+  res.json(boardInfo(rowToItem(stmt.getItem.get(itemId))));
 });
 
 // ---- Quick notes -----------------------------------------------------------

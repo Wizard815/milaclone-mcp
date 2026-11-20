@@ -85,10 +85,27 @@ function annotate(items) {
 // Smallest rectangle (with padding and room for the header) that encloses
 // every item's anchor *and* its visible card -- heights are unknown, so the
 // caller passes a per-item estimate.
-function boundsFor(items, { padding = 40, estimateH = () => 140 } = {}) {
+// Rough rendered height of a card whose `h` isn't stored (cards auto-grow in
+// the browser), so a group panel's box reaches past the bottom of tall cards.
+function estimateH(it) {
+  const d = it.data || {};
+  switch (it.type) {
+    case 'todo': return 70 + 36 * Math.max(1, (d.tasks || []).length);
+    case 'table': return 50 + 32 * Math.max(1, (d.rows || []).length);
+    case 'column': return 80;
+    case 'note': return 60 + 22 * Math.ceil(String(d.text || d.body || '').length / 28);
+    case 'board': case 'document': return 140;
+    case 'link': return 110;
+    case 'heading': return 60;
+    case 'color': return 150;
+    default: return 140;
+  }
+}
+
+function boundsFor(items, { padding = 40, estimateH: est = estimateH } = {}) {
   let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
   for (const it of items) {
-    const w = it.w || 240, h = it.h || estimateH(it);
+    const w = it.w || 240, h = it.h || est(it);
     x1 = Math.min(x1, it.x); y1 = Math.min(y1, it.y);
     x2 = Math.max(x2, it.x + w); y2 = Math.max(y2, it.y + h);
   }
@@ -102,5 +119,5 @@ function boundsFor(items, { padding = 40, estimateH = () => 140 } = {}) {
 
 module.exports = {
   SHAPES, DEFAULT_PANEL, HEADER_H, ANCHOR_DROP,
-  isPanel, anchorOf, containsPoint, isMemberOf, computeMembership, allMembers, annotate, boundsFor
+  isPanel, anchorOf, containsPoint, isMemberOf, computeMembership, allMembers, annotate, boundsFor, estimateH
 };

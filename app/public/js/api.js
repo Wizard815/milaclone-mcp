@@ -23,6 +23,8 @@ export const api = {
   async pipeline() { return (await fetch('/api/pipeline', { headers: authHeaders })).json(); },
   async orb() { return (await fetch('/api/orb', { headers: authHeaders })).json(); },
   async promote(id) { const r = await fetch('/api/item/' + id + '/promote', { method:'POST', headers: jsonHeaders, body:'{}' }); return { ok: r.ok, body: await r.json() }; },
+  async saveTemplate(fromCanvasId, name) { const r = await fetch('/api/templates', { method:'POST', headers: jsonHeaders, body:JSON.stringify({ fromCanvasId, name }) }); return { ok: r.ok, body: await r.json() }; },
+  async useTemplate(templateId, body) { const r = await fetch('/api/templates/' + templateId + '/use', { method:'POST', headers: jsonHeaders, body:JSON.stringify(body) }); return { ok: r.ok, body: await r.json() }; },
   async exportCanvas(id, nested) { const r = await fetch('/api/canvas/' + id + '/export' + (nested ? '?nested=1' : ''), { headers: authHeaders }); return r.json(); },
   async importCanvas(id, body) { const r = await fetch('/api/canvas/' + id + '/import', { method:'POST', headers: jsonHeaders, body:JSON.stringify(body) }); return { ok: r.ok, body: await r.json() }; }
 };

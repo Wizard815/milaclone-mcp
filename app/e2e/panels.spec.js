@@ -112,3 +112,15 @@ test('deleting a panel keeps the cards that were inside it', async ({ page }) =>
   await expect(page.locator('.item.panel')).toHaveCount(0);
   await expect(page.locator(`.item[data-id="${note.id}"]`)).toHaveCount(1);
 });
+
+test('a board can be saved as a template from its context menu and reused from Templates', async ({ page }) => {
+  await freshCanvas(page);
+  await page.evaluate(() => { window.prompt = () => 'UI kit'; });
+  await page.goto('/');
+  await page.evaluate(() => { window.prompt = () => 'UI kit'; });
+  const boards = page.locator('.item.type-board');
+  await expect(boards.first()).toBeVisible();
+  await boards.first().click({ button: 'right' });
+  await page.getByRole('button', { name: /Save as template/ }).click();
+  await expect.poll(async () => (await api(page, 'GET', '/api/templates')).templates.map(t => t.name)).toContain('UI kit');
+});
