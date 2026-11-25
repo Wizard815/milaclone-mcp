@@ -3821,6 +3821,10 @@ body.filter-hide .item.filtered-out {
   gap: 4px;
   pointer-events: auto;
 }
+.item.in-column > .agent-chips {
+  position: static;
+  margin-top: 8px;
+}
 /* Set by agents (agent.js): where an agent is with a card, and its Orb task. */
 .agent-chip {
   font-size: 10.5px;

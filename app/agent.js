@@ -56,6 +56,8 @@ const q = {
   latestActivity: db.prepare(`SELECT MAX(id) AS m FROM activity`),
   canvases: db.prepare(`SELECT id, title, parentCanvasId, agentMeta FROM canvases WHERE trashedBy IS NULL`),
   getMeta: db.prepare(`SELECT agentMeta FROM canvases WHERE id = ?`),
+  boardCard: db.prepare(`SELECT id FROM items WHERE type = 'board' AND trashedBy IS NULL
+                         AND json_extract(data, '$.childCanvasId') = ?`),
   setMeta: db.prepare(`UPDATE canvases SET agentMeta = ? WHERE id = ?`),
   anyItem: db.prepare(`SELECT * FROM items WHERE id = ?`),
 };
@@ -437,20 +439,24 @@ function layOut(canvasId, layout, sections, center) {
     if (spec.ref) made.refs[spec.ref] = it.id;
   };
   if (layout === 'map') {
+    const n = sections.length,
+      R = 380 + Math.max(0, n - 6) * 40;
+    // The centre sits far enough in that every branch lands at positive x/y,
+    // where a board opens.
+    const cx = R + 420,
+      cy = R + 300;
     const hub = insert(canvasId, {
-      x: 0,
-      y: 0,
+      x: cx - 130,
+      y: cy - 30,
       w: 260,
       color: 'yellow',
       data: { title: clean(center, 120) || 'Centre', body: '' },
     });
     made.center = hub.id;
-    const n = sections.length,
-      R = 380 + Math.max(0, n - 6) * 40;
     sections.forEach((s, i) => {
       const a = (2 * Math.PI * i) / n - Math.PI / 2;
-      const sx = Math.cos(a) * R,
-        sy = Math.sin(a) * R;
+      const sx = cx + Math.cos(a) * R,
+        sy = cy + Math.sin(a) * R;
       const node = insert(canvasId, {
         x: sx - 120,
         y: sy - 30,
@@ -460,12 +466,15 @@ function layOut(canvasId, layout, sections, center) {
       });
       made.sections.push(node);
       line(canvasId, hub, node);
-      const ox = Math.cos(a) * (R + 300),
-        oy = Math.sin(a) * (R + 200);
+      // A branch above or below the centre spreads its cards in a row; one to the side stacks them.
+      const across = Math.abs(Math.sin(a)) > 0.7,
+        m = s.cards.length;
+      const ox = cx + Math.cos(a) * (R + (across ? 0 : 320)),
+        oy = cy + Math.sin(a) * (R + (across ? 200 : 60));
       s.cards.forEach((c, j) => {
         const it = insert(canvasId, {
-          x: ox - 110,
-          y: oy - (s.cards.length - 1) * 60 + j * 120,
+          x: across ? ox - 110 + (j - (m - 1) / 2) * 250 : ox - 110,
+          y: across ? oy - (Math.sin(a) < 0 ? 40 : 0) : oy - (m - 1) * 60 + j * 120,
           w: 220,
           color: c.color,
           data: c.data,
@@ -554,7 +563,9 @@ function readBoard(canvas) {
   const byId = new Map(items.map(i => [i.id, i]));
   const sections = [];
   const placed = new Set();
-  for (const s of sectionsOf(items).sort((a, b) => a.x - b.x || a.y - b.y)) {
+  // Rows of columns read top to bottom, each row left to right (a route's steps zigzag within one row).
+  const row = i => Math.floor(i.y / 300);
+  for (const s of sectionsOf(items).sort((a, b) => row(a) - row(b) || a.x - b.x || a.y - b.y)) {
     const members =
       s.type === 'column'
         ? items.filter(i => i.parentItemId === s.id).sort((a, b) => a.y - b.y)
@@ -590,6 +601,9 @@ function readBoard(canvas) {
     path: breadcrumb(canvas.id)
       .map(b => b.title)
       .join(' › '),
+    // The card that opens this board on its parent (none for Home), for removing it.
+    parent: canvas.parentCanvasId || null,
+    boardCard: (q.boardCard.get(canvas.id) || {}).id || null,
     ...(meta.layout ? { layout: meta.layout } : {}),
     ...(meta.orb ? { orb: meta.orb } : {}),
     sections,

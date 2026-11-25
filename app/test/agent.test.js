@@ -93,6 +93,8 @@ test('a plan becomes a columns board, read back as JSON and text', async () => {
   assert.equal(read.status, 200);
   assert.equal(read.body.title, 'Garage plan');
   assert.equal(read.body.layout, 'columns');
+  assert.equal(read.body.boardCard, made.body.boardCard);
+  assert.equal(read.body.parent, made.body.parent);
   assert.deepEqual(
     read.body.sections.map(s => [s.kind, s.title, s.cards.map(c => c.title)]),
     [
