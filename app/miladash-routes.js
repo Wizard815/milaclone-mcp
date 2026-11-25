@@ -23,7 +23,7 @@ function boardInfo(it) {
   if (!child) return it;
   return Object.assign(it, {
     _childTitle: child.title,
-    _childCount: stmt.childCount.get(child.id).c,
+    _childCount: stmt.cardCount.get(child.id).c,
     _childColor: child.color,
     _childIcon: child.icon || 'layout-grid',
   });

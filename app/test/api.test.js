@@ -290,6 +290,33 @@ test('quick notes: task edits round-trip through PATCH /api/item', async () => {
   assert.equal(saved.title, 'Errands'); // shallow data merge keeps the title
 });
 
+test("a board tile counts the board's cards, also those inside columns and sections", async () => {
+  const canvasId = await root();
+  const board = (await send('POST', '/api/item', { canvasId, type: 'board', data: { title: 'Garden plan' } })).body;
+  const childId = board.data.childCanvasId;
+  const todo = (await send('POST', '/api/item', { canvasId: childId, type: 'column', data: { title: 'To do' } })).body;
+  const doing = (await send('POST', '/api/item', { canvasId: childId, type: 'column', data: { title: 'Doing' } })).body;
+  const cards = [];
+  for (const col of [todo, todo, todo, doing]) {
+    cards.push((await send('POST', '/api/item', { canvasId: childId, type: 'note', parentItemId: col.id })).body);
+  }
+  const tile = async () => (await get('/api/canvas/' + canvasId)).body.items.find(i => i.id === board.id)._childCount;
+  // Two columns with four cards: "4 cards", not "2".
+  assert.equal(await tile(), 4);
+  // A section, a loose card and a line: the loose card counts, the section and the line do not.
+  await send('POST', '/api/item', { canvasId: childId, type: 'panel', data: { title: 'Ideas' } });
+  const loose = (await send('POST', '/api/item', { canvasId: childId, type: 'note' })).body;
+  await send('POST', '/api/item', {
+    canvasId: childId,
+    type: 'line',
+    data: { from: { id: cards[0].id }, to: { id: loose.id } },
+  });
+  assert.equal(await tile(), 5);
+  // A card in the trash is not counted.
+  await send('DELETE', '/api/item/' + cards[3].id);
+  assert.equal(await tile(), 4);
+});
+
 // ---- Trash, copy, move, task merge, upload safety ---------------------------
 
 test('trash: delete hides the subtree and restore brings all of it back', async () => {

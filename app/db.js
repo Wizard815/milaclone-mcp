@@ -80,7 +80,13 @@ const stmt = {
   todoItems: db.prepare(`SELECT * FROM items WHERE type = 'todo' AND ${LIVE} ORDER BY createdAt, id`),
   itemsByCanvas: db.prepare(`SELECT * FROM items WHERE canvasId = ? AND ${LIVE}`),
   maxZ: db.prepare(`SELECT MAX(z) AS m FROM items`),
+  // Top-level items: where the next tile goes on a board laid out as a grid.
   childCount: db.prepare(`SELECT COUNT(*) AS c FROM items WHERE canvasId = ? AND parentItemId IS NULL AND ${LIVE}`),
+  // What a board tile says ("4 cards"): every card on the board, also inside columns and
+  // sections, but not the columns, sections or connector lines themselves.
+  cardCount: db.prepare(
+    `SELECT COUNT(*) AS c FROM items WHERE canvasId = ? AND type NOT IN ('column', 'panel', 'line') AND ${LIVE}`
+  ),
   insertItem: db.prepare(`INSERT INTO items (id, canvasId, parentItemId, type, x, y, w, h, z, color, data, createdAt)
                           VALUES (@id, @canvasId, @parentItemId, @type, @x, @y, @w, @h, @z, @color, @data, @createdAt)`),
   updateItem:

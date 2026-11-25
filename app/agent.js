@@ -226,7 +226,7 @@ function allBoards() {
       id: r.id,
       title: r.title,
       path: pathOf(r),
-      cards: stmt.childCount.get(r.id).c,
+      cards: stmt.cardCount.get(r.id).c,
       ...(meta.layout ? { layout: meta.layout } : {}),
       ...(meta.orb ? { orb: meta.orb } : {}),
     };

@@ -255,7 +255,7 @@ const asBoard = itemId => {
   const c = stmt.getCanvas.get(it.data.childCanvasId);
   return Object.assign(it, {
     _childTitle: c.title,
-    _childCount: stmt.childCount.get(c.id).c,
+    _childCount: stmt.cardCount.get(c.id).c,
     _childColor: c.color,
     _childIcon: c.icon || 'layout-grid',
   });

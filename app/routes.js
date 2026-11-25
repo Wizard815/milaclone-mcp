@@ -204,7 +204,7 @@ router.get('/api/canvas/:id', (req, res) => {
   const items = itemsForCanvas(canvas.id).map(it => {
     if (it.type === 'board' && it.data && it.data.childCanvasId) {
       const child = stmt.getCanvas.get(it.data.childCanvasId);
-      const count = stmt.childCount.get(it.data.childCanvasId).c;
+      const count = stmt.cardCount.get(it.data.childCanvasId).c;
       return Object.assign({}, it, {
         _childTitle: child ? child.title : 'Board',
         _childCount: count,
@@ -327,7 +327,7 @@ router.get('/api/item/:id', (req, res) => {
     const child = stmt.getCanvas.get(it.data.childCanvasId);
     Object.assign(it, {
       _childTitle: child ? child.title : 'Board',
-      _childCount: stmt.childCount.get(it.data.childCanvasId).c,
+      _childCount: stmt.cardCount.get(it.data.childCanvasId).c,
       _childColor: child ? child.color : 'slate',
       _childIcon: child ? child.icon || 'layout-grid' : 'layout-grid',
     });
