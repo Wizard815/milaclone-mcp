@@ -57,6 +57,8 @@ services:
       - MCP_AUTH_TOKEN=${MCP_AUTH_TOKEN:-}
       # Same value as the app's, enables the MCP's add_task / list_tasks.
       - TASK_API_TOKEN=${TASK_API_TOKEN:-}
+      # The name the board's activity log gives MCP changes when a tool isn't told one.
+      - MILACLONE_AGENT=${MILACLONE_AGENT:-}
     networks:
       # `edge` for tunnel reachability (same as `app`); `ai` in addition, so
       # AI tooling can reach this service directly without going through the

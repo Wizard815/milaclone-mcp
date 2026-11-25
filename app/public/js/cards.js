@@ -1,6 +1,7 @@
 'use strict';
 
 import { STAGE_LABELS } from './stages.js';
+import { statusLabel } from './live.js';
 import { PANEL_SHAPES, refreshPanels, startPanelResize } from './panels.js';
 import { state, dom, elMap, COLORS } from './state.js';
 import {
@@ -184,6 +185,29 @@ export function renderItem(it) {
     p.textContent = 'Project';
     p.title = 'Promoted to Pondering Orb' + (it.data.promoted.name ? ' as "' + it.data.promoted.name + '"' : '');
     el.appendChild(p);
+  }
+
+  // Agents: where an agent is with this card, and the Orb task or project it became.
+  const status = statusLabel(it.data && it.data.agentStatus);
+  const orb = it.data && it.data.orb && it.data.orb.id ? it.data.orb : null;
+  if (status || orb) {
+    const row = document.createElement('span');
+    row.className = 'agent-chips';
+    if (status) {
+      const c = document.createElement('span');
+      c.className = 'agent-chip agent-' + it.data.agentStatus.state;
+      c.textContent = status.text;
+      c.title = status.title;
+      row.appendChild(c);
+    }
+    if (orb) {
+      const c = document.createElement('span');
+      c.className = 'agent-chip agent-orb';
+      c.textContent = orb.kind === 'project' ? 'Orb project' : 'Orb task';
+      c.title = `In Pondering Orb as a ${orb.kind}${orb.list ? ' in ' + orb.list : ''}${orb.state ? ' (' + orb.state + ')' : ''}`;
+      row.appendChild(c);
+    }
+    el.appendChild(row);
   }
 
   const chips = labelChips(it);

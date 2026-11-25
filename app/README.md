@@ -53,6 +53,35 @@ file you own.
   token; the browser UI gets it automatically. The task API keeps its own token.
 - `node scripts/seed-demo.js <url>` fills a board with demo data.
 
+## Agents on boards
+
+AI agents (the MCP server in `../mcp`, Pondering Orb's Golem and its `/mcp`
+tools, Hermes Studio through Orb) can work on a board the way you do:
+
+- lay a plan out as a new board in one call, as **columns**, a **route**
+  (steps joined by arrows) or a **map** (a centre with branches);
+- read a board back as short text: columns, sections, cards with ids,
+  connections, and the Orb project it is linked to;
+- add cards into a column or section, connect them, group them into a new
+  column or section, and move them;
+- mark a card **Doing**, **Done** or **Blocked** (a chip with the agent's name);
+- link a board to an Orb project, turn cards into Orb tasks or projects (once:
+  asking again gives the same task), lay a project's tasks out as a board, and
+  sync that board with the project later.
+
+The routes are in `agent.js` under `/api/agent/…`. None of them delete
+anything. A request that carries `X-Milaclone-Agent: <name>` is an agent's:
+each write it makes is logged in `/api/activity`, and an open board reloads
+within a few seconds when an agent changes it (not while you are editing a
+card), with a note of who did what.
+
+Sending cards to Orb needs `ORB_URL` and `ORB_TOKEN`, like promote. Without
+them those routes say so and change nothing.
+
+The ideas come from Adolanium's
+[Hermes Whiteboard](https://github.com/Adolanium/hermes-whiteboard) plugin
+(MIT). No code was copied.
+
 ## Quick notes: every to-do list in one place
 
 Quick notes turns all your to-do cards into a task app. Every to-do card on

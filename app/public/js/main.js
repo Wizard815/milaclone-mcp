@@ -32,6 +32,7 @@ import { initExport } from './export.js';
 import { initPipeline } from './pipeline.js';
 import { initCanvasIO } from './canvasio.js';
 import { loadOrbStatus } from './stages.js';
+import { startLive } from './live.js';
 
 // Entry point: canvas loading/navigation, global keyboard + pointer handling,
 // and boot. Wiring for the viewport and toolbar lives in their own modules and
@@ -249,6 +250,19 @@ loadOrbStatus();
   const startId = location.hash.slice(1) || state.rootCanvasId;
   await openCanvas(startId, { replace: true });
   registerServiceWorker();
+  // Agents' edits to the open board show up without a reload (live.js).
+  startLive({
+    fetchActivity: since => api.activity(since),
+    boardId: () => state.view.canvas?.id,
+    canReload: () =>
+      !state.editingId && !state.drag && !isTyping() && !isQuickNotesOpen() && !document.querySelector('dialog[open]'),
+    reload: async () => {
+      await flushAllSaves(false);
+      await reloadView();
+    },
+    notify: toast,
+    visible: () => document.visibilityState === 'visible',
+  });
 })();
 
 // U2.2 offline shell. Needs HTTPS or localhost; elsewhere register() rejects and the

@@ -55,6 +55,10 @@ export const api = {
     const r = await fetch('/api/canvas/' + id + '/import', json('POST', body));
     return { ok: r.ok, body: await r.json() };
   },
+  // What agents changed since the given activity id (see agent.js).
+  async activity(since) {
+    return (await fetch('/api/activity?since=' + since)).json();
+  },
   async root() {
     return (await fetch('/api/root')).json();
   },

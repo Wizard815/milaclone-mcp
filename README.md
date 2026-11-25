@@ -63,7 +63,9 @@ use that instead.
 notes, Trash, lines, templates, Quick notes, task API, optional voice add-on)
 plus this repo's additions: **panels** (named background regions that group
 cards), **Miladash** (idea stages, Pipeline view, promote to Orb, JSON Canvas),
-API-key auth and offline icons/fonts. See [`app/README.md`](app/README.md).
+API-key auth and offline icons/fonts, and **agents on boards** (lay a plan out,
+read a board back, add/move/connect/group cards, status marks, Orb tasks, and
+an activity log that refreshes open boards). See [`app/README.md`](app/README.md).
 
 To use the voice add-on set `COMPOSE_PROFILES=voice` and the keys listed in
 `.env.example`; the pipeline then runs beside the app and files tasks through

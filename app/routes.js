@@ -104,6 +104,8 @@ router.use('/api', (req, res, next) => {
 // No client sends compressed bodies, so refuse them (415) rather than inflate:
 // the gzip path is where body-parser < 1.20.9 can be stalled (GHSA-27r3-jxmh-p828).
 router.use(express.json({ limit: '5mb', inflate: false }));
+// Logs what agents (requests with X-Milaclone-Agent) change; see agent.js.
+router.use('/api', require('./agent').activityHook);
 
 // Uploads are served from the app's own origin, so anything a browser could run
 // (HTML, SVG, XML, …) is forced to download instead of rendering. Only file types
@@ -726,6 +728,7 @@ router.post('/api/upload', uploadOne, (req, res) => {
 router.use(require('./panels-routes'));
 router.use(require('./miladash-routes'));
 router.use(require('./tasks-api'));
+router.use(require('./agent'));
 
 router.get('/api/health', (req, res) => res.json({ ok: true }));
 

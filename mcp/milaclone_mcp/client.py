@@ -6,10 +6,13 @@ from milaclone_mcp.exceptions import AuthError, MilacloneError, NotFoundError
 
 
 class MilacloneClient:
-    def __init__(self, base_url: str, api_key: str = "", *, timeout: float = 30.0):
+    def __init__(self, base_url: str, api_key: str = "", *, timeout: float = 30.0, agent: str = ""):
         headers = {"Accept": "application/json"}
         if api_key:
             headers["X-API-Key"] = api_key
+        # Who the board's activity log says made each change (X-Milaclone-Agent).
+        if agent:
+            headers["X-Milaclone-Agent"] = agent
         self._http = httpx.Client(base_url=base_url, headers=headers, timeout=timeout)
 
     def close(self) -> None:
@@ -26,17 +29,22 @@ class MilacloneClient:
             raise AuthError(
                 "milaclone rejected the request (401). Check MILACLONE_API_KEY."
             )
-        if resp.status_code == 404:
-            raise NotFoundError(f"Not found: {resp.request.url}")
         if resp.status_code >= 400:
             # Surface the server's own explanation (e.g. "Only ideas at the
-            # Code stage can be promoted.") instead of a bare status code.
+            # Code stage can be promoted.") instead of a bare status code, with
+            # any hints it sent (the agent routes list the boards that exist).
             try:
-                msg = resp.json().get("error")
+                doc = resp.json()
             except ValueError:
-                msg = None
+                doc = {}
+            msg = doc.get("error") if isinstance(doc, dict) else None
+            hints = {k: v for k, v in doc.items() if k != "error"} if isinstance(doc, dict) else {}
+            if resp.status_code == 404 and (not msg or msg == "not found"):
+                raise NotFoundError(f"Not found: {resp.request.url}")
             if msg:
-                raise MilacloneError(f"milaclone answered {resp.status_code}: {msg}")
+                extra = f" {hints}" if hints else ""
+                err = NotFoundError if resp.status_code == 404 else MilacloneError
+                raise err(f"milaclone answered {resp.status_code}: {msg}{extra}")
         resp.raise_for_status()
         try:
             return resp.json()
@@ -78,8 +86,9 @@ class MilacloneClient:
         resp.raise_for_status()
         return resp.text
 
-    def _post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
-        return self._handle(self._http.post(path, json=body))
+    def _post(self, path: str, body: dict[str, Any], agent: str = "") -> dict[str, Any]:
+        headers = {"X-Milaclone-Agent": agent} if agent else None
+        return self._handle(self._http.post(path, json=body, headers=headers))
 
     def _patch(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
         return self._handle(self._http.patch(path, json=body))
@@ -179,3 +188,27 @@ class MilacloneClient:
     def search(self, query: str, limit: int = 25) -> dict[str, Any]:
         """GET /api/search — matching items and boards."""
         return self._get("/api/search", q=query, limit=limit)
+
+    # ---- Agents on boards (app/agent.js) -------------------------------------
+    def agent_boards(self, query: str = "") -> dict[str, Any]:
+        """GET /api/agent/boards — every board, flat, with its path and Orb link."""
+        return self._get("/api/agent/boards", **({"q": query} if query else {}))
+
+    def agent_read(self, board: str, as_text: bool) -> Any:
+        """GET /api/agent/board — a board's columns, sections, cards and connections."""
+        params = {"board": board, **({"format": "text"} if as_text else {})}
+        resp = self._http.get("/api/agent/board", params=params)
+        if as_text and resp.status_code < 400:
+            return resp.text
+        return self._handle(resp)
+
+    def agent_post(self, path: str, body: dict[str, Any], agent: str = "") -> dict[str, Any]:
+        """POST /api/agent/... — the agent write routes, as `agent`."""
+        return self._post("/api/agent/" + path, body, agent)
+
+    def activity(self, since: int = 0, canvas_id: str | None = None, limit: int = 30) -> dict[str, Any]:
+        """GET /api/activity — what agents changed, newest first."""
+        params: dict[str, Any] = {"since": since, "limit": limit}
+        if canvas_id:
+            params["canvasId"] = canvas_id
+        return self._get("/api/activity", **params)
