@@ -49,8 +49,10 @@ file you own.
   Pipeline view (kanban button), arrow kinds on lines (right-click a line:
   Relates to / Depends on / Became), promote a Code idea to a Pondering Orb
   project (`ORB_URL`, `ORB_TOKEN`), and JSON Canvas import/export in the Export menu.
-- `API_KEY` (optional) protects `/api/*`: send it as `X-API-Key` or a bearer
-  token; the browser UI gets it automatically. The task API keeps its own token.
+- `API_KEY` (optional) protects `/api/*` and `/uploads`: apps send it as
+  `X-API-Key` or a bearer token. The browser asks for it once and keeps a
+  sign-in cookie for a year; the page itself never carries the key. Ten wrong
+  keys lock an address out for 10 minutes. The task API keeps its own token.
 - `node scripts/seed-demo.js <url>` fills a board with demo data.
 
 ## Quick notes: every to-do list in one place
