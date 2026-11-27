@@ -19,8 +19,6 @@ require('esbuild').buildSync({
   logLevel: 'warning',
 });
 
-const API_KEY = (process.env.API_KEY || '').trim();
-
 const app = express();
 
 // Lucide icons and the UI fonts ship as pinned npm dependencies and are served
@@ -48,15 +46,6 @@ for (const pkg of new Set(FONT_FILES.map(f => f[0]))) {
   );
 }
 
-// With API_KEY set, index.html carries the key as a meta tag so the browser UI
-// keeps authenticating against /api/* (see public/js/api.js).
-if (API_KEY) {
-  const html = () =>
-    fs
-      .readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8')
-      .replace('</head>', `  <meta name="milaclone-key" content="${API_KEY.replace(/"/g, '&quot;')}">\n</head>`);
-  app.get(['/', '/index.html'], (req, res) => res.set('Cache-Control', 'no-cache').type('html').send(html()));
-}
 // The generic handler can also reach public/uploads (e.g. via an encoded URL), so
 // it applies the same upload safety headers to anything it resolves in there.
 const routes = require('./routes');

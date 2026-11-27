@@ -2,19 +2,75 @@
 
 import { toast } from './util.js';
 
-// When the server runs with API_KEY it embeds the key in index.html; every
-// same-origin /api request then carries it. One patch here covers all callers.
-const API_KEY = document.querySelector('meta[name="milaclone-key"]')?.content || '';
-if (API_KEY) {
-  const nativeFetch = window.fetch.bind(window);
-  window.fetch = (input, init = {}) => {
-    const url = typeof input === 'string' ? input : input.url;
-    if (!url.startsWith('/api/') && !url.startsWith(location.origin + '/api/')) return nativeFetch(input, init);
-    const headers = new Headers(init.headers || (typeof input === 'string' ? undefined : input.headers));
-    headers.set('X-API-Key', API_KEY);
-    return nativeFetch(input, { ...init, headers });
-  };
+// When the server runs with API_KEY, /api answers 401 until this browser has
+// signed in. The key is asked for once (a form over the page), traded for an HttpOnly cookie
+// (POST /api/login), and the request that was refused is sent again. The
+// server never puts the key in the page.
+const nativeFetch = window.fetch.bind(window);
+let signingIn = null;
+// An in-page form, not window.prompt(): browsers block prompts from a page shown
+// inside another site's frame (the Orb's Ideas tab).
+function askKey(note) {
+  return new Promise(resolve => {
+    const wrap = document.createElement('div');
+    wrap.style.cssText =
+      'position:fixed;inset:0;z-index:2147483647;display:grid;place-items:center;background:rgba(0,0,0,.55);font:15px/1.4 system-ui,sans-serif';
+    const form = document.createElement('form');
+    form.style.cssText =
+      'background:#fff;color:#222;padding:22px;border-radius:10px;width:min(340px,90vw);display:grid;gap:10px';
+    const label = document.createElement('label');
+    label.textContent = (note ? note + ' ' : '') + 'This board needs its key (API_KEY on the server).';
+    label.htmlFor = 'milaclone-key-input';
+    const input = document.createElement('input');
+    input.type = 'password';
+    input.id = 'milaclone-key-input';
+    input.autocomplete = 'current-password';
+    input.required = true;
+    input.style.cssText = 'padding:9px;border:1px solid #bbb;border-radius:6px;font:inherit';
+    const button = document.createElement('button');
+    button.type = 'submit';
+    button.textContent = 'Open the board';
+    button.style.cssText =
+      'padding:9px;border:0;border-radius:6px;background:#222;color:#fff;font:inherit;cursor:pointer';
+    form.append(label, input, button);
+    wrap.append(form);
+    form.addEventListener('submit', e => {
+      e.preventDefault();
+      wrap.remove();
+      resolve(input.value.trim());
+    });
+    document.body.append(wrap);
+    input.focus();
+  });
 }
+function signIn() {
+  signingIn ||= (async () => {
+    for (let note = ''; ;) {
+      const key = await askKey(note);
+      const r = await nativeFetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key }),
+      });
+      if (r.ok) return true;
+      if (r.status === 429) {
+        toast('Too many wrong keys. Try again in 10 minutes.');
+        return false;
+      }
+      note = 'That key is not right.';
+    }
+  })().finally(() => {
+    signingIn = null;
+  });
+  return signingIn;
+}
+window.fetch = async (input, init) => {
+  const url = typeof input === 'string' ? input : input.url;
+  const ours = url.startsWith('/api/') || url.startsWith(location.origin + '/api/');
+  const r = await nativeFetch(input, init);
+  if (!ours || r.status !== 401 || typeof input !== 'string') return r;
+  return (await signIn()) ? nativeFetch(input, init) : r;
+};
 
 const json = (method, body, extra) => ({
   method,

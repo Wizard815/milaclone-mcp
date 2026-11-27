@@ -87,23 +87,89 @@ const router = express.Router();
 // Set API_KEY to require every /api/* request (except the health check and the
 // task API, which has its own bearer token) to present it as `X-API-Key` or
 // `Authorization: Bearer <key>`. Unset keeps the API open (network-trust setups).
+//
+// The web page never gets the key from the server (a page anyone can load must
+// not carry it). A person types it once: POST /api/login checks it and sets an
+// HttpOnly cookie, which then opens /api and /uploads for that browser. The
+// cookie is derived from the key, so changing API_KEY signs every browser out.
 const API_KEY = (process.env.API_KEY || '').trim();
+const SESSION_COOKIE = 'milaclone_session';
+const SESSION_VALUE = API_KEY ? crypto.createHmac('sha256', API_KEY).update('milaclone-session-v1').digest('hex') : '';
 const keyMatches = (a, b) => {
   const x = Buffer.from(a),
     y = Buffer.from(b);
   return x.length === y.length && crypto.timingSafeEqual(x, y);
 };
-router.use('/api', (req, res, next) => {
-  if (!API_KEY || req.path === '/health' || req.path.startsWith('/tasks')) return next();
+const cookieOf = (req, name) => {
+  for (const part of String(req.headers.cookie || '').split(';')) {
+    const i = part.indexOf('=');
+    if (i > 0 && part.slice(0, i).trim() === name) return part.slice(i + 1).trim();
+  }
+  return '';
+};
+function authorized(req) {
+  if (!API_KEY) return true;
   const header = req.get('Authorization') || '';
   const bearer = header.toLowerCase().startsWith('bearer ') ? header.slice(7).trim() : '';
   const provided = req.get('X-API-Key') || bearer;
-  if (provided && keyMatches(provided, API_KEY)) return next();
-  res.status(401).json({ error: 'unauthorized' });
+  if (provided && keyMatches(provided, API_KEY)) return true;
+  const session = cookieOf(req, SESSION_COOKIE);
+  return !!session && keyMatches(session, SESSION_VALUE);
+}
+const OPEN_API = new Set(['/health', '/login', '/logout', '/session']);
+router.use('/api', (req, res, next) => {
+  if (OPEN_API.has(req.path) || req.path.startsWith('/tasks') || authorized(req)) return next();
+  res.status(401).json({ error: 'unauthorized', login: true });
+});
+// Uploads hold the board's files: with API_KEY set they need the key or the
+// cookie too. The generic public/ handler can also reach them through an
+// encoded or re-cased URL, so the check reads the decoded, lower-cased path.
+router.use((req, res, next) => {
+  if (!API_KEY) return next();
+  let p = req.path;
+  try {
+    p = decodeURIComponent(p);
+  } catch {
+    return res.status(400).end();
+  }
+  if (!/^\/+uploads(\/|$)/i.test(p.normalize('NFKC')) || authorized(req)) return next();
+  res.status(401).type('text').send('unauthorized');
 });
 // No client sends compressed bodies, so refuse them (415) rather than inflate:
 // the gzip path is where body-parser < 1.20.9 can be stalled (GHSA-27r3-jxmh-p828).
 router.use(express.json({ limit: '5mb', inflate: false }));
+
+// Wrong keys per address: 10 in 10 minutes, then that address waits.
+const LOGIN_MAX = 10,
+  LOGIN_WINDOW = 10 * 60 * 1000;
+const loginFails = new Map();
+const recentFails = (ip, now) => (loginFails.get(ip) || []).filter(t => now - t < LOGIN_WINDOW);
+router.get('/api/session', (req, res) => res.json({ required: !!API_KEY, signedIn: authorized(req) }));
+router.post('/api/login', (req, res) => {
+  if (!API_KEY) return res.json({ ok: true, required: false });
+  const ip = req.ip || '',
+    now = Date.now();
+  const fails = recentFails(ip, now);
+  if (fails.length >= LOGIN_MAX)
+    return res.status(429).json({ error: 'Too many wrong keys. Try again in 10 minutes.' });
+  const key = typeof req.body?.key === 'string' ? req.body.key.trim() : '';
+  if (!key || !keyMatches(key, API_KEY)) {
+    for (const [k, v] of loginFails) if (!v.some(t => now - t < LOGIN_WINDOW)) loginFails.delete(k);
+    loginFails.set(ip, [...fails, now]);
+    return res.status(401).json({ error: 'That key is not right.' });
+  }
+  loginFails.delete(ip);
+  const secure = req.secure || req.get('X-Forwarded-Proto') === 'https' ? '; Secure' : '';
+  res.set(
+    'Set-Cookie',
+    `${SESSION_COOKIE}=${SESSION_VALUE}; Path=/; HttpOnly; SameSite=Strict; Max-Age=31536000${secure}`
+  );
+  res.json({ ok: true });
+});
+router.post('/api/logout', (req, res) => {
+  res.set('Set-Cookie', `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0`);
+  res.json({ ok: true });
+});
 
 // Uploads are served from the app's own origin, so anything a browser could run
 // (HTML, SVG, XML, …) is forced to download instead of rendering. Only file types

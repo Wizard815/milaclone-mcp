@@ -74,8 +74,9 @@ the task API. `TASK_API_TOKEN` also turns on the MCP's `add_task`/`list_tasks`.
 Two independent layers, both optional, both off by default:
 
 - **`API_KEY`** — protects `app`'s own `/api/*`. Set it once in `.env` and
-  both services pick it up: `app` enforces it (its browser UI does too,
-  automatically), `mcp` sends it on every request to `app`.
+  both services pick it up: `app` enforces it, `mcp` sends it on every
+  request to `app`. The board in your browser asks for it once, then keeps a
+  sign-in cookie. Changing the key signs every browser out.
 - **`MCP_AUTH_TOKEN`** — protects `mcp`'s own network endpoint. Only matters
   if you expose `mcp` beyond your LAN (e.g. through the tunnel, for a remote
   Claude Desktop). It's a plain shared bearer secret, not OAuth — the mcp
